@@ -66,15 +66,20 @@ The system computes SLA metrics over time windows (daily/weekly):
 
 #### Metrics
 
-- **Uptime (%)**
-    - uptime = (successful checks / total checks) * 100
-- **Average Latency**
-- **(Optional) p95 Latency**
-- **Incident Count**
-- **Total Downtime**
-- **Longest Incident Duration**
-- **Mean time to Recovery**
-- **Resolution Time**
+- Availability
+	- **Uptime (%)**
+	- **Total Downtime**
+- Reliability 
+	- **Incident Count**
+	- **Longuest Incident Duration**
+	- **MTTR Mean Time to Recovery**
+	- **MTBF Mean Time Between Failures**
+- Performance 
+	- **Average Response Time**
+	- **Percentile Response Time  (p50 , p95 , p99)**
+- Quality
+	- **Error Rate (%)**
+
 
 ---
 
