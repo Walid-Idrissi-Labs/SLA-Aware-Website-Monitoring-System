@@ -3,6 +3,11 @@ title: SLA-Aware Website Monitoring System
 
 ---
 
+---
+title: SLA-Aware Website Monitoring System
+
+---
+
 # SLA-Aware Website Monitoring System (AWS + Terraform)
 
 ## 1. Project Overview
@@ -193,43 +198,71 @@ Implementation:
 
 #### 3. DynamoDB (Database)
 
-##### Table: `Checks`
-Stores raw monitoring data
+
+
+---
+
+##### Table: sla_monitor_users
+
+- user_id (PK)
+- email
+- display_name
+- notification_email
+- created_at
+
+---
+
+##### Table: sla_monitor_projects
+
+- project_id (PK)
+- user_id (FK)
+- name
+- url
+- active
+- failure_threshold
+- thresholds
+- notification_email
+- created_at
+
+---
+
+##### Table: sla_monitor_checks
+
 - project_id (PK)
 - timestamp (SK)
-- status (success/fail)
+- status
 - latency_ms
-- status_code
-
+- http_status_code
+- ttl
 
 ---
 
-##### Table: `Incidents`
-- incident_id (PK)
-- project_id
-- start_time
+##### Table: sla_monitor_incidents
+
+- project_id (PK)
+- start_time (SK)
 - end_time
-- duration
-
+- duration_seconds
+- resolved
 
 ---
 
-##### Table: `Reports`
+##### Table: sla_monitor_reports
 
-- report_id (PK)
-- project_id
-- time_window
-- uptime
-- avg_latency
+- project_id (PK)
+- report_id (SK)
+- uptime_pct
+- avg_latency_ms
+- p95_latency_ms
 - incident_count
-- total_downtime
+- total_downtime_sec
 - severity
-- sla_pass (boolean)
-
+- sla_pass
+- generated_at
 
 ---
 
-#### 4. SNS / SES
+#### 4. SES
 - Sends email alerts and reports to users
 
 ---
@@ -241,7 +274,7 @@ Stores raw monitoring data
 
 ---
 
-#### 6. API Gateway (Optional)
+#### 6. API Gateway
 - Exposes endpoints:
   - Get projects
   - Get reports
@@ -249,7 +282,16 @@ Stores raw monitoring data
 
 ---
 
-#### 7. Terraform (Infrastructure as Code)
+#### 7. CloudFront
+- Cache and Display Dashboard Website for Users
+	- Cached and Served to CDNs from S3 Bucket storing static website
+
+#### 8. Cognito (User Pool)
+- Allow users Login via Email
+
+
+#### 9. Terraform (Infrastructure as Code)
+- State Stored in Terraform Cloud
 
 Manages all infrastructure:
 
@@ -262,6 +304,7 @@ Manages all infrastructure:
 - S3 bucket
 
 ---
+
 
 ## 5. System Flow
 
