@@ -137,10 +137,9 @@ Alerts are triggered on:
 
 - Status change (UP → DOWN, DOWN → UP)
 - Incident start/end
-- SLA threshold breach
 
 Delivery:
-- Email (via AWS SES or SNS)
+- Email (via AWS SES)
 
 ---
 
@@ -156,7 +155,7 @@ Displays:
 
 Implementation:
 - Static frontend hosted on S3
-- Optional API via API Gateway
+- API via API Gateway
 
 ---
 
@@ -195,6 +194,14 @@ Implementation:
 - Sends report via email
 
 ---
+
+##### D. API Lambda
+- Handles Read-only Routes
+
+---
+
+##### E. Projects CRUD Lambda
+- Handles users adding projects
 
 #### 3. DynamoDB (Database)
 
@@ -287,7 +294,7 @@ Implementation:
 	- Cached and Served to CDNs from S3 Bucket storing static website
 
 #### 8. Cognito (User Pool)
-- Allow users Login via Email
+- Allow users Login via Email or Google OAuth
 
 
 #### 9. Terraform (Infrastructure as Code)
@@ -299,7 +306,7 @@ Manages all infrastructure:
 - IAM roles
 - DynamoDB tables
 - EventBridge rules
-- SNS/SES configuration
+- SES configuration
 - API Gateway
 - S3 bucket
 
@@ -361,67 +368,7 @@ Manages all infrastructure:
 
 ---
 
-## 6. Project Scope 
-
-### Must-Have
-
-- Monitoring Lambda
-- DynamoDB storage
-- SLA computation (basic)
-- Weekly report generation
-- Email alerts
-- Terraform setup
-
----
-
-### Optional 
-
-- Dashboard UI
-- p95 latency calculation
-- Multi-region checks
-- Content validation
-- Public status page
-
----
-
-## 7. Design Principles
-
-- **Simplicity first**: avoid overengineering
-- **Single responsibility per Lambda**
-- **Data-driven architecture**
-- **SLA as the main output**
-- **Cloud-native design**
-- **Full infrastructure automation via Terraform**
-
----
-
-## 8. Why This Project is Strong
-
-- Demonstrates real-world problem solving
-- Combines:
-  - Cloud Computing
-  - Backend Engineering
-  - Observability concepts
-- Shows understanding of:
-  - Metrics vs insights
-  - Reliability engineering basics
-  - Data modeling
-- Produces a tangible, useful output (SLA reports)
-
----
-
-## 9. Possible Extensions (Future Work)
-
-- Multi-region monitoring
-- Authentication & multi-user support
-- Slack/Discord alerts
-- Advanced anomaly detection
-- Historical trend visualization
-- Integration with CI/CD pipelines
-
----
-
-## 10. Summary
+## 6. Summary
 
 This project is a **cloud-based SLA monitoring system** that:
 
@@ -431,10 +378,3 @@ This project is a **cloud-based SLA monitoring system** that:
 - Generates structured reports
 - Alerts users when issues arise
 
-It is designed to be:
-- Practical
-- Scalable in concept
-- Achievable in ~1 week
-- Highly valuable for a portfolio
-
----
