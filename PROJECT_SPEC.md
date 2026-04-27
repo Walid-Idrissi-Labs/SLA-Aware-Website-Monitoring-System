@@ -286,6 +286,24 @@ Implementation:
   - Get projects
   - Get reports
   - Get current status
+##### Routes 
+- PUBLIC
+	- GET  /health
+
+- USER
+	- GET /me
+	- PUT /me
+
+- PROJECTS
+	- GET /projects
+	- POST /projects
+	- PUT /projects/{project_id}
+	- DELETE /projects/{project_id}
+
+- DATA
+	- GET /projects/{project_id}/status
+	- GET /projects/{project_id}/reports
+
 
 ---
 
