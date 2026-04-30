@@ -154,7 +154,7 @@ Displays:
 - Latest SLA report
 
 Implementation:
-- Static frontend hosted on S3
+- Static frontend hosted on S3 (private), served via CloudFront
 - API via API Gateway
 
 ---
@@ -276,7 +276,7 @@ Implementation:
 
 #### 5. S3
 - Hosts:
-  - Static dashboard
+  - Static dashboard (private)
   - SLA reports (JSON/HTML)
 
 ---
