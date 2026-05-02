@@ -76,3 +76,127 @@ module "iam" {
 
   ssm_parameter_prefix = "/sla-monitor/${var.environment}/*"
 }
+
+module "lambda_monitor" {
+  source = "./modules/lambda"
+
+  function_name = "${local.name_prefix}-monitor-lambda"
+  description   = "Runs HTTP checks against all active projects per minute"
+  role_arn      = module.iam.monitor_lambda_role_arn
+  source_dir    = "${path.module}/lambda_src/monitor"
+  artifacts_bucket_name = module.s3.artifacts_bucket_name
+
+  environment_variables = {
+    PROJECTS_TABLE_NAME        = module.dynamodb.projects_table_name
+    CHECKS_TABLE_NAME          = module.dynamodb.checks_table_name
+    SES_SENDER_PARAM_PATH      = "/sla-monitor/${var.environment}/ses/sender-email"
+    FAILURE_THRESHOLD_DEFAULT  = "3"
+    HTTP_TIMEOUT_SECONDS        = "10"
+  }
+
+ #TODO
+  eventbridge_rule_arns    = []
+  api_gateway_execution_arn = ""
+}
+
+module "lambda_sla_processor" {
+  source = "./modules/lambda"
+
+  function_name = "${local.name_prefix}-sla-processor-lambda"
+  description   = "Hourly SLA breach detection and incident management"
+  role_arn      = module.iam.sla_processor_lambda_role_arn
+  source_dir    = "${path.module}/lambda_src/sla_processor"
+  artifacts_bucket_name = module.s3.artifacts_bucket_name
+
+  memory_mb       = 512
+  timeout_seconds = 300
+  log_retention_days = 14
+
+  environment_variables = {
+    PROJECTS_TABLE_NAME  = module.dynamodb.projects_table_name
+    CHECKS_TABLE_NAME    = module.dynamodb.checks_table_name
+    INCIDENTS_TABLE_NAME = module.dynamodb.incidents_table_name
+    FAILURE_THRESHOLD_DEFAULT  = "3"
+  }
+
+#TODO
+  eventbridge_rule_arns    = []
+  api_gateway_execution_arn = ""
+}
+
+module "lambda_report_generator" {
+  source = "./modules/lambda"
+
+  function_name = "${local.name_prefix}-report-generator-lambda"
+  description   = "Weekly SLA report generation and email distribution"
+  role_arn      = module.iam.report_generator_lambda_role_arn
+  source_dir    = "${path.module}/lambda_src/report_generator"
+  artifacts_bucket_name = module.s3.artifacts_bucket_name
+
+  memory_mb       = 512
+  timeout_seconds = 300
+  log_retention_days = 30
+
+  environment_variables = {
+    PROJECTS_TABLE_NAME   = module.dynamodb.projects_table_name
+    CHECKS_TABLE_NAME     = module.dynamodb.checks_table_name
+    INCIDENTS_TABLE_NAME  = module.dynamodb.incidents_table_name
+    REPORTS_TABLE_NAME    = module.dynamodb.reports_table_name
+    REPORTS_BUCKET_NAME   = module.s3.reports_bucket_name
+    SES_SENDER_PARAM_PATH = "/sla-monitor/${var.environment}/ses/sender-email"
+  }
+
+#TODO
+  eventbridge_rule_arns    = []
+  api_gateway_execution_arn = ""
+}
+
+module "lambda_api" {
+  source = "./modules/lambda"
+
+  function_name = "${local.name_prefix}-api-lambda"
+  description   = "REST API handler for dashboard backend"
+  role_arn      = module.iam.api_lambda_role_arn
+  source_dir    = "${path.module}/lambda_src/api"
+  artifacts_bucket_name = module.s3.artifacts_bucket_name
+
+  memory_mb = 256
+  timeout_seconds = 10
+  log_retention_days = 7
+
+  environment_variables = {
+    USERS_TABLE_NAME    = module.dynamodb.users_table_name
+    PROJECTS_TABLE_NAME = module.dynamodb.projects_table_name
+    PROJECT_GSI_NAME = module.dynamodb.projects_gsi_name
+    CHECKS_TABLE_NAME   = module.dynamodb.checks_table_name
+    INCIDENTS_TABLE_NAME = module.dynamodb.incidents_table_name
+    REPORTS_TABLE_NAME  = module.dynamodb.reports_table_name
+  }
+
+#TODO
+  eventbridge_rule_arns    = []
+  api_gateway_execution_arn = ""
+}
+
+module "lambda_project_manager" {
+  source = "./modules/lambda"
+
+  function_name = "${local.name_prefix}-project-manager-lambda"
+  description   = "User and project lifecycle management"
+  role_arn      = module.iam.project_manager_lambda_role_arn
+  source_dir    = "${path.module}/lambda_src/project_manager"
+  artifacts_bucket_name = module.s3.artifacts_bucket_name
+
+  memory_mb = 256
+  timeout_seconds = 10
+  log_retention_days = 7
+
+  environment_variables = {
+    USERS_TABLE_NAME    = module.dynamodb.users_table_name
+    PROJECTS_TABLE_NAME = module.dynamodb.projects_table_name
+  }
+
+#TODO
+  eventbridge_rule_arns    = []
+  api_gateway_execution_arn = ""
+}

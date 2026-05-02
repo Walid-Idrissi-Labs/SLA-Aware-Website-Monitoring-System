@@ -55,11 +55,6 @@ output "s3_bucket_arns" {
 
 
 output "lambda_role_arns" {
-  description = <<-EOT
-    ARNs of all Lambda IAM execution roles. These will be consumed by the Lambda
-    module in the next Terraform session when creating the actual Lambda functions.
-    Each Lambda function will reference its corresponding role ARN here.
-  EOT
   value = {
     monitor         = module.iam.monitor_lambda_role_arn
     sla_processor   = module.iam.sla_processor_lambda_role_arn
