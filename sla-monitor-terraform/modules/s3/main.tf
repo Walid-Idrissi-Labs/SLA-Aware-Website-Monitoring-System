@@ -106,6 +106,22 @@ resource "aws_s3_bucket_lifecycle_configuration" "reports" {
       noncurrent_days = 90 # Permanent deletion after 3 months
     }
   }
+
+
+  #cleans up failed or abandoned uploads
+  rule {
+    id     = "abort-incomplete-uploads"
+    status = "Enabled"
+
+    filter {}
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 2
+    }
+  }
+
+
+
 }
 
 
