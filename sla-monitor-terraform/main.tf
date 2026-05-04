@@ -77,6 +77,95 @@ module "iam" {
   ssm_parameter_prefix = "/sla-monitor/${var.environment}/*"
 }
 
+
+
+
+
+
+resource "aws_cloudwatch_event_rule" "monitor" {
+  name           = "${local.name_prefix}-monitor-rule-prod"
+  description    = "Fires every minute to trigger the Monitor Lambda"
+  schedule_expression = "rate(1 minute)"
+
+  tags = {
+    FunctionName = "monitor"
+    Schedule      = "rate(1 minute)"
+  }
+}
+
+
+resource "aws_cloudwatch_event_rule" "sla_processor" {
+  name           = "${local.name_prefix}-processor-rule-prod"
+  description    = "Fires every hour at :00 UTC to trigger the SLA Processor Lambda"
+  schedule_expression = "cron(0 * * * ? *)"
+
+  tags = {
+    FunctionName = "sla_processor"
+    Schedule      = "cron(0 * * * ? *)"
+  }
+}
+
+
+resource "aws_cloudwatch_event_rule" "report_generator" {
+  name           = "${local.name_prefix}-reporter-rule-prod"
+  description    = "Fires every Monday at 08:00 UTC to trigger the Report Generator Lambda"
+  schedule_expression = "cron(0 8 ? * MON *)"
+
+  tags = {
+    FunctionName = "report_generator"
+    Schedule      = "cron(0 8 ? * MON *)"
+  }
+}
+
+
+
+resource "aws_cloudwatch_event_target" "monitor" {
+  rule      = aws_cloudwatch_event_rule.monitor.name
+  target_id = "MonitorLambda"
+  arn       = module.lambda_monitor.function_arn
+}
+
+resource "aws_cloudwatch_event_target" "sla_processor" {
+  rule      = aws_cloudwatch_event_rule.sla_processor.name
+  target_id = "SlaProcessorLambda"
+  arn       = module.lambda_sla_processor.function_arn
+}
+
+resource "aws_cloudwatch_event_target" "report_generator" {
+  rule      = aws_cloudwatch_event_rule.report_generator.name
+  target_id = "ReportGeneratorLambda"
+  arn       = module.lambda_report_generator.function_arn
+}
+
+
+
+
+resource "aws_lambda_permission" "allow_eventbridge_monitor" {
+  statement_id  = "AllowEventBridgeInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name  = module.lambda_monitor.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.monitor.arn
+}
+
+resource "aws_lambda_permission" "allow_eventbridge_sla_processor" {
+  statement_id  = "AllowEventBridgeInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name  = module.lambda_sla_processor.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.sla_processor.arn
+}
+
+resource "aws_lambda_permission" "allow_eventbridge_report_generator" {
+  statement_id  = "AllowEventBridgeInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name  = module.lambda_report_generator.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.report_generator.arn
+}
+
+
+
 module "lambda_monitor" {
   source = "./modules/lambda"
 
@@ -94,8 +183,7 @@ module "lambda_monitor" {
     HTTP_TIMEOUT_SECONDS        = "10"
   }
 
- #TODO
-  eventbridge_rule_arns    = []
+  eventbridge_rule_arns    = [aws_cloudwatch_event_rule.monitor.arn]
   api_gateway_execution_arn = ""
 }
 
@@ -119,8 +207,7 @@ module "lambda_sla_processor" {
     FAILURE_THRESHOLD_DEFAULT  = "3"
   }
 
-#TODO
-  eventbridge_rule_arns    = []
+  eventbridge_rule_arns    = [aws_cloudwatch_event_rule.sla_processor.arn]
   api_gateway_execution_arn = ""
 }
 
@@ -146,8 +233,7 @@ module "lambda_report_generator" {
     SES_SENDER_PARAM_PATH = "/sla-monitor/${var.environment}/ses/sender-email"
   }
 
-#TODO
-  eventbridge_rule_arns    = []
+  eventbridge_rule_arns    = [aws_cloudwatch_event_rule.report_generator.arn]
   api_gateway_execution_arn = ""
 }
 
@@ -173,7 +259,6 @@ module "lambda_api" {
     REPORTS_TABLE_NAME  = module.dynamodb.reports_table_name
   }
 
-#TODO
   eventbridge_rule_arns    = []
   api_gateway_execution_arn = ""
 }
@@ -196,7 +281,6 @@ module "lambda_project_manager" {
     PROJECTS_TABLE_NAME = module.dynamodb.projects_table_name
   }
 
-#TODO
   eventbridge_rule_arns    = []
   api_gateway_execution_arn = ""
 }
