@@ -42,6 +42,10 @@ output "reports_table_arn" {
 }
 
 
+output "projects_gsi_name" {
+      value = "${aws_dynamodb_table.projects.name}/index/UserProjectsIndex"
+}
+
 # for IAM query
 output "projects_gsi_arn" {
       value = "${aws_dynamodb_table.projects.arn}/index/UserProjectsIndex"  
