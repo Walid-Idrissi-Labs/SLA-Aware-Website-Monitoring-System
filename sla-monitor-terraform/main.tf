@@ -1,8 +1,11 @@
 terraform {
-  backend "remote" {
+
+  cloud {
+    
     organization = "Walids-Labs"
+
     workspaces {
-      name = "Walids-Workspace"
+      name = "SLA-Aware-Monitor-Workspace"
     }
   }
 }
@@ -10,6 +13,7 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
+
 
   default_tags {
     tags = {

@@ -8,6 +8,7 @@
 *.tfplan
 *.plan
 
+**/tf-plan-output.*
 
 crash.log
 crash.*.log
