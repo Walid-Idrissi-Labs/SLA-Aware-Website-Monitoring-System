@@ -80,10 +80,14 @@ resource "aws_s3_bucket_lifecycle_configuration" "reports" {
     id     = "archive-old-reports"
     status = "Enabled"
 
-    transition {
-      days          = 60
-      storage_class = "GLACIER_IR"
-    }
+    #(AWS provider now requires each rule to explicitly declare a filter block, even if it's empty)
+      #in this case, this filter still applies to all objects
+    filter{} 
+
+      transition {
+        days          = 60
+        storage_class = "GLACIER_IR"
+      }
   }
 
   #if a report is overwritten, old version moved to glacier instantly
@@ -91,13 +95,15 @@ resource "aws_s3_bucket_lifecycle_configuration" "reports" {
     id     = "cleanup-old-versions"
     status = "Enabled"
 
-    noncurrent_version_transition {
-      noncurrent_days = 1
-      storage_class   = "GLACIER_IR"
-    }
+    filter{}
+
+      noncurrent_version_transition {
+        noncurrent_days = 3
+        storage_class   = "GLACIER_IR"
+      }
 
     noncurrent_version_expiration {
-      noncurrent_days = 180 # Permanent deletion after 6 months
+      noncurrent_days = 90 # Permanent deletion after 3 months
     }
   }
 }
