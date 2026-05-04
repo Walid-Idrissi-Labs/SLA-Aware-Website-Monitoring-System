@@ -45,14 +45,10 @@ resource "aws_dynamodb_table" "projects" {
 
   global_secondary_index {
     name            = "UserProjectsIndex"
-    key_schema {
-      attribute_name = "user_id"
-      key_type       = "HASH"
-    }
-    key_schema {
-      attribute_name = "created_at"
-      key_type       = "RANGE"
-    }
+
+    hash_key        = "user_id"
+    range_key      = "created_at"
+
     projection_type = "ALL"
   }
 
