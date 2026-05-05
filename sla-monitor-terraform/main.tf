@@ -98,9 +98,11 @@ module "cognito" {
 
   name_prefix = local.name_prefix
 
-  #TODO : once CloudFront+Frontend are done 
-  callback_urls = ["http://localhost:3000/callback"]
-  logout_urls   = ["http://localhost:3000/login"]
+  #TODO After first Vercel deploy, replace with your actual Vercel domain:
+  # callback_urls = ["https://your-project.vercel.app/callback"]
+  # logout_urls   = ["https://your-project.vercel.app/login"]
+  callback_urls = ["https://your-vercel-domain.vercel.app/callback"]
+  logout_urls   = ["https://your-vercel-domain.vercel.app/login"]
 }
 
 

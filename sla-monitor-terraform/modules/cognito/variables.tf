@@ -6,17 +6,18 @@ variable "name_prefix" {
 
 
 
-
+#TODO
 variable "callback_urls" {
-  description = "Allowed OAuth callback URLs (CloudFront domain + /callback)"
+  description = "Allowed OAuth callback URLs (Vercel frontend domain + /callback). Update after Vercel deployment."
   type        = list(string)
-  default     = ["http://localhost:3000/callback"]
+  default     = ["https://your-vercel-domain.vercel.app/callback"]
 }
 
+#TODO
 variable "logout_urls" {
-  description = "Allowed OAuth logout URLs (CloudFront domain + /login)"
+  description = "Allowed OAuth logout URLs (Vercel frontend domain + /login). Update after Vercel deployment."
   type        = list(string)
-  default     = ["http://localhost:3000/login"]
+  default     = ["https://your-vercel-domain.vercel.app/login"]
 }
 
 variable "allowed_oauth_scopes" {

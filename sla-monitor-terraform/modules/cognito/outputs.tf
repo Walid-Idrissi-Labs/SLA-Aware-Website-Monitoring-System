@@ -20,7 +20,7 @@ output "user_pool_domain_name" {
 
 output "user_pool_domain_url" {
   description = "Full hosted UI URL, frontend redirects here when unauthenticated"
-  value       = "https://${aws_cognito_user_pool_domain.main.domain}.auth.us-east-1.amazoncognito.com"
+  value       = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${data.aws_region.current.name}.amazoncognito.com"
 }
 
 output "issuer_url" {
