@@ -177,29 +177,27 @@ def handle_get_projects_reports(event: dict) -> dict:
 
 
 def lambda_handler(event: dict, context) -> dict:
-    if event.get("httpMethod") == "OPTIONS":
-        return {"statusCode": 200, "headers": CORS_HEADERS, "body": ""}
-
     method = event.get("httpMethod", "")
     path = event.get("path", "")
     path_params = event.get("pathParameters") or {}
 
     try:
-        # GET /me
         if method == "GET" and path == "/me":
             return handle_get_me(event)
 
-        # GET /projects
         if method == "GET" and path == "/projects":
             return handle_get_projects(event)
 
-        # GET /projects/{project_id}/status
-        if method == "GET" and path == "/projects/{project_id}/status":
-            return handle_get_projects_status(event)
+        if method == "GET" and path_params.get("project_id"):
+            project_id = path_params["project_id"]
 
-        # GET /projects/{project_id}/reports
-        if method == "GET" and path == "/projects/{project_id}/reports":
-            return handle_get_projects_reports(event)
+            if path == f"/projects/{project_id}/status":
+                event["pathParameters"]["project_id"] = project_id
+                return handle_get_projects_status(event)
+
+            if path == f"/projects/{project_id}/reports":
+                event["pathParameters"]["project_id"] = project_id
+                return handle_get_projects_reports(event)
 
         return error_response(404, "Not found")
 

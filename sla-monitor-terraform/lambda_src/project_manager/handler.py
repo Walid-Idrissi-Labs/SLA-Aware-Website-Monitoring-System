@@ -213,31 +213,27 @@ def handle_delete_projects_id(event: dict) -> dict:
 
 
 def lambda_handler(event: dict, context) -> dict:
-    if event.get("httpMethod") == "OPTIONS":
-        return {"statusCode": 200, "headers": CORS_HEADERS, "body": ""}
-
     method = event.get("httpMethod", "")
     path = event.get("path", "")
     path_params = event.get("pathParameters") or {}
 
     try:
-        # PUT /me
         if method == "PUT" and path == "/me":
             return handle_put_me(event)
 
-        # POST /projects
         if method == "POST" and path == "/projects":
             return handle_post_projects(event)
 
-        # PUT /projects/{project_id}
-        if method == "PUT" and path == "/projects/{project_id}":
+        if method == "PUT" and path_params.get("project_id"):
+            project_id = path_params["project_id"]
+            event["pathParameters"]["project_id"] = project_id
             return handle_put_projects_id(event)
 
-        # DELETE /projects/{project_id}
-        if method == "DELETE" and path == "/projects/{project_id}":
+        if method == "DELETE" and path_params.get("project_id"):
+            project_id = path_params["project_id"]
+            event["pathParameters"]["project_id"] = project_id
             return handle_delete_projects_id(event)
 
-        # No route matched
         return error_response(404, "Not found")
 
     except ClientError as e:

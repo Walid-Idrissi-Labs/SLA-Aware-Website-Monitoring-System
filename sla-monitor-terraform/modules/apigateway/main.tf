@@ -136,11 +136,11 @@ resource "aws_apigatewayv2_route" "post_projects" {
   authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
 }
 
-# PUT /projects/{id} — update a project's configuration
+# PUT /projects/{project_id} — update a project's configuration
 resource "aws_apigatewayv2_route" "put_projects_id" {
   api_id = aws_apigatewayv2_api.main.id
 
-  route_key = "PUT /projects/{id}"
+  route_key = "PUT /projects/{project_id}"
 
   target = "integrations/${aws_apigatewayv2_integration.project_manager_lambda.id}"
 
@@ -152,7 +152,7 @@ resource "aws_apigatewayv2_route" "put_projects_id" {
 resource "aws_apigatewayv2_route" "delete_projects_id" {
   api_id = aws_apigatewayv2_api.main.id
 
-  route_key = "DELETE /projects/{id}"
+  route_key = "DELETE /projects/{project_id}"
 
   target = "integrations/${aws_apigatewayv2_integration.project_manager_lambda.id}"
 
@@ -164,7 +164,7 @@ resource "aws_apigatewayv2_route" "delete_projects_id" {
 resource "aws_apigatewayv2_route" "get_projects_status" {
   api_id = aws_apigatewayv2_api.main.id
 
-  route_key = "GET /projects/{id}/status"
+  route_key = "GET /projects/{project_id}/status"
 
   target = "integrations/${aws_apigatewayv2_integration.api_lambda.id}"
 
@@ -176,7 +176,7 @@ resource "aws_apigatewayv2_route" "get_projects_status" {
 resource "aws_apigatewayv2_route" "get_projects_reports" {
   api_id = aws_apigatewayv2_api.main.id
 
-  route_key = "GET /projects/{id}/reports"
+  route_key = "GET /projects/{project_id}/reports"
 
   target = "integrations/${aws_apigatewayv2_integration.api_lambda.id}"
 
