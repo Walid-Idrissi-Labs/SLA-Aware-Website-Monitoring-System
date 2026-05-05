@@ -7,9 +7,6 @@ output "deployment_info" {
   }
 }
 
-
-
-
 output "dynamodb_table_names" {
   value = {
     users     = module.dynamodb.users_table_name
@@ -30,13 +27,8 @@ output "dynamodb_table_arns" {
   }
 }
 
-
-
-
-
 output "s3_bucket_names" {
   value = {
-    dashboard = module.s3.dashboard_bucket_name
     reports   = module.s3.reports_bucket_name
     artifacts = module.s3.artifacts_bucket_name
   }
@@ -44,22 +36,37 @@ output "s3_bucket_names" {
 
 output "s3_bucket_arns" {
   value = {
-    dashboard = module.s3.dashboard_bucket_arn
     reports   = module.s3.reports_bucket_arn
     artifacts = module.s3.artifacts_bucket_arn
   }
 }
 
-
-
-
-
 output "lambda_role_arns" {
   value = {
-    monitor         = module.iam.monitor_lambda_role_arn
-    sla_processor   = module.iam.sla_processor_lambda_role_arn
+    monitor          = module.iam.monitor_lambda_role_arn
+    sla_processor    = module.iam.sla_processor_lambda_role_arn
     report_generator = module.iam.report_generator_lambda_role_arn
-    api             = module.iam.api_lambda_role_arn
-    project_manager = module.iam.project_manager_lambda_role_arn
+    api              = module.iam.api_lambda_role_arn
+    project_manager  = module.iam.project_manager_lambda_role_arn
   }
+}
+
+output "api_gateway_endpoint" {
+  description = "Base URL for API Gateway. Use this as VITE_API_GATEWAY_URL in the frontend."
+  value       = module.apigateway.api_endpoint
+}
+
+output "cognito_hosted_ui_url" {
+  description = "Cognito Hosted UI base URL — append /login?client_id=<client_id>&redirect_uri=<frontend_url>/callback&response_type=token&scope=openid+email+profile"
+  value       = "https://${module.cognito.user_pool_domain_name}.auth.${var.aws_region}.amazoncognito.com"
+}
+
+output "cognito_user_pool_domain" {
+  description = "Cognito User Pool Domain for hosted UI"
+  value       = module.cognito.user_pool_domain_name
+}
+
+output "cognito_app_client_id" {
+  description = "Cognito App Client ID for frontend config"
+  value       = module.cognito.app_client_id
 }
