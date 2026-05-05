@@ -1,3 +1,5 @@
+data "aws_region" "current" {}
+
 output "api_id" {
   value       = aws_apigatewayv2_api.main.id
 }

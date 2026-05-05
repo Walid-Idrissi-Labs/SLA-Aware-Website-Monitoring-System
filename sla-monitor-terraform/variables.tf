@@ -24,4 +24,5 @@ variable "project_slug" {
 variable "ses_sender_email" {
   type = string
   description = "User-verified SES sender email"
+  default = ""
 }
