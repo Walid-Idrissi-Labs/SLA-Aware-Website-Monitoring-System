@@ -136,6 +136,19 @@ resource "aws_apigatewayv2_route" "post_projects" {
   authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
 }
 
+# GET /projects/{project_id} — fetch single project details
+resource "aws_apigatewayv2_route" "get_projects_id" {
+  api_id = aws_apigatewayv2_api.main.id
+
+  route_key = "GET /projects/{project_id}"
+
+  target = "integrations/${aws_apigatewayv2_integration.api_lambda.id}"
+
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+}
+
+
 # PUT /projects/{project_id} — update a project's configuration
 resource "aws_apigatewayv2_route" "put_projects_id" {
   api_id = aws_apigatewayv2_api.main.id
@@ -231,6 +244,7 @@ resource "aws_apigatewayv2_deployment" "main" {
       aws_apigatewayv2_route.get_me.route_key,
       aws_apigatewayv2_route.put_me.route_key,
       aws_apigatewayv2_route.get_projects.route_key,
+      aws_apigatewayv2_route.get_projects_id.route_key,
       aws_apigatewayv2_route.post_projects.route_key,
       aws_apigatewayv2_route.put_projects_id.route_key,
       aws_apigatewayv2_route.delete_projects_id.route_key,

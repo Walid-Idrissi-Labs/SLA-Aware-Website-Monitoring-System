@@ -129,7 +129,7 @@ def handle_get_projects_status(event: dict) -> dict:
 
     query_params = event.get("queryStringParameters") or {}
     hours = int(query_params.get("hours", 24))
-    hours = min(max(hours, 1), 72)  
+    hours = min(max(hours, 1), 72)
 
     now_ms = int(time.time() * 1000)
     from_ms = now_ms - (hours * 3600 * 1000)
@@ -143,7 +143,7 @@ def handle_get_projects_status(event: dict) -> dict:
             ":from_ts": from_ms,
             ":now_ts": now_ms,
         },
-        ScanIndexForward=True,  
+        ScanIndexForward=True,
     )
     checks = response.get("Items", [])
 
@@ -154,6 +154,17 @@ def handle_get_projects_status(event: dict) -> dict:
         "current_status": current_status,
         "checks": checks,
     })
+
+
+def handle_get_project(event: dict) -> dict:
+    user_id = get_user_id(event)
+    project_id = event["pathParameters"]["project_id"]
+
+    project = get_project_or_403(project_id, user_id)
+    if not project:
+        return error_response(403, "Forbidden")
+
+    return success(200, project)
 
 
 def handle_get_projects_reports(event: dict) -> dict:
@@ -190,6 +201,10 @@ def lambda_handler(event: dict, context) -> dict:
 
         if method == "GET" and path_params.get("project_id"):
             project_id = path_params["project_id"]
+
+            if path == f"/projects/{project_id}":
+                event["pathParameters"]["project_id"] = project_id
+                return handle_get_project(event)
 
             if path == f"/projects/{project_id}/status":
                 event["pathParameters"]["project_id"] = project_id
