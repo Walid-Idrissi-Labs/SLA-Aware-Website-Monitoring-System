@@ -124,14 +124,14 @@ resource "aws_lambda_permission" "eventbridge" {
 
 
 resource "aws_lambda_permission" "api_gateway" {
-  count = var.api_gateway_execution_arn != "" ? 1 : 0
 
-  statement_id = "AllowAPIGatewayInvoke"
-  action       = "lambda:InvokeFunction"
+ count = var.enable_api_gateway_permission ? 1 : 0
+
+  action = "lambda:InvokeFunction"
 
   function_name = aws_lambda_function.this.function_name
 
   principal = "apigateway.amazonaws.com"
 
-  source_arn = var.api_gateway_execution_arn
+  source_arn = "${var.api_gateway_execution_arn}/*/*"
 }

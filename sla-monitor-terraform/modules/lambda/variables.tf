@@ -75,3 +75,11 @@ variable "api_gateway_execution_arn" {
   type    = string
   default = ""
 }
+
+
+
+variable "enable_api_gateway_permission" {
+  type = bool
+  default = false
+  description = "Whether to create the API Gateway invoke permission for this lambda"
+}

@@ -78,12 +78,45 @@ module "iam" {
   artifacts_bucket_arn = module.s3.artifacts_bucket_arn
 
 
-  ssm_parameter_prefix = "/sla-monitor/${var.environment}/*"
+ssm_parameter_prefix = "/sla-monitor/${var.environment}/*"
 }
 
 
+resource "aws_ssm_parameter" "ses_sender_email" {
+  name  = "/sla-monitor/${var.environment}/ses/sender-email"
+  type  = "String" 
+  value = var.ses_sender_email 
+
+  tags = {
+    Name        = "SES sender email for SLA Monitor"
+ }
+}
 
 
+module "cognito" {
+  source = "./modules/cognito"
+
+  name_prefix = local.name_prefix
+
+  #TODO : once CloudFront+Frontend are done 
+  callback_urls = ["http://localhost:3000/callback"]
+  logout_urls   = ["http://localhost:3000/login"]
+}
+
+
+module "apigateway" {
+  source = "./modules/apigateway"
+
+  name_prefix = local.name_prefix
+
+  depends_on = [module.cognito]
+
+  cognito_user_pool_id  = module.cognito.user_pool_id
+  cognito_app_client_id = module.cognito.app_client_id
+
+  api_lambda_qualified_arn              = module.lambda_api.qualified_arn
+  project_manager_lambda_qualified_arn  = module.lambda_project_manager.qualified_arn
+}
 
 
 resource "aws_cloudwatch_event_rule" "monitor" {
@@ -188,6 +221,7 @@ module "lambda_monitor" {
   }
 
   eventbridge_rule_arns    = [aws_cloudwatch_event_rule.monitor.arn]
+  enable_api_gateway_permission = false
   api_gateway_execution_arn = ""
 }
 
@@ -212,6 +246,7 @@ module "lambda_sla_processor" {
   }
 
   eventbridge_rule_arns    = [aws_cloudwatch_event_rule.sla_processor.arn]
+  enable_api_gateway_permission = false
   api_gateway_execution_arn = ""
 }
 
@@ -238,6 +273,7 @@ module "lambda_report_generator" {
   }
 
   eventbridge_rule_arns    = [aws_cloudwatch_event_rule.report_generator.arn]
+  enable_api_gateway_permission = false
   api_gateway_execution_arn = ""
 }
 
@@ -264,7 +300,8 @@ module "lambda_api" {
   }
 
   eventbridge_rule_arns    = []
-  api_gateway_execution_arn = ""
+  enable_api_gateway_permission = true
+  api_gateway_execution_arn = module.apigateway.api_execution_arn
 }
 
 module "lambda_project_manager" {
@@ -286,5 +323,6 @@ module "lambda_project_manager" {
   }
 
   eventbridge_rule_arns    = []
-  api_gateway_execution_arn = ""
+  enable_api_gateway_permission = true
+  api_gateway_execution_arn = module.apigateway.api_execution_arn
 }

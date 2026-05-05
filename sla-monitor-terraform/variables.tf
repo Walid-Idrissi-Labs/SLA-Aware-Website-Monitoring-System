@@ -19,3 +19,9 @@ variable "project_slug" {
     error_message = "project_slug must be lowercase alphanumeric with hyphens, e.g. sla-monitor."
   }
 }
+
+
+variable "ses_sender_email" {
+  type = string
+  description = "User-verified SES sender email"
+}
