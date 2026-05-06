@@ -99,7 +99,7 @@ resource "aws_dynamodb_table" "checks" {
 
   tags = {
     Name        = "${var.name_prefix}-checks-table"
-    Description = "Raw HTTP check results | TTL: 90 days."
+    Description = "Raw HTTP check results - TTL: 90 days."
   }
 }
 
