@@ -136,7 +136,7 @@ resource "aws_apigatewayv2_route" "post_projects" {
   authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
 }
 
-# GET /projects/{project_id} — fetch single project details
+
 resource "aws_apigatewayv2_route" "get_projects_id" {
   api_id = aws_apigatewayv2_api.main.id
 
@@ -149,7 +149,7 @@ resource "aws_apigatewayv2_route" "get_projects_id" {
 }
 
 
-# PUT /projects/{project_id} — update a project's configuration
+
 resource "aws_apigatewayv2_route" "put_projects_id" {
   api_id = aws_apigatewayv2_api.main.id
 

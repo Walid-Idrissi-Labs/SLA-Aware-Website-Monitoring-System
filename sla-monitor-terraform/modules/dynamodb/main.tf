@@ -13,7 +13,7 @@ resource "aws_dynamodb_table" "users" {
     enabled = true
   }
 
-  deletion_protection_enabled = true
+  deletion_protection_enabled = false
 
   tags = {
     Name        = "${var.name_prefix}-users-table"
@@ -56,7 +56,7 @@ resource "aws_dynamodb_table" "projects" {
     enabled = true
   }
 
-  deletion_protection_enabled = true
+  deletion_protection_enabled = false
 
   tags = {
     Name        = "${var.name_prefix}-projects-table"
@@ -95,7 +95,7 @@ resource "aws_dynamodb_table" "checks" {
   }
 
   
-  deletion_protection_enabled = true
+  deletion_protection_enabled = false
 
   tags = {
     Name        = "${var.name_prefix}-checks-table"
@@ -128,7 +128,7 @@ resource "aws_dynamodb_table" "incidents" {
     enabled = true
   }
 
-  deletion_protection_enabled = true
+  deletion_protection_enabled = false
 
   tags = {
     Name        = "${var.name_prefix}-incidents-table"
@@ -158,7 +158,7 @@ resource "aws_dynamodb_table" "reports" {
     enabled = true
   }
 
-  deletion_protection_enabled = true
+  deletion_protection_enabled = false
 
   tags = {
     Name        = "${var.name_prefix}-reports-table"
