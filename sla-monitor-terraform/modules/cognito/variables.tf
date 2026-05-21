@@ -10,14 +10,14 @@ variable "name_prefix" {
 variable "callback_urls" {
   description = "Allowed OAuth callback URLs (Vercel frontend domain + /callback). Update after Vercel deployment."
   type        = list(string)
-  default     = ["https://your-vercel-domain.vercel.app/callback"]
+  default     = ["https://sla-aware-website-monitoring-system.vercel.app/callback"]
 }
 
 #TODO
 variable "logout_urls" {
   description = "Allowed OAuth logout URLs (Vercel frontend domain + /login). Update after Vercel deployment."
   type        = list(string)
-  default     = ["https://your-vercel-domain.vercel.app/login"]
+  default     = ["https://sla-aware-website-monitoring-system.vercel.app/login"]
 }
 
 variable "allowed_oauth_scopes" {
