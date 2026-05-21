@@ -213,8 +213,8 @@ def handle_delete_projects_id(event: dict) -> dict:
 
 
 def lambda_handler(event: dict, context) -> dict:
-    method = event.get("httpMethod", "")
-    path = event.get("path", "")
+    method = event["requestContext"]["http"]["method"]
+    path = event["requestContext"]["http"]["path"]
     path_params = event.get("pathParameters") or {}
 
     try:

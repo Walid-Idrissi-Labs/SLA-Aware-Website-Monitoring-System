@@ -6,17 +6,24 @@ import boto3
 from botocore.exceptions import ClientError
 
 
+_dynamodb = None
+_users_table = None
+_projects_table = None
+_checks_table = None
+_reports_table = None
+_project_gsi_name = None
 
 
-dynamodb = boto3.resource("dynamodb")
-users_table = dynamodb.Table(os.environ["USERS_TABLE_NAME"])
-projects_table = dynamodb.Table(os.environ["PROJECTS_TABLE_NAME"])
-checks_table = dynamodb.Table(os.environ["CHECKS_TABLE_NAME"])
-reports_table = dynamodb.Table(os.environ["REPORTS_TABLE_NAME"])
-
-
-PROJECT_GSI_NAME = os.environ["PROJECT_GSI_NAME"]
-
+def _get_tables():
+    global _dynamodb, _users_table, _projects_table, _checks_table, _reports_table, _project_gsi_name
+    if _dynamodb is None:
+        _dynamodb = boto3.resource("dynamodb")
+        _users_table = _dynamodb.Table(os.environ["USERS_TABLE_NAME"])
+        _projects_table = _dynamodb.Table(os.environ["PROJECTS_TABLE_NAME"])
+        _checks_table = _dynamodb.Table(os.environ["CHECKS_TABLE_NAME"])
+        _reports_table = _dynamodb.Table(os.environ["REPORTS_TABLE_NAME"])
+        _project_gsi_name = os.environ["PROJECT_GSI_NAME"]
+    return _users_table, _projects_table, _checks_table, _reports_table, _project_gsi_name
 
 
 CORS_HEADERS = {
@@ -48,10 +55,13 @@ def get_user_id(event: dict) -> str:
     return claims["sub"]
 
 
+def handle_get_health() -> dict:
+    return success(200, {"status": "ok"})
 
 
 
 def get_project_or_403(project_id: str, user_id: str) -> dict | None:
+    _, projects_table, _, _, _ = _get_tables()
     response = projects_table.get_item(Key={"project_id": project_id})
     project = response.get("Item")
     if not project or project.get("user_id") != user_id:
@@ -63,6 +73,7 @@ def get_project_or_403(project_id: str, user_id: str) -> dict | None:
 
 def handle_get_me(event: dict) -> dict:
     user_id = get_user_id(event)
+    users_table, _, _, _, _ = _get_tables()
 
     result = users_table.get_item(Key={"user_id": user_id})
     user = result.get("Item")
@@ -75,6 +86,7 @@ def handle_get_me(event: dict) -> dict:
 
 def handle_get_projects(event: dict) -> dict:
     user_id = get_user_id(event)
+    _, projects_table, checks_table, _, PROJECT_GSI_NAME = _get_tables()
 
 
     response = projects_table.query(
@@ -121,6 +133,7 @@ def handle_get_projects(event: dict) -> dict:
 def handle_get_projects_status(event: dict) -> dict:
     user_id = get_user_id(event)
     project_id = event["pathParameters"]["project_id"]
+    _, _, checks_table, _, _ = _get_tables()
 
     project = get_project_or_403(project_id, user_id)
     if not project:
@@ -159,6 +172,7 @@ def handle_get_projects_status(event: dict) -> dict:
 def handle_get_project(event: dict) -> dict:
     user_id = get_user_id(event)
     project_id = event["pathParameters"]["project_id"]
+    _, projects_table, _, _, _ = _get_tables()
 
     project = get_project_or_403(project_id, user_id)
     if not project:
@@ -170,6 +184,7 @@ def handle_get_project(event: dict) -> dict:
 def handle_get_projects_reports(event: dict) -> dict:
     user_id = get_user_id(event)
     project_id = event["pathParameters"]["project_id"]
+    _, _, _, reports_table, _ = _get_tables()
 
 
     project = get_project_or_403(project_id, user_id)
@@ -188,11 +203,18 @@ def handle_get_projects_reports(event: dict) -> dict:
 
 
 def lambda_handler(event: dict, context) -> dict:
-    method = event.get("httpMethod", "")
-    path = event.get("path", "")
-    path_params = event.get("pathParameters") or {}
-
     try:
+        #payload_format_version = "2.0" #(HTTP API)
+        method = event["requestContext"]["http"]["method"]
+        path = event["requestContext"]["http"]["path"]
+        #payload_format_version = "1.0" #(REST API)
+        # method = event.get("httpMethod", "")
+        # path = event.get("path", "")
+        path_params = event.get("pathParameters") or {}
+
+        if method == "GET" and path == "/health":  
+            return handle_get_health()
+        
         if method == "GET" and path == "/me":
             return handle_get_me(event)
 
