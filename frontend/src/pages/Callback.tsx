@@ -9,22 +9,54 @@ export default function Callback() {
 
   useEffect(() => {
     async function handleCallback() {
-      const hash = window.location.hash.slice(1)
-      const params = new URLSearchParams(hash)
-      const idToken = params.get('id_token')
+      // Code flow: Cognito returns ?code=... as a query param, not a hash
+      const params = new URLSearchParams(window.location.search)
+      const code = params.get('code')
 
-      if (!idToken) {
+      if (!code) {
         navigate('/login')
         return
       }
 
-      setToken(idToken)
+      const codeVerifier = sessionStorage.getItem('pkce_verifier')
+      if (!codeVerifier) {
+        console.error('Missing PKCE verifier')
+        navigate('/login')
+        return
+      }
+      sessionStorage.removeItem('pkce_verifier')
+
+      // Exchange the authorization code for tokens
+      const cognitoUrl = import.meta.env.VITE_COGNITO_HOSTED_UI_URL
+      const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID
+      const redirectUri = `${window.location.origin}/callback`
+
+      const tokenRes = await fetch(`${cognitoUrl}/oauth2/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          client_id: clientId,
+          code,
+          redirect_uri: redirectUri,
+          code_verifier: codeVerifier,
+        }),
+      })
+
+      if (!tokenRes.ok) {
+        console.error('Token exchange failed', await tokenRes.text())
+        navigate('/login')
+        return
+      }
+
+      const { id_token } = await tokenRes.json()
+      setToken(id_token)
 
       try {
         const user = await getMe()
         storeUser(user as unknown as User)
       } catch {
-        const decoded = decodeToken(idToken)
+        const decoded = decodeToken(id_token)
         if (decoded) {
           const minimalUser: User = {
             user_id: decoded.sub,
