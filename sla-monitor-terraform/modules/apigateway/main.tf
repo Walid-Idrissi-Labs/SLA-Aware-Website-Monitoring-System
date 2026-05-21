@@ -1,4 +1,3 @@
-
 #HTTP API
 resource "aws_apigatewayv2_api" "main" {
   name          = "${var.name_prefix}-api"
@@ -19,29 +18,33 @@ resource "aws_apigatewayv2_api" "main" {
 
 
 #MOCK integration
-resource "aws_apigatewayv2_integration" "get_health" {
-  api_id = aws_apigatewayv2_api.main.id
+#! MOCK not supported by HTTP API, it only accepts PROXY
+# resource "aws_apigatewayv2_integration" "get_health" {
+#   api_id = aws_apigatewayv2_api.main.id
 
-  integration_type = "MOCK"  # No Lambda invoked
-  # returns a fixed response
+#   integration_type = "MOCK"  # No Lambda invoked
+#   # returns a fixed response
 
-  request_templates = {
-    "application/json" = jsonencode({
-      statusCode     = 200
-      body           = "{\"status\":\"ok\"}"
-      isBase64Encoded = false
-    })
-  }
-}
+#   request_templates = {
+#     "application/json" = jsonencode({
+#       statusCode     = 200
+#       body           = "{\"status\":\"ok\"}"
+#       isBase64Encoded = false
+#     })
+#   }
+# }
 
 
 #PROXY integrations
 resource "aws_apigatewayv2_integration" "api_lambda" {
   api_id = aws_apigatewayv2_api.main.id
 
-  integration_type     = "AWS_PROXY" 
-  integration_uri       = var.api_lambda_qualified_arn  
-  integration_method    = "ANY"
+  integration_type     = "AWS_PROXY"
+  #! integration_uri for AWS_PROXY must be the Lambda's invoke_arn
+  # integration_uri       = var.api_lambda_qualified_arn
+  integration_uri       = var.api_lambda_invoke_arn
+
+  integration_method    = "POST"
   payload_format_version = "2.0"
 }
 
@@ -50,8 +53,10 @@ resource "aws_apigatewayv2_integration" "project_manager_lambda" {
   api_id = aws_apigatewayv2_api.main.id
 
   integration_type     = "AWS_PROXY"
-  integration_uri        = var.project_manager_lambda_qualified_arn
-  integration_method     = "ANY"
+  #! integration_uri for AWS_PROXY must be the Lambda's invoke_arn
+  # integration_uri      = var.project_manager_lambda_qualified_arn
+  integration_uri      = var.project_manager_lambda_invoke_arn
+  integration_method   = "POST"
   payload_format_version = "2.0"
 }
 
@@ -63,8 +68,10 @@ resource "aws_apigatewayv2_integration" "project_manager_lambda" {
 resource "aws_apigatewayv2_authorizer" "jwt" {
   api_id = aws_apigatewayv2_api.main.id
 
-  name           = "Cognito JWT Authorizer"
+  name           = "Cognito_JWT_Authorizer"
   authorizer_type = "JWT"  
+
+  identity_sources = ["$request.header.Authorization"] 
 
   #validate token against Cognito JWKS
   jwt_configuration {  #tells apigw where to find public keys to verify tokens signature
@@ -77,12 +84,13 @@ resource "aws_apigatewayv2_authorizer" "jwt" {
 
 
 #no auth
+#! no more MOCK integration
 resource "aws_apigatewayv2_route" "get_health" {
   api_id = aws_apigatewayv2_api.main.id
 
   route_key = "GET /health"
 
-  target = "integrations/${aws_apigatewayv2_integration.get_health.id}"
+  target = "integrations/${aws_apigatewayv2_integration.api_lambda.id}"
 
   # No authorization : public endpoint
   authorization_type = "NONE"
@@ -201,8 +209,9 @@ resource "aws_apigatewayv2_route" "get_projects_reports" {
 #base url
 resource "aws_apigatewayv2_stage" "default" {
   api_id = aws_apigatewayv2_api.main.id
-
   name = "$default" 
+  auto_deploy = true #! this allows for removal of the deployment resource
+
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_access_logs.arn
@@ -223,7 +232,8 @@ resource "aws_apigatewayv2_stage" "default" {
     })
   }
 
-  deployment_id = aws_apigatewayv2_deployment.main.id
+
+  # deployment_id = aws_apigatewayv2_deployment.main.id
 
 
   client_certificate_id = null 
@@ -235,28 +245,33 @@ resource "aws_apigatewayv2_stage" "default" {
 
 
 
-resource "aws_apigatewayv2_deployment" "main" {
-  api_id = aws_apigatewayv2_api.main.id
+# resource "aws_apigatewayv2_deployment" "main" {
+#   api_id = aws_apigatewayv2_api.main.id
 
-  triggers = {
-    route_config = sha256(jsonencode([
-      aws_apigatewayv2_route.get_health.route_key,
-      aws_apigatewayv2_route.get_me.route_key,
-      aws_apigatewayv2_route.put_me.route_key,
-      aws_apigatewayv2_route.get_projects.route_key,
-      aws_apigatewayv2_route.get_projects_id.route_key,
-      aws_apigatewayv2_route.post_projects.route_key,
-      aws_apigatewayv2_route.put_projects_id.route_key,
-      aws_apigatewayv2_route.delete_projects_id.route_key,
-      aws_apigatewayv2_route.get_projects_status.route_key,
-      aws_apigatewayv2_route.get_projects_reports.route_key,
-    ]))
-  }
 
-  lifecycle {
-    create_before_destroy = true
-  }
-}
+
+# #* since route_key is a static string, deployments wont automatically update
+# #! taint / replace the module.apigateway.aws_apigatewayv2_deployment.main resource to force a new deployment
+# #! i opted for auto-deploy instead 
+#   triggers = {
+#     route_config = sha256(jsonencode([
+#       aws_apigatewayv2_route.get_health.route_key,
+#       aws_apigatewayv2_route.get_me.route_key,
+#       aws_apigatewayv2_route.put_me.route_key,
+#       aws_apigatewayv2_route.get_projects.route_key,
+#       aws_apigatewayv2_route.get_projects_id.route_key,
+#       aws_apigatewayv2_route.post_projects.route_key,
+#       aws_apigatewayv2_route.put_projects_id.route_key,
+#       aws_apigatewayv2_route.delete_projects_id.route_key,
+#       aws_apigatewayv2_route.get_projects_status.route_key,
+#       aws_apigatewayv2_route.get_projects_reports.route_key,
+#     ]))
+#   }
+
+#   lifecycle {
+#     create_before_destroy = true
+#   }
+# }
 
 
 
