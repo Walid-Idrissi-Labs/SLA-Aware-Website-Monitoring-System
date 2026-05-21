@@ -75,14 +75,17 @@ resource "aws_cognito_user_pool_client" "app_client" {
     "ALLOW_REFRESH_TOKEN_AUTH",
   ]
 
+  allowed_oauth_flows_user_pool_client = true
 
   allowed_oauth_scopes = var.allowed_oauth_scopes
 
-  allowed_oauth_flows = ["implicit"]
+  # allowed_oauth_flows = ["implicit"] #! deprecated by AWS
+  allowed_oauth_flows = ["code"]
 
-  #TODO : once CloudFront is done
   callback_urls = var.callback_urls
   logout_urls   = var.logout_urls
+
+  supported_identity_providers = ["COGNITO"]
 
   access_token_validity  = 1   # hours
   id_token_validity      = 1   # hours
