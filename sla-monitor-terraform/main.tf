@@ -98,11 +98,9 @@ module "cognito" {
 
   name_prefix = local.name_prefix
 
-  #TODO After first Vercel deploy, replace with your actual Vercel domain:
-  # callback_urls = ["https://your-project.vercel.app/callback"]
-  # logout_urls   = ["https://your-project.vercel.app/login"]
-  callback_urls = ["https://your-vercel-domain.vercel.app/callback"]
-  logout_urls   = ["https://your-vercel-domain.vercel.app/login"]
+
+  callback_urls = ["https://sla-aware-website-monitoring-system.vercel.app/callback"]
+  logout_urls   = ["https://sla-aware-website-monitoring-system.vercel.app/login"]
 }
 
 
@@ -116,8 +114,10 @@ module "apigateway" {
   cognito_user_pool_id  = module.cognito.user_pool_id
   cognito_app_client_id = module.cognito.app_client_id
 
-  api_lambda_qualified_arn              = module.lambda_api.qualified_arn
-  project_manager_lambda_qualified_arn  = module.lambda_project_manager.qualified_arn
+
+  api_lambda_invoke_arn = module.lambda_api.invoke_arn
+
+  project_manager_lambda_invoke_arn = module.lambda_project_manager.invoke_arn
 }
 
 
@@ -125,11 +125,6 @@ resource "aws_cloudwatch_event_rule" "monitor" {
   name           = "${local.name_prefix}-monitor-rule-prod"
   description    = "Fires every minute to trigger the Monitor Lambda"
   schedule_expression = "rate(1 minute)"
-
-  tags = {
-    FunctionName = "monitor"
-    Schedule      = "rate(1 minute)"
-  }
 }
 
 
@@ -137,11 +132,6 @@ resource "aws_cloudwatch_event_rule" "sla_processor" {
   name           = "${local.name_prefix}-processor-rule-prod"
   description    = "Fires every hour at :00 UTC to trigger the SLA Processor Lambda"
   schedule_expression = "cron(0 * * * ? *)"
-
-  tags = {
-    FunctionName = "sla_processor"
-    Schedule      = "cron(0 * * * ? *)"
-  }
 }
 
 
@@ -149,11 +139,6 @@ resource "aws_cloudwatch_event_rule" "report_generator" {
   name           = "${local.name_prefix}-reporter-rule-prod"
   description    = "Fires every Monday at 08:00 UTC to trigger the Report Generator Lambda"
   schedule_expression = "cron(0 8 ? * MON *)"
-
-  tags = {
-    FunctionName = "report_generator"
-    Schedule      = "cron(0 8 ? * MON *)"
-  }
 }
 
 
