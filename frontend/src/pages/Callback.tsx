@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { setToken, decodeToken, storeUser, isAuthenticated } from '../lib/auth'
+import { setToken, decodeToken, storeUser } from '../lib/auth'
 import { getMe } from '../lib/api'
 import type { User } from '../types'
 
