@@ -74,5 +74,5 @@ export function getProjectStatus(projectId: string, hours = 24): Promise<Project
 }
 
 export function getProjectReports(projectId: string): Promise<ProjectReport[]> {
-  return request<ProjectReport[]>('GET', `/projects/${projectId}/reports');
+  return request<ProjectReport[]>('GET', `/projects/${projectId}/reports`);
 }
