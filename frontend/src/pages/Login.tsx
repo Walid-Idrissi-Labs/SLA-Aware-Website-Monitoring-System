@@ -5,13 +5,15 @@ import { isAuthenticated, buildLoginUrl } from '../lib/auth'
 export default function Login() {
   const navigate = useNavigate()
 
-  useEffect(() => {
-    if (isAuthenticated()) {
-      navigate('/dashboard', { replace: true })
-      return
-    }
-    window.location.href = buildLoginUrl()
-  }, [navigate])
+    useEffect(() => {
+      if (isAuthenticated()) {
+        navigate('/dashboard', { replace: true })
+        return
+      }
+      buildLoginUrl().then((url) => {
+        window.location.href = url
+      })
+    }, [navigate])
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center">
