@@ -83,3 +83,10 @@ variable "enable_api_gateway_permission" {
   default = false
   description = "Whether to create the API Gateway invoke permission for this lambda"
 }
+
+
+variable "layer_arns" {
+  description = "list of Lambda Layer ARNs to attach to the function"
+  type       = list(string)
+  default    = []
+}

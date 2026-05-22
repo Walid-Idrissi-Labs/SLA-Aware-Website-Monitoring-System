@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import decimal
 
 import boto3
 from botocore.exceptions import ClientError
@@ -12,6 +13,17 @@ _projects_table = None
 _checks_table = None
 _reports_table = None
 _project_gsi_name = None
+
+
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, decimal.Decimal):
+            # Preserve integers as int, floats as float
+            if obj % 1 == 0:
+                return int(obj)
+            return float(obj)
+        return super().default(obj)
+
 
 
 def _get_tables():
@@ -36,7 +48,7 @@ def success(status_code: int, body: dict | list):
     return {
         "statusCode": status_code,
         "headers": CORS_HEADERS,
-        "body": json.dumps(body),
+        "body": json.dumps(body, cls=DecimalEncoder),
     }
 
 
@@ -44,7 +56,7 @@ def error_response(status_code: int, message: str):
     return {
         "statusCode": status_code,
         "headers": CORS_HEADERS,
-        "body": json.dumps({"error": message}),
+        "body": json.dumps({"error": message}, cls=DecimalEncoder),
     }
 
 

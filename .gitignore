@@ -40,6 +40,8 @@ Thumbs.db
 
 .venv/
 
+tmp/
+sla-monitor-terraform/lambda_src/*/*.zip
 __pycache__/
 *.pyc
 

@@ -2,10 +2,12 @@ import json
 import os
 import time
 import logging
+import decimal
 from datetime import datetime, timezone
 
 import boto3
 import requests
+from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
 
 
@@ -24,6 +26,15 @@ SES_SENDER_PARAM_PATH = os.environ["SES_SENDER_PARAM_PATH"]
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, decimal.Decimal):
+            # Preserve integers as int, floats as float
+            if obj % 1 == 0:
+                return int(obj)
+            return float(obj)
+        return super().default(obj)
 
 
 
@@ -98,35 +109,20 @@ def build_up_email(project: dict) -> tuple[str, str]:
 
 
 def perform_http_check(url: str) -> dict:
-    timeout_seconds = HTTP_TIMEOUT_SECONDS
     start_time = time.time()
-
     try:
-        response = requests.get(url, timeout=timeout_seconds, follow_redirects=True)
+        response   = requests.get(url, timeout=HTTP_TIMEOUT_SECONDS, allow_redirects=True)
         latency_ms = int((time.time() - start_time) * 1000)
         http_status = response.status_code
-        status = "success" if http_status == 200 else "failure"
-
-    except requests.exceptions.Timeout:
-        latency_ms = timeout_seconds * 1000
+        status      = "success" if http_status == 200 else "failure"
+    except (requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.RequestException):
+        latency_ms  = HTTP_TIMEOUT_SECONDS * 1000
         http_status = 0
-        status = "failure"
+        status      = "failure"
 
-    except requests.exceptions.ConnectionError:
-        latency_ms = timeout_seconds * 1000
-        http_status = 0
-        status = "failure"
-
-    except requests.exceptions.RequestException:
-        latency_ms = timeout_seconds * 1000
-        http_status = 0
-        status = "failure"
-
-    return {
-        "status": status,
-        "latency_ms": latency_ms,
-        "http_status_code": http_status,
-    }
+    return {"status": status, "latency_ms": latency_ms, "http_status_code": http_status}
 
 
 
@@ -134,8 +130,7 @@ def perform_http_check(url: str) -> dict:
 def detect_transition(project_id: str, current_status: str, failure_threshold: int) -> str | None:
     # Query last N+1 checks
     response = checks_table.query(
-        KeyConditionExpression="project_id = :pid",
-        ExpressionAttributeValues={":pid": project_id},
+        KeyConditionExpression = Key("project_id").eq(project_id),
         ScanIndexForward=False,  # newest first
         Limit=failure_threshold + 1,
     )
@@ -174,8 +169,7 @@ def detect_transition(project_id: str, current_status: str, failure_threshold: i
 
 def get_first_failure_timestamp(project_id: str, failure_threshold: int) -> int:
     response = checks_table.query(
-        KeyConditionExpression="project_id = :pid",
-        ExpressionAttributeValues={":pid": project_id},
+        KeyConditionExpression = Key("project_id").eq(project_id),
         ScanIndexForward=False,  # newest first
         Limit=failure_threshold,
     )
@@ -202,20 +196,19 @@ def lambda_handler(event: dict, context) -> dict:
 
 
     response = projects_table.scan(
-        FilterExpression="active = :active",
-        ExpressionAttributeValues={":active": True},
+        FilterExpression=Attr("active").eq(True)
     )
     projects = response.get("Items", [])
 
     if not projects:
         logger.info("No active projects — exiting")
-        return {"statusCode": 200, "body": json.dumps({"message": "No active projects"})}
+        return {"statusCode": 200, "body": json.dumps({"message": "No active projects"} , cls=DecimalEncoder)}
 
     logger.info(f"Processing {len(projects)} active project(s)")
 
     for project in projects:
         project_id = project["project_id"]
-        failure_threshold = project.get("failure_threshold", FAILURE_THRESHOLD_DEFAULT)
+        failure_threshold = int(project.get("failure_threshold", FAILURE_THRESHOLD_DEFAULT))
         notification_email = project["notification_email"]
 
 
@@ -264,4 +257,4 @@ def lambda_handler(event: dict, context) -> dict:
 
 
     logger.info("Monitor Lambda completed successfully")
-    return {"statusCode": 200, "body": json.dumps({"message": "OK"})}
+    return {"statusCode": 200, "body": json.dumps({"message": "OK"}, cls=DecimalEncoder)}

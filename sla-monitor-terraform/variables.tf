@@ -26,3 +26,9 @@ variable "ses_sender_email" {
   description = "User-verified SES sender email"
   default = ""
 }
+
+
+variable "requests_layer_arn" {
+  type = string
+  description = "ARN of the Lambda Layer containing the 'requests' library"
+}

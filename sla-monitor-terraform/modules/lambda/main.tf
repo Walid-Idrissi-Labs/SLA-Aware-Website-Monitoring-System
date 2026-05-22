@@ -16,8 +16,10 @@ resource "aws_s3_object" "lambda_zip" {
   key    = "lambda/${var.function_name}/${data.archive_file.lambda_zip.output_base64sha256}.zip"
   source = data.archive_file.lambda_zip.output_path
 
-
-  etag = filemd5(data.archive_file.lambda_zip.output_path)
+  #! evaluated at plan time, causing the hash to be compared before it exists on disk
+  # etag = filemd5(data.archive_file.lambda_zip.output_path)
+  #* uses hash already generated
+  etag = data.archive_file.lambda_zip.output_md5
 
   tags = {
     FunctionName = var.function_name
@@ -56,6 +58,7 @@ resource "aws_lambda_function" "this" {
   # function that Lambda calls when invoked
   handler = var.handler
 
+  layers = var.layer_arns
 
   s3_bucket = var.artifacts_bucket_name
   s3_key    = aws_s3_object.lambda_zip.key
@@ -80,10 +83,6 @@ resource "aws_lambda_function" "this" {
   tracing_config {
     mode = "PassThrough"
   }
-
-
-
-
 
 
 

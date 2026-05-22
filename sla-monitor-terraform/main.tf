@@ -210,6 +210,7 @@ module "lambda_monitor" {
   eventbridge_rule_arns    = [aws_cloudwatch_event_rule.monitor.arn]
   enable_api_gateway_permission = false
   api_gateway_execution_arn = ""
+  layer_arns = [var.requests_layer_arn]
 }
 
 module "lambda_sla_processor" {

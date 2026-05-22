@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+import decimal
 from datetime import datetime, timezone
 
 import boto3
@@ -14,6 +15,15 @@ users_table =    dynamodb.Table(os.environ["USERS_TABLE_NAME"])
 projects_table = dynamodb.Table(os.environ["PROJECTS_TABLE_NAME"])
 
 
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, decimal.Decimal):
+            # Preserve integers as int, floats as float
+            if obj % 1 == 0:
+                return int(obj)
+            return float(obj)
+        return super().default(obj)
+
 
 
 CORS_HEADERS = {
@@ -26,7 +36,7 @@ def success(status_code: int, body: dict):
     return {
         "statusCode": status_code,
         "headers": CORS_HEADERS,
-        "body": json.dumps(body),
+        "body": json.dumps(body, cls=DecimalEncoder),
     }
 
 
@@ -34,7 +44,7 @@ def error_response(status_code: int, message: str):
     return {
         "statusCode": status_code,
         "headers": CORS_HEADERS,
-        "body": json.dumps({"error": message}),
+        "body": json.dumps({"error": message}, cls=DecimalEncoder),
     }
 
 
