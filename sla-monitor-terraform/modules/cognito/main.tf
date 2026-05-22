@@ -4,6 +4,9 @@ resource "aws_cognito_user_pool" "main" {
   # email-based sign-in
   username_attributes = ["email"]
 
+  #*tells cognito to auto send email (and to treat the email as verified)
+  auto_verified_attributes = ["email"]
+
   password_policy {
     minimum_length    = 8
     require_lowercase = false 
@@ -17,10 +20,14 @@ resource "aws_cognito_user_pool" "main" {
     allow_admin_create_user_only = false
   }
 
-  email_verification_subject = "Verify your email for SLA Monitor"
+
+  email_verification_subject = "SLA Monitor : Verify Your Email Address"
   email_verification_message = <<-EOF
-    Welcome to SLA Monitor! Click the link below to verify your email address:
-    {####}
+    Welcome to SLA Monitor!
+    
+    Your verification code is: {####}
+    
+    Enter this code on the verification page to complete your registration.
   EOF
 
 
@@ -49,6 +56,11 @@ resource "aws_cognito_user_pool" "main" {
   tags = {
     Name        = "${var.name_prefix}-user-pool"
   }
+
+  lifecycle{
+    ignore_changes = [schema]
+  }
+
 }
 
 
