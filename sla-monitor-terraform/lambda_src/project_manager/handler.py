@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-import decimal
+from decimal import Decimal
 from datetime import datetime, timezone
 
 import boto3
@@ -14,10 +14,20 @@ dynamodb = boto3.resource("dynamodb")
 users_table =    dynamodb.Table(os.environ["USERS_TABLE_NAME"])
 projects_table = dynamodb.Table(os.environ["PROJECTS_TABLE_NAME"])
 
+def floats_to_decimal(obj):
+    """Recursively convert floats to Decimal for DynamoDB compatibility."""
+    if isinstance(obj, float):
+        return Decimal(str(obj))  # str() avoids floating point precision issues
+    if isinstance(obj, dict):
+        return {k: floats_to_decimal(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [floats_to_decimal(i) for i in obj]
+    return obj
+
 
 class DecimalEncoder(json.JSONEncoder):
     def default(self, obj):
-        if isinstance(obj, decimal.Decimal):
+        if isinstance(obj, Decimal):
             # Preserve integers as int, floats as float
             if obj % 1 == 0:
                 return int(obj)
@@ -123,10 +133,10 @@ def handle_post_projects(event: dict) -> dict:
 
     failure_threshold = body.get("failure_threshold", 3)
     notification_email = body.get("notification_email", user_email)
-    thresholds = body.get(
+    thresholds = floats_to_decimal(body.get(
         "thresholds",
         {"min_uptime_pct": 99.9, "max_avg_latency_ms": 300},
-    )
+    ))
     now = datetime.now(timezone.utc).isoformat()
 
     project = {
@@ -156,6 +166,7 @@ def handle_put_projects_id(event: dict) -> dict:
         return error_response(403, "Forbidden")
 
     body = json.loads(event.get("body") or "{}")
+    body = floats_to_decimal(body)
 
     if not body:
         return error_response(400, "No fields provided")
