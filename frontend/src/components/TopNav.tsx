@@ -20,10 +20,14 @@ export default function TopNav() {
       <div className="flex justify-between items-center w-full px-margin-page h-14 max-w-container-max mx-auto">
         <div className="flex items-center gap-10">
           <Link to="/dashboard" className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-theme-orange rounded-sm flex items-center justify-center glow-orange">
-              <span className="material-symbols-outlined text-surface-container-lowest text-[16px] font-bold">monitoring</span>
-            </div>
-            <span className="font-headline-md text-[20px] font-bold tracking-tight text-on-surface">SLA<span className="text-theme-orange ml-1 text-glow-orange">MONITOR</span></span>
+            <img
+              src="/logo.png"
+              alt="SLA Aware Website Monitoring System"
+              className="w-6 h-6 rounded-sm"
+            />
+            <span className="font-headline-md text-[20px] font-bold tracking-tight text-on-surface">
+              SLA Aware Website Monitoring System
+            </span>
           </Link>
           <nav className="hidden md:flex gap-8 items-center h-14">
             <Link
