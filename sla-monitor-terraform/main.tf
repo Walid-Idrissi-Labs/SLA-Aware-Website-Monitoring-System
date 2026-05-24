@@ -101,6 +101,9 @@ module "cognito" {
 
   callback_urls = ["https://sla-aware-website-monitoring-system.vercel.app/callback"]
   logout_urls   = ["https://sla-aware-website-monitoring-system.vercel.app/login"]
+
+  google_client_id = var.google_client_id
+  google_client_secret = var.google_client_secret
 }
 
 

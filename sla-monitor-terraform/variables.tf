@@ -32,3 +32,14 @@ variable "requests_layer_arn" {
   type = string
   description = "ARN of the Lambda Layer containing the 'requests' library"
 }
+
+
+variable "google_client_id" {
+  description = "Google OAuth Client ID"
+  type        = string
+}
+
+variable "google_client_secret" {
+  description = "Google OAuth Client Secret"
+  type        = string
+}

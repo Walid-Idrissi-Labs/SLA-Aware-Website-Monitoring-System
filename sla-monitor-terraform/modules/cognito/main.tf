@@ -73,6 +73,34 @@ resource "aws_cognito_user_pool_domain" "main" {
 }
 
 
+resource "aws_cognito_identity_provider" "google" {
+  user_pool_id = aws_cognito_user_pool.main.id
+  provider_name ="Google"
+  provider_type = "Google"
+
+  provider_details = {
+    client_id                       = var.google_client_id
+    client_secret                   = var.google_client_secret
+    authorize_scopes                = "openid email profile"
+    attributes_url                  = "https://people.googleapis.com/v1/people/me?personFields="
+    attributes_url_add_attributes   = "true"
+    authorize_url                   = "https://accounts.google.com/o/oauth2/v2/auth"
+    oidc_issuer                     = "https://accounts.google.com"
+    token_request_method              = "POST"
+    token_url                       = "https://oauth2.googleapis.com/token"
+    
+  }
+
+
+  attribute_mapping = {
+    email = "email"
+    name = "name"
+    username = "sub"
+  }
+
+}
+
+
 
 resource "aws_cognito_user_pool_client" "app_client" {
   name         = "${var.name_prefix}-app-client"
@@ -97,7 +125,7 @@ resource "aws_cognito_user_pool_client" "app_client" {
   callback_urls = var.callback_urls
   logout_urls   = var.logout_urls
 
-  supported_identity_providers = ["COGNITO"]
+  supported_identity_providers = ["COGNITO" , "Google"]
 
   access_token_validity  = 1   # hours
   id_token_validity      = 1   # hours
@@ -105,6 +133,8 @@ resource "aws_cognito_user_pool_client" "app_client" {
 
   #token recoked on logour
   enable_token_revocation = true
+
+  depends_on = [aws_cognito_identity_provider.google]
 }
 
 
@@ -112,4 +142,5 @@ resource "aws_cognito_user_pool_ui_customization" "this" {
   user_pool_id = aws_cognito_user_pool.main.id
   client_id    = aws_cognito_user_pool_client.app_client.id
   css          = file("${path.module}/hosted-ui.css")
+  image_file   = filebase64("${path.module}/logo.png")
 }

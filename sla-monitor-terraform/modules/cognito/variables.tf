@@ -25,3 +25,14 @@ variable "allowed_oauth_scopes" {
   type        = list(string)
   default     = ["openid", "email", "profile"]
 }
+
+
+variable "google_client_id" {
+  description = "Google OAuth Client ID"
+  type        = string
+}
+
+variable "google_client_secret" {
+  description = "Google OAuth Client Secret"
+  type        = string
+}
