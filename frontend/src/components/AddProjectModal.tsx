@@ -53,48 +53,61 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-surface-container-low border border-outline-variant w-full max-w-lg rounded shadow-2xl">
-        <div className="px-6 py-4 border-b border-outline-variant flex justify-between items-center">
-          <h2 className="font-headline-md text-lg text-on-surface uppercase tracking-tight">Add Project</h2>
-          <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface transition-colors">
-            <span className="material-symbols-outlined">close</span>
+      <div className="bg-[#0d0d10] border border-[#1a1a1e] w-full max-w-lg shadow-2xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-[#1a1a1e] bg-[#08080a] flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 bg-[#fa5c29]" />
+            <span className="text-[10px] font-bold text-[#d4d4d8] uppercase tracking-widest">ADD_PROJECT</span>
+          </div>
+          <button onClick={onClose} className="text-[#3f3f46] hover:text-[#d4d4d8] transition-colors">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 space-y-3">
           {error && (
-            <div className="bg-error-container border border-error/30 text-error px-3 py-2 rounded font-mono text-sm">{error}</div>
+            <div className="bg-[rgba(239,68,68,0.06)] border border-[rgba(239,68,68,0.15)] text-[#f87171] px-3 py-2 text-[11px]">
+              {error}
+            </div>
           )}
 
           <div>
-            <label className="block text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-widest mb-1" htmlFor="projName">Project Name *</label>
+            <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1" htmlFor="projName">
+              Project_Name *
+            </label>
             <input
               id="projName"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full bg-surface-container border border-outline-variant text-on-surface px-3 py-2 rounded font-mono text-sm focus:border-theme-orange focus:outline-none"
+              className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
               placeholder="My Portfolio"
               required
             />
           </div>
 
           <div>
-            <label className="block text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-widest mb-1" htmlFor="projUrl">URL *</label>
+            <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1" htmlFor="projUrl">
+              URL *
+            </label>
             <input
               id="projUrl"
               type="url"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              className="w-full bg-surface-container border border-outline-variant text-on-surface px-3 py-2 rounded font-mono text-sm focus:border-theme-orange focus:outline-none"
+              className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
               placeholder="https://mysite.com"
               required
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-widest mb-1" htmlFor="failureThresh">Failure Threshold</label>
+              <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1" htmlFor="failureThresh">
+                Failure_Threshold
+              </label>
               <input
                 id="failureThresh"
                 type="number"
@@ -102,27 +115,31 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
                 max={10}
                 value={failureThreshold}
                 onChange={(e) => setFailureThreshold(Number(e.target.value))}
-                className="w-full bg-surface-container border border-outline-variant text-on-surface px-3 py-2 rounded font-mono text-sm focus:border-theme-orange focus:outline-none"
+                className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
               />
-              <p className="text-[9px] text-on-surface-variant mt-1 font-mono">Consecutive failures before alert</p>
+              <p className="text-[9px] text-[#3f3f46] mt-1">Consecutive failures before alert</p>
             </div>
 
             <div>
-              <label className="block text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-widest mb-1" htmlFor="notifEmail">Notification Email</label>
+              <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1" htmlFor="notifEmail">
+                Notification_Email
+              </label>
               <input
                 id="notifEmail"
                 type="email"
                 value={notificationEmail}
                 onChange={(e) => setNotificationEmail(e.target.value)}
-                className="w-full bg-surface-container border border-outline-variant text-on-surface px-3 py-2 rounded font-mono text-sm focus:border-theme-orange focus:outline-none"
+                className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
                 placeholder="Optional"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-widest mb-1" htmlFor="minUptime">Min Uptime %</label>
+              <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1" htmlFor="minUptime">
+                Min_Uptime_%
+              </label>
               <input
                 id="minUptime"
                 type="number"
@@ -131,41 +148,39 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
                 step={0.01}
                 value={minUptime}
                 onChange={(e) => setMinUptime(Number(e.target.value))}
-                className="w-full bg-surface-container border border-outline-variant text-on-surface px-3 py-2 rounded font-mono text-sm focus:border-theme-orange focus:outline-none"
+                className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-widest mb-1" htmlFor="maxLatency">Max Avg Latency (ms)</label>
+              <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1" htmlFor="maxLatency">
+                Max_Latency_MS
+              </label>
               <input
                 id="maxLatency"
                 type="number"
                 min={50}
                 value={maxLatency}
                 onChange={(e) => setMaxLatency(Number(e.target.value))}
-                className="w-full bg-surface-container border border-outline-variant text-on-surface px-3 py-2 rounded font-mono text-sm focus:border-theme-orange focus:outline-none"
+                className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
               />
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t border-outline-variant">
+          <div className="flex justify-end gap-2 pt-3 border-t border-[#1a1a1e]">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-surface-container-high border border-outline-variant text-on-surface rounded font-mono text-sm hover:border-outline transition-colors"
+              className="px-3 py-1.5 bg-[#08080a] border border-[#1a1a1e] text-[#6b6b73] text-[11px] font-bold hover:border-[#52525b] hover:text-[#d4d4d8] transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="flex items-center gap-2 bg-theme-orange text-surface-container-lowest px-6 py-2 rounded font-bold text-sm hover:bg-theme-orange/90 active:scale-95 transition-all glow-orange disabled:opacity-50"
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-[#fa5c29] hover:bg-[#fa5c29]/90 text-white text-[11px] font-bold active:scale-[0.97] transition-all disabled:opacity-50"
             >
-              {loading ? (
-                <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-              ) : (
-                <span className="material-symbols-outlined text-sm">add</span>
-              )}
-              {loading ? 'Creating...' : 'Create Project'}
+              {loading && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+              {loading ? 'Creating...' : 'Create_Project'}
             </button>
           </div>
         </form>

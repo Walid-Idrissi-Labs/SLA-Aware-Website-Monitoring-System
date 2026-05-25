@@ -9,7 +9,6 @@ export default function Callback() {
 
   useEffect(() => {
     async function handleCallback() {
-      // Code flow: Cognito returns ?code=... as a query param, not a hash
       const params = new URLSearchParams(window.location.search)
       const code = params.get('code')
 
@@ -26,7 +25,6 @@ export default function Callback() {
       }
       sessionStorage.removeItem('pkce_verifier')
 
-      // Exchange the authorization code for tokens
       const cognitoUrl = import.meta.env.VITE_COGNITO_HOSTED_UI_URL
       const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID
       const redirectUri = `${window.location.origin}/callback`
@@ -76,12 +74,15 @@ export default function Callback() {
   }, [navigate])
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
+    <div className="min-h-screen bg-[#050505] flex items-center justify-center font-mono">
       <div className="text-center">
-        <div className="w-8 h-8 bg-theme-orange rounded-sm flex items-center justify-center mx-auto mb-4 glow-orange animate-pulse">
-          <span className="material-symbols-outlined text-surface-container-lowest text-sm font-bold">monitoring</span>
+        <div className="w-8 h-8 bg-[#fa5c29] flex items-center justify-center mx-auto mb-3 animate-pulse">
+          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
         </div>
-        <p className="font-mono text-sm text-on-surface-variant">Authenticating...</p>
+        <p className="text-[11px] text-[#6b6b73] uppercase tracking-widest">Exchanging token...</p>
+        <p className="text-[9px] text-[#3f3f46] mt-2">PKCE flow in progress</p>
       </div>
     </div>
   )

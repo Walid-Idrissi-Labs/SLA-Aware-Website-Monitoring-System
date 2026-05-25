@@ -44,81 +44,135 @@ export default function Settings() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col">
+      <div className="min-h-screen bg-[#050505] text-[#d4d4d8] flex text-[11px] font-mono">
         <TopNav />
-        <main className="flex-1 flex items-center justify-center">
-          <span className="material-symbols-outlined text-theme-orange animate-spin text-3xl">progress_activity</span>
-        </main>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-5 h-5 border-2 border-[#fa5c29] border-t-transparent animate-spin" />
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen bg-[#050505] text-[#d4d4d8] flex text-[11px] font-mono">
       <TopNav />
-      <main className="flex-1 max-w-2xl mx-auto px-margin-page py-8 w-full">
-        <div className="mb-8 border-b border-outline-variant/30 pb-6">
-          <h1 className="font-headline-lg text-[28px] tracking-tight text-on-surface uppercase">Settings</h1>
-          <p className="font-mono text-[11px] text-on-surface-variant uppercase tracking-wider mt-1">User profile & notification preferences</p>
-        </div>
 
-        {message && (
-          <div className={`mb-6 px-4 py-3 rounded font-mono text-sm ${message.type === 'success' ? 'bg-status-healthy/10 border border-status-healthy/30 text-status-healthy' : 'bg-error-container border border-error/30 text-error'}`}>
-            {message.text}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Ticker */}
+        <header className="h-9 bg-[#08080a] border-b border-[#1a1a1e] flex items-center px-3 shrink-0">
+          <div className="flex items-center gap-1.5 mr-4">
+            <span className="text-[9px] font-bold text-[#fa5c29] uppercase tracking-widest">SLA_AWARE</span>
+            <span className="text-[#27272a]">|</span>
+            <span className="text-[9px] text-[#6b6b73]">MONITOR_v2.4.1</span>
           </div>
-        )}
+          <div className="flex-1" />
+          <div className="flex items-center gap-2 text-[9px] text-[#6b6b73]">
+            <span>{new Date().toISOString().split('T')[0]}</span>
+            <span className="text-[#fa5c29] font-bold">{new Date().toLocaleTimeString('en-US', { hour12: false })} UTC</span>
+          </div>
+        </header>
 
-        <div className="bg-surface-container-low border border-outline-variant p-6">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label className="block text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-widest mb-2">User ID</label>
-              <p className="font-mono text-sm text-on-surface bg-surface-container px-3 py-2 rounded border border-outline-variant">{user?.user_id}</p>
+        <main className="flex-1 max-w-2xl mx-auto px-6 py-8 w-full">
+          <div className="mb-6 pb-4 border-b border-[#1a1a1e]">
+            <h1 className="text-[18px] font-bold tracking-tight">USER_SETTINGS</h1>
+            <p className="text-[11px] text-[#6b6b73] mt-1">Profile & notification preferences</p>
+          </div>
+
+          {message && (
+            <div
+              className={`mb-4 px-3 py-2 text-[11px] ${
+                message.type === 'success'
+                  ? 'bg-[rgba(74,222,128,0.06)] border border-[rgba(74,222,128,0.12)] text-[#4ade80]'
+                  : 'bg-[rgba(239,68,68,0.06)] border border-[rgba(239,68,68,0.12)] text-[#f87171]'
+              }`}
+            >
+              {message.text}
+            </div>
+          )}
+
+          <div className="border border-[#1a1a1e] bg-[#0d0d10]">
+            <div className="px-3 py-2 border-b border-[#1a1a1e] bg-[#08080a]/50">
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 bg-[#fa5c29]" />
+                <span className="text-[10px] font-bold text-[#d4d4d8] uppercase tracking-widest">PROFILE_DATA</span>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-widest mb-2">Email (Cognito)</label>
-              <p className="font-mono text-sm text-on-surface bg-surface-container px-3 py-2 rounded border border-outline-variant">{user?.email}</p>
-              <p className="text-[10px] text-on-surface-variant mt-1 font-mono">Email is managed by Cognito and cannot be changed here.</p>
-            </div>
+            <form onSubmit={handleSubmit} className="p-4 space-y-4">
+              <div>
+                <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1">User_ID</label>
+                <p className="text-[12px] text-[#d4d4d8] bg-[#08080a] px-3 py-2 border border-[#1a1a1e] font-mono">
+                  {user?.user_id}
+                </p>
+              </div>
 
-            <div>
-              <label className="block text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-widest mb-2" htmlFor="displayName">Display Name</label>
-              <input
-                id="displayName"
-                type="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full bg-surface-container border border-outline-variant text-on-surface px-3 py-2 rounded font-mono text-sm focus:border-theme-orange focus:outline-none transition-colors"
-                placeholder="Your display name"
-              />
-            </div>
+              <div>
+                <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1">Email (Cognito)</label>
+                <p className="text-[12px] text-[#d4d4d8] bg-[#08080a] px-3 py-2 border border-[#1a1a1e]">
+                  {user?.email}
+                </p>
+                <p className="text-[9px] text-[#3f3f46] mt-1">Managed by Cognito. Cannot be changed here.</p>
+              </div>
 
-            <div>
-              <label className="block text-[10px] font-mono font-bold text-on-surface-variant uppercase tracking-widest mb-2" htmlFor="notificationEmail">Notification Email</label>
-              <input
-                id="notificationEmail"
-                type="email"
-                value={notificationEmail}
-                onChange={(e) => setNotificationEmail(e.target.value)}
-                className="w-full bg-surface-container border border-outline-variant text-on-surface px-3 py-2 rounded font-mono text-sm focus:border-theme-orange focus:outline-none transition-colors"
-                placeholder="alerts@example.com"
-              />
-              <p className="text-[10px] text-on-surface-variant mt-1 font-mono">Where downtime alerts and weekly SLA reports are sent.</p>
-            </div>
+              <div>
+                <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1" htmlFor="displayName">
+                  Display_Name
+                </label>
+                <input
+                  id="displayName"
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
+                  placeholder="Your display name"
+                />
+              </div>
 
-            <div className="pt-4 border-t border-outline-variant">
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex items-center gap-2 bg-theme-orange text-surface-container-lowest px-6 py-2 rounded font-bold text-sm hover:bg-theme-orange/90 active:scale-95 transition-all glow-orange disabled:opacity-50"
-              >
-                {saving ? <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span> : <span className="material-symbols-outlined text-sm">save</span>}
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
-          </form>
+              <div>
+                <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1" htmlFor="notificationEmail">
+                  Notification_Email
+                </label>
+                <input
+                  id="notificationEmail"
+                  type="email"
+                  value={notificationEmail}
+                  onChange={(e) => setNotificationEmail(e.target.value)}
+                  className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
+                  placeholder="alerts@example.com"
+                />
+                <p className="text-[9px] text-[#3f3f46] mt-1">Downtime alerts and weekly SLA reports destination.</p>
+              </div>
+
+              <div className="pt-3 border-t border-[#1a1a1e]">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex items-center gap-1.5 px-4 py-1.5 bg-[#fa5c29] hover:bg-[#fa5c29]/90 text-white text-[11px] font-bold active:scale-[0.97] transition-all disabled:opacity-50"
+                >
+                  {saving && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                  {saving ? 'Saving...' : 'Save_Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </main>
+
+        {/* Status Bar */}
+        <div className="h-6 bg-[#08080a] border-t border-[#1a1a1e] flex items-center px-3 text-[9px] text-[#3f3f46] shrink-0">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1">
+              <span className="w-1 h-1 bg-[#4ade80]" />
+              CONN_OK
+            </span>
+          </div>
+          <div className="flex-1" />
+          <div className="flex items-center gap-3">
+            <span>MEM:42%</span>
+            <span>CPU:12%</span>
+            <span className="text-[#fa5c29] font-bold">● LIVE</span>
+          </div>
         </div>
-      </main>
+      </div>
     </div>
   )
 }

@@ -7,8 +7,8 @@ interface Props {
 export default function LatencyChart({ checks }: Props) {
   if (checks.length === 0) {
     return (
-      <div className="relative h-48 w-full bg-[#0d0e0f] border border-outline-variant overflow-hidden scanline flex items-center justify-center">
-        <p className="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest">No data available</p>
+      <div className="relative h-48 w-full bg-[#08080a] border-t border-[#1a1a1e] flex items-center justify-center">
+        <p className="font-mono text-[11px] text-[#3f3f46] uppercase tracking-widest">No data available</p>
       </div>
     )
   }
@@ -43,23 +43,19 @@ export default function LatencyChart({ checks }: Props) {
   const areaD = `${pathD} L${x(sortedChecks.length - 1)},${paddingTop + chartHeight} L${paddingLeft},${paddingTop + chartHeight} Z`
 
   return (
-    <div className="relative w-full overflow-hidden scanline" style={{ height }}>
+    <div className="relative w-full overflow-hidden" style={{ height }}>
       <div
-        className="absolute inset-0"
+        className="absolute inset-0 pointer-events-none"
         style={{
           backgroundImage:
-            'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)',
-          backgroundSize: '20px 20px',
+            'linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px)',
+          backgroundSize: '40px 40px',
         }}
       />
-      <svg
-        className="absolute inset-0 w-full h-full"
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-      >
+      <svg className="absolute inset-0 w-full h-full" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
         <defs>
           <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#fa5c29" stopOpacity="0.3" />
+            <stop offset="0%" stopColor="#fa5c29" stopOpacity="0.15" />
             <stop offset="100%" stopColor="#fa5c29" stopOpacity="0" />
           </linearGradient>
         </defs>
@@ -76,24 +72,22 @@ export default function LatencyChart({ checks }: Props) {
 
         {sortedChecks.map((check, i) => {
           if (check.status === 'failure') {
-            return (
-              <circle
-                key={i}
-                cx={x(i)}
-                cy={y(check.latency_ms)}
-                r="3"
-                fill="#f87171"
-                opacity="0.7"
-              />
-            )
+            return <circle key={i} cx={x(i)} cy={y(check.latency_ms)} r="2.5" fill="#f87171" opacity="0.9" />
           }
           return null
         })}
       </svg>
 
-      <div className="absolute bottom-2 left-4 right-4 flex justify-between text-[8px] font-mono text-outline uppercase">
-        <span>{sortedChecks.length > 0 ? new Date(sortedChecks[0].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
-        <span className="text-theme-orange">NOW</span>
+      <div className="absolute bottom-1 left-3 right-3 flex justify-between text-[8px] font-mono text-[#3f3f46] uppercase">
+        <span>
+          {sortedChecks.length > 0
+            ? new Date(sortedChecks[0].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : ''}
+        </span>
+        <span>06:00</span>
+        <span>12:00</span>
+        <span>18:00</span>
+        <span className="text-[#fa5c29]">NOW</span>
       </div>
     </div>
   )
