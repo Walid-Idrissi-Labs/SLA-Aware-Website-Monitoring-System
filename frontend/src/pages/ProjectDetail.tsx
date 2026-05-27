@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import TopNav from '../components/TopNav'
+import TickerClock from '../components/TickerClock'
 import LatencyChart from '../components/LatencyChart'
 import { getProject, getProjectStatus, getProjectReports, updateProject, deleteProject } from '../lib/api'
 import type { ProjectStatus, ProjectReport, Project, UpdateProjectInput } from '../types'
@@ -361,10 +362,7 @@ export default function ProjectDetail() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-[9px] text-[#6b6b73]">
-            <span>{new Date().toISOString().split('T')[0]}</span>
-            <span className="text-[#fa5c29] font-bold">{new Date().toLocaleTimeString('en-US', { hour12: false })} UTC</span>
-          </div>
+          <TickerClock />
         </header>
 
         <main className="flex-1 p-3 overflow-auto">

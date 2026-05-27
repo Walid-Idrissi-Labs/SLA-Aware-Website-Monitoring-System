@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import TopNav from '../components/TopNav'
+import TickerClock from '../components/TickerClock'
 import { getMe, putMe } from '../lib/api'
 import type { User } from '../types'
 
@@ -66,10 +67,7 @@ export default function Settings() {
             <span className="text-[9px] text-[#6b6b73]">MONITOR_v2.4.1</span>
           </div>
           <div className="flex-1" />
-          <div className="flex items-center gap-2 text-[9px] text-[#6b6b73]">
-            <span>{new Date().toISOString().split('T')[0]}</span>
-            <span className="text-[#fa5c29] font-bold">{new Date().toLocaleTimeString('en-US', { hour12: false })} UTC</span>
-          </div>
+          <TickerClock />
         </header>
 
         <main className="flex-1 max-w-2xl mx-auto px-6 py-8 w-full">

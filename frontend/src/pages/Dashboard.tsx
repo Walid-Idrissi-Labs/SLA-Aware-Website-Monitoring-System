@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import TopNav from '../components/TopNav'
+import TickerClock from '../components/TickerClock'
 import ProjectCard from '../components/ProjectCard'
 import AddProjectModal from '../components/AddProjectModal'
 import { getProjects, getProjectStatus } from '../lib/api'
@@ -109,12 +110,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-[9px] text-[#6b6b73]">
-            <span>{new Date().toISOString().split('T')[0]}</span>
-            <span className="text-[#fa5c29] font-bold">
-              {new Date().toLocaleTimeString('en-US', { hour12: false })} UTC
-            </span>
-          </div>
+          <TickerClock />
         </header>
 
         <main className="flex-1 p-3 overflow-auto">
