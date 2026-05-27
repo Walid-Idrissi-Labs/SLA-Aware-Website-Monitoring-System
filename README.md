@@ -129,13 +129,13 @@ The root [`main.tf`](sla-monitor-terraform/main.tf) wires modules together and d
 
 ## Screenshots
 
-####Dashboard
+#### Dashboard
 ![Dashboard](./assets/screenshot-dashboard.png)
 
-####Project Details
+#### Project Details
 ![Project](./assets/screenshot-project.png)
 
-####Cognito HostedUI
+#### Cognito HostedUI
 Supports normal Email+Password Login and Google OAuth 2.0
 ![Cognito Hosted UI](./assets/screenshot-cognito.png)
 
