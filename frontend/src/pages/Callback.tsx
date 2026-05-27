@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ChartNoAxesCombined } from 'lucide-react'
 import { setToken, decodeToken, storeUser } from '../lib/auth'
 import { getMe } from '../lib/api'
 import type { User } from '../types'
@@ -77,9 +78,7 @@ export default function Callback() {
     <div className="min-h-screen bg-[#050505] flex items-center justify-center font-mono">
       <div className="text-center">
         <div className="w-8 h-8 bg-[#fa5c29] flex items-center justify-center mx-auto mb-3 animate-pulse">
-          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
+          <ChartNoAxesCombined className="w-4 h-4 text-white" strokeWidth={2.5} />
         </div>
         <p className="text-[11px] text-[#6b6b73] uppercase tracking-widest">Exchanging token...</p>
         <p className="text-[9px] text-[#3f3f46] mt-2">PKCE flow in progress</p>

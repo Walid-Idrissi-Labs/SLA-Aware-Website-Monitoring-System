@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
+import { ChartNoAxesCombined } from 'lucide-react'
 import { logout, getStoredUser } from '../lib/auth'
 import type { User } from '../types'
 
@@ -21,9 +22,7 @@ export default function TopNav() {
       {/* Logo */}
       <div className="h-10 flex items-center justify-center border-b border-[#1a1a1e]">
         <div className="w-5 h-5 bg-[#fa5c29] flex items-center justify-center">
-          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
+          <ChartNoAxesCombined className="w-3 h-3 text-white" strokeWidth={2.5} />
         </div>
       </div>
 
