@@ -83,7 +83,7 @@ export default function Dashboard() {
         {/* Ticker Bar */}
         <header className="h-9 bg-[#08080a] border-b border-[#1a1a1e] flex items-center px-3 shrink-0">
           <div className="flex items-center gap-1.5 mr-4">
-            <span className="text-[9px] font-bold text-[#fa5c29] uppercase tracking-widest">SLA_AWARE</span>
+            <span className="text-[9px] font-bold text-[#fa5c29] uppercase tracking-widest">SLA_AWARE_WEBSITE_MONITORING_SYSTEM</span>
             <span className="text-[#27272a]">|</span>
             <span className="text-[9px] text-[#6b6b73]">MONITOR_v2.4.1</span>
           </div>
@@ -251,9 +251,7 @@ export default function Dashboard() {
           </div>
           <div className="flex-1" />
           <div className="flex items-center gap-3">
-            <span>MEM:42%</span>
-            <span>CPU:12%</span>
-            <span className="text-[#fa5c29] font-bold">● LIVE</span>
+            <span className="text-[#fa5c29] font-bold">● LIVE ON US-EAST-1</span>
           </div>
         </div>
       </div>
