@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import TopNav from '../components/TopNav'
 import ProjectCard from '../components/ProjectCard'
 import AddProjectModal from '../components/AddProjectModal'
@@ -11,8 +11,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
+  const loadingRef = useRef(false)
 
-  async function loadProjects() {
+  const loadProjects = useCallback(async () => {
+    if (loadingRef.current) return
+    loadingRef.current = true
     setLoading(true)
     setError(null)
     try {
@@ -33,12 +36,32 @@ export default function Dashboard() {
       setError(e instanceof Error ? e.message : 'Failed to load projects')
     } finally {
       setLoading(false)
+      loadingRef.current = false
     }
-  }
+  }, [])
 
   useEffect(() => {
     loadProjects()
-  }, [])
+  }, [loadProjects])
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      loadProjects()
+    }, 60000)
+
+    return () => window.clearInterval(intervalId)
+  }, [loadProjects])
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadProjects()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [loadProjects])
 
   const activeProjects = projects.filter((p) => p.active)
   const total = activeProjects.length
@@ -115,15 +138,31 @@ export default function Dashboard() {
                   </span>
                   <span className="text-[#27272a]">[{total}]</span>
                 </div>
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  className="flex items-center gap-1.5 px-2 py-1 bg-[#fa5c29] text-white text-[10px] font-bold uppercase tracking-wider hover:bg-[#fa5c29]/90 active:scale-[0.97] transition-all"
-                >
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
-                  NEW
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={loadProjects}
+                    disabled={loading}
+                    className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider border border-[#1a1a1e] text-[#6b6b73] hover:border-[rgba(250,92,41,0.2)] hover:text-[#fa5c29] transition-colors disabled:opacity-50"
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M4.5 12a7.5 7.5 0 0112.1-5.7M19.5 12a7.5 7.5 0 01-12.1 5.7M16.5 6.3V4.5H14.7M7.5 17.7V19.5H9.3"
+                      />
+                    </svg>
+                    {loading ? 'REFRESHING' : 'REFRESH'}
+                  </button>
+                  <button
+                    onClick={() => setShowAddModal(true)}
+                    className="flex items-center gap-1.5 px-2 py-1 bg-[#fa5c29] text-white text-[10px] font-bold uppercase tracking-wider hover:bg-[#fa5c29]/90 active:scale-[0.97] transition-all"
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                    NEW
+                  </button>
+                </div>
               </div>
 
               {loading && (

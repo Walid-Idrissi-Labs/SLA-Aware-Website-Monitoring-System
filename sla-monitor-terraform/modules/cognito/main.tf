@@ -142,5 +142,6 @@ resource "aws_cognito_user_pool_ui_customization" "this" {
   user_pool_id = aws_cognito_user_pool.main.id
   client_id    = aws_cognito_user_pool_client.app_client.id
   css          = file("${path.module}/hosted-ui.css")
-  image_file   = filebase64("${path.module}/logo.png")
+  # image_file   = filebase64("${path.module}/logo.png")
+  image_file   = filebase64("${path.module}/111212-200x200.png")
 }

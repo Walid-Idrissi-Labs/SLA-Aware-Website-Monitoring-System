@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import TopNav from '../components/TopNav'
 import LatencyChart from '../components/LatencyChart'
@@ -251,32 +251,55 @@ export default function ProjectDetail() {
   const [status, setStatus] = useState<ProjectStatus | null>(null)
   const [reports, setReports] = useState<ProjectReport[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [hours, setHours] = useState(24)
+  const loadingRef = useRef(false)
 
   const [showEdit, setShowEdit] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  async function loadData() {
-    if (!id) return
-    setLoading(true)
-    try {
-      const [projectData, statusData, reportsData] = await Promise.all([
-        getProject(id),
-        getProjectStatus(id, hours),
-        getProjectReports(id),
-      ])
-      setProject(projectData)
-      setStatus(statusData)
-      setReports(reportsData)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const loadData = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!id || loadingRef.current) return
+      loadingRef.current = true
+      if (options?.silent) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
+      try {
+        const [projectData, statusData, reportsData] = await Promise.all([
+          getProject(id),
+          getProjectStatus(id, hours),
+          getProjectReports(id),
+        ])
+        setProject(projectData)
+        setStatus(statusData)
+        setReports(reportsData)
+      } finally {
+        if (options?.silent) {
+          setRefreshing(false)
+        } else {
+          setLoading(false)
+        }
+        loadingRef.current = false
+      }
+    },
+    [hours, id]
+  )
 
   useEffect(() => {
     loadData()
-  }, [id, hours])
+  }, [loadData])
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      loadData({ silent: true })
+    }, 60000)
+
+    return () => window.clearInterval(intervalId)
+  }, [loadData])
 
   async function handleDelete() {
     if (!id) return
@@ -378,6 +401,20 @@ export default function ProjectDetail() {
 
               {project && (
                 <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => loadData({ silent: true })}
+                    disabled={loading || refreshing}
+                    className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold text-[#6b6b73] border border-[#1a1a1e] hover:border-[rgba(250,92,41,0.2)] hover:text-[#fa5c29] transition-colors disabled:opacity-50"
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M4.5 12a7.5 7.5 0 0112.1-5.7M19.5 12a7.5 7.5 0 01-12.1 5.7M16.5 6.3V4.5H14.7M7.5 17.7V19.5H9.3"
+                      />
+                    </svg>
+                    {refreshing ? 'REFRESHING' : 'REFRESH'}
+                  </button>
                   <button
                     onClick={() => setShowEdit(true)}
                     className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold text-[#6b6b73] border border-[#1a1a1e] hover:border-[rgba(250,92,41,0.2)] hover:text-[#fa5c29] transition-colors"
