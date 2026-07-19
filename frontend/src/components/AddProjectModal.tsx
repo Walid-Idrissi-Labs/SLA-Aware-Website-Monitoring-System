@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X, Plus, TriangleAlert, Globe } from 'lucide-react'
+import { X, Plus, TriangleAlert, Radar } from 'lucide-react'
 import { createProject } from '../lib/api'
 import type { Project, CreateProjectInput } from '../types'
 
@@ -62,7 +62,7 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
         <div className="panel-head">
           <div className="flex items-center gap-2.5">
             <span className="grid h-6 w-6 place-items-center rounded-md bg-accent/[0.12] text-accent">
-              <Globe className="h-3.5 w-3.5" strokeWidth={2.4} />
+              <Radar className="h-3.5 w-3.5" strokeWidth={1.75} />
             </span>
             <div className="leading-tight">
               <p className="kicker">New Endpoint</p>
@@ -70,14 +70,14 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
             </div>
           </div>
           <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-txt-lo transition-colors hover:bg-white/[0.05] hover:text-txt-hi">
-            <X className="h-4 w-4" strokeWidth={2.2} />
+            <X className="h-4 w-4" strokeWidth={1.75} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 p-5">
           {error && (
             <div className="flex items-center gap-2 rounded-md border border-crit/25 bg-crit/[0.06] px-3 py-2 text-[12px] text-crit">
-              <TriangleAlert className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} />
+              <TriangleAlert className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
               {error}
             </div>
           )}
@@ -122,7 +122,7 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
               {loading ? (
                 <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
               ) : (
-                <Plus className="h-3.5 w-3.5" strokeWidth={3} />
+                <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
               )}
               {loading ? 'Creating…' : 'Create Endpoint'}
             </button>

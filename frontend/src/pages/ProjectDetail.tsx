@@ -3,12 +3,14 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft,
   RefreshCw,
-  Pencil,
+  SquarePen,
   Trash2,
   X,
   TriangleAlert,
   ExternalLink,
   ChevronRight,
+  CircleCheck,
+  CircleAlert,
 } from 'lucide-react'
 import Shell from '../components/Shell'
 import TickerStat from '../components/TickerStat'
@@ -78,7 +80,7 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
         <div className="panel-head">
           <div className="flex items-center gap-2.5">
             <span className="grid h-6 w-6 place-items-center rounded-md bg-accent/[0.12] text-accent">
-              <Pencil className="h-3.5 w-3.5" strokeWidth={2.4} />
+              <SquarePen className="h-3.5 w-3.5" strokeWidth={1.75} />
             </span>
             <div className="leading-tight">
               <p className="kicker">Configure</p>
@@ -86,7 +88,7 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
             </div>
           </div>
           <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-txt-lo transition-colors hover:bg-white/[0.05] hover:text-txt-hi">
-            <X className="h-4 w-4" strokeWidth={2.2} />
+            <X className="h-4 w-4" strokeWidth={1.75} />
           </button>
         </div>
 
@@ -134,7 +136,7 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
 
           {error && (
             <div className="flex items-center gap-2 rounded-md border border-crit/25 bg-crit/[0.06] px-3 py-2 text-[12px] text-crit">
-              <TriangleAlert className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} />
+              <TriangleAlert className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
               {error}
             </div>
           )}
@@ -168,7 +170,7 @@ function DeleteModal({ projectName, onClose, onConfirm, deleting }: DeleteModalP
     >
       <div className="panel w-full max-w-sm animate-scale-in overflow-hidden border-crit/25">
         <div className="flex items-center gap-2.5 border-b border-crit/20 bg-crit/[0.05] px-5 h-11">
-          <TriangleAlert className="h-4 w-4 text-crit" strokeWidth={2.2} />
+          <TriangleAlert className="h-4 w-4 text-crit" strokeWidth={1.75} />
           <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-crit">Confirm Delete</span>
         </div>
         <div className="space-y-2 p-5">
@@ -287,10 +289,10 @@ export default function ProjectDetail() {
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 font-mono text-[11px] text-txt-lo animate-fade-up">
         <Link to="/dashboard" className="flex items-center gap-1.5 transition-colors hover:text-accent">
-          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2.2} />
+          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.75} />
           Overview
         </Link>
-        <ChevronRight className="h-3 w-3 text-txt-dim" strokeWidth={2.2} />
+        <ChevronRight className="h-3 w-3 text-txt-dim" strokeWidth={1.75} />
         <span className="truncate text-txt-mid">{project?.name || '…'}</span>
       </nav>
 
@@ -305,7 +307,11 @@ export default function ProjectDetail() {
                   isUp ? 'border-ok/25 bg-ok/[0.08] text-ok' : 'border-crit/25 bg-crit/[0.08] text-crit'
                 }`}
               >
-                <span className={`led ${isUp ? 'led-ok' : 'led-crit animate-breathe'}`} />
+                {isUp ? (
+                  <CircleCheck className="h-3.5 w-3.5" strokeWidth={1.75} />
+                ) : (
+                  <CircleAlert className="h-3.5 w-3.5" strokeWidth={1.75} />
+                )}
                 {isUp ? 'Operational' : 'Down'}
               </span>
             )}
@@ -318,7 +324,7 @@ export default function ProjectDetail() {
               className="mt-2 inline-flex items-center gap-1.5 font-mono text-[12px] text-txt-lo transition-colors hover:text-accent"
             >
               {bareUrl(project.url)}
-              <ExternalLink className="h-3 w-3" strokeWidth={2} />
+              <ExternalLink className="h-3 w-3" strokeWidth={1.75} />
             </a>
           )}
         </div>
@@ -326,15 +332,15 @@ export default function ProjectDetail() {
         {project && (
           <div className="flex items-center gap-2">
             <button onClick={() => loadData({ silent: true })} disabled={loading || refreshing} className="btn-ghost">
-              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin-slow' : ''}`} strokeWidth={2.2} />
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin-slow' : ''}`} strokeWidth={1.75} />
               {refreshing ? 'Syncing' : 'Refresh'}
             </button>
             <button onClick={() => setShowEdit(true)} className="btn-ghost">
-              <Pencil className="h-3.5 w-3.5" strokeWidth={2.2} />
+              <SquarePen className="h-3.5 w-3.5" strokeWidth={1.75} />
               Edit
             </button>
             <button onClick={() => setShowDelete(true)} className="btn-danger">
-              <Trash2 className="h-3.5 w-3.5" strokeWidth={2.2} />
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
               Delete
             </button>
           </div>
@@ -347,7 +353,7 @@ export default function ProjectDetail() {
         <div className="panel-flush lg:col-span-2 animate-fade-up" style={{ animationDelay: '120ms' }}>
           <div className="panel-head">
             <div className="flex items-center gap-2.5">
-              <span className="led led-accent" />
+              <span className="mark" />
               <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Latency Analytics</span>
             </div>
             <div className="flex gap-1">
@@ -380,7 +386,7 @@ export default function ProjectDetail() {
         {/* Vitals */}
         <div className="panel animate-fade-up p-5" style={{ animationDelay: '180ms' }}>
           <div className="flex items-center gap-2.5">
-            <span className="led led-accent" />
+            <span className="mark" />
             <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Vitals</span>
           </div>
 
@@ -409,7 +415,7 @@ export default function ProjectDetail() {
       <div className="panel-flush mt-3 animate-fade-up" style={{ animationDelay: '240ms' }}>
         <div className="panel-head">
           <div className="flex items-center gap-2.5">
-            <span className="led led-accent" />
+            <span className="mark" />
             <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Weekly SLA Reports</span>
             <span className="font-mono text-[11px] text-txt-dim">[{reports.length}]</span>
           </div>
@@ -454,7 +460,7 @@ export default function ProjectDetail() {
                           className="inline-flex items-center gap-1.5 rounded border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider"
                           style={{ color: sev.color, borderColor: `${sev.color}40`, background: sev.dim }}
                         >
-                          <span className="h-1.5 w-1.5 rounded-full" style={{ background: sev.color }} />
+                          <span className="w-[3px] rounded-full" style={{ height: '0.6rem', background: sev.color }} />
                           {sev.label}
                         </span>
                       </td>

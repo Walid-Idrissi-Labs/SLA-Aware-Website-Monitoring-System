@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Activity } from 'lucide-react'
 import { isAuthenticated, buildLoginUrl } from '../lib/auth'
 import BootSplash from '../components/BootSplash'
 
@@ -19,7 +18,6 @@ export default function Login() {
 
   return (
     <BootSplash
-      icon={<Activity className="h-7 w-7 text-white" strokeWidth={2.4} />}
       title="Redirecting to secure sign-in"
       lines={['Initializing session', 'Generating PKCE challenge', 'Handing off to Cognito']}
     />

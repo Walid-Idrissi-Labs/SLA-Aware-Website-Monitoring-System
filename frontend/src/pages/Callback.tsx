@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ShieldCheck } from 'lucide-react'
 import { setToken, decodeToken, storeUser } from '../lib/auth'
 import { getMe } from '../lib/api'
 import BootSplash from '../components/BootSplash'
@@ -77,7 +76,6 @@ export default function Callback() {
 
   return (
     <BootSplash
-      icon={<ShieldCheck className="h-7 w-7 text-white" strokeWidth={2.4} />}
       title="Establishing secure session"
       lines={['Exchanging authorization code', 'Verifying identity token', 'Loading your workspace']}
     />

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Activity, Gauge, TriangleAlert, Globe, RefreshCw, Plus } from 'lucide-react'
+import { ShieldCheck, Gauge, TriangleAlert, Radar, RefreshCw, Plus } from 'lucide-react'
 import Shell from '../components/Shell'
 import TickerStat from '../components/TickerStat'
 import StatCard from '../components/StatCard'
@@ -89,11 +89,11 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-2 animate-fade-up" style={{ animationDelay: '80ms' }}>
           <button onClick={loadProjects} disabled={loading} className="btn-ghost">
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin-slow' : ''}`} strokeWidth={2.2} />
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin-slow' : ''}`} strokeWidth={1.75} />
             {loading ? 'Syncing' : 'Refresh'}
           </button>
           <button onClick={() => setShowAddModal(true)} className="btn-accent">
-            <Plus className="h-3.5 w-3.5" strokeWidth={3} />
+            <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
             New Endpoint
           </button>
         </div>
@@ -106,7 +106,7 @@ export default function Dashboard() {
           value={healthPct}
           decimals={1}
           unit="%"
-          icon={<Activity className="h-4 w-4" strokeWidth={2.2} />}
+          icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.75} />}
           accent={healthPct >= 99 ? '#34d399' : '#fbbf24'}
           sub={<span>{healthy} of {total || 0} operational</span>}
           index={0}
@@ -115,14 +115,14 @@ export default function Dashboard() {
           label="Avg Latency"
           value={avgLatency}
           unit="ms"
-          icon={<Gauge className="h-4 w-4" strokeWidth={2.2} />}
+          icon={<Gauge className="h-4 w-4" strokeWidth={1.75} />}
           sub={<span>across active endpoints</span>}
           index={1}
         />
         <StatCard
           label="Active Incidents"
           value={incidents}
-          icon={<TriangleAlert className="h-4 w-4" strokeWidth={2.2} />}
+          icon={<TriangleAlert className="h-4 w-4" strokeWidth={1.75} />}
           accent={incidents > 0 ? '#f87171' : '#34d399'}
           sub={<span>{incidents > 0 ? 'requires attention' : 'all systems nominal'}</span>}
           index={2}
@@ -130,7 +130,7 @@ export default function Dashboard() {
         <StatCard
           label="Endpoints"
           value={total}
-          icon={<Globe className="h-4 w-4" strokeWidth={2.2} />}
+          icon={<Radar className="h-4 w-4" strokeWidth={1.75} />}
           sub={<span>monitored every 60s</span>}
           index={3}
         />
@@ -138,7 +138,7 @@ export default function Dashboard() {
 
       {/* Section header */}
       <div className="mt-8 flex items-center gap-3">
-        <span className="led led-accent" />
+        <span className="mark" />
         <h2 className="font-mono text-[12px] font-bold uppercase tracking-micro text-txt-hi">Monitored Endpoints</h2>
         <span className="font-mono text-[11px] text-txt-dim">[{total}]</span>
         <span className="h-px flex-1 bg-white/[0.06]" />
@@ -164,7 +164,7 @@ export default function Dashboard() {
         {error && (
           <div className="panel flex items-center justify-between gap-4 border-crit/25 bg-crit/[0.04] p-4">
             <div className="flex items-center gap-3">
-              <TriangleAlert className="h-4 w-4 shrink-0 text-crit" strokeWidth={2.2} />
+              <TriangleAlert className="h-4 w-4 shrink-0 text-crit" strokeWidth={1.75} />
               <span className="text-[12px] text-crit">{error}</span>
             </div>
             <button onClick={loadProjects} className="btn-ghost">
@@ -176,14 +176,14 @@ export default function Dashboard() {
         {!error && !loading && activeProjects.length === 0 && (
           <div className="panel frame-corners flex flex-col items-center justify-center gap-4 py-20 text-center">
             <span className="grid h-14 w-14 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.02] text-txt-lo">
-              <Globe className="h-6 w-6" strokeWidth={1.6} />
+              <Radar className="h-6 w-6" strokeWidth={1.75} />
             </span>
             <div>
               <p className="font-display text-[15px] font-semibold text-txt-hi">No endpoints configured</p>
               <p className="mt-1 text-[12px] text-txt-lo">Add your first website to begin continuous monitoring.</p>
             </div>
             <button onClick={() => setShowAddModal(true)} className="btn-accent">
-              <Plus className="h-3.5 w-3.5" strokeWidth={3} />
+              <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
               Add First Endpoint
             </button>
           </div>

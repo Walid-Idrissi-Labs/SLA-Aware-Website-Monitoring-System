@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight, CircleCheck, CircleAlert } from 'lucide-react'
 import type { Project, Check } from '../types'
 import { timeAgo, uptimeFromChecks, bareUrl } from '../lib/format'
 import StatusStrip from './StatusStrip'
@@ -34,13 +34,13 @@ export default function ProjectCard({ project, checks, index = 0 }: Props) {
       {/* Header */}
       <div className="flex items-start justify-between gap-3 pl-1.5">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className={`led ${isUp ? 'led-ok' : 'led-crit animate-breathe'}`} />
-            <span
-              className={`font-mono text-[10px] font-bold uppercase tracking-wider ${
-                isUp ? 'text-ok' : 'text-crit'
-              }`}
-            >
+          <div className={`flex items-center gap-1.5 ${isUp ? 'text-ok' : 'text-crit'}`}>
+            {isUp ? (
+              <CircleCheck className="h-3.5 w-3.5" strokeWidth={1.75} />
+            ) : (
+              <CircleAlert className="h-3.5 w-3.5" strokeWidth={1.75} />
+            )}
+            <span className="font-mono text-[10px] font-bold uppercase tracking-wider">
               {isUp ? 'Operational' : 'Down'}
             </span>
           </div>
@@ -50,7 +50,7 @@ export default function ProjectCard({ project, checks, index = 0 }: Props) {
           <p className="truncate font-mono text-[11px] text-txt-lo">{bareUrl(project.url)}</p>
         </div>
         <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-white/[0.06] text-txt-dim transition-all group-hover:border-accent/40 group-hover:text-accent">
-          <ArrowUpRight className="h-4 w-4" strokeWidth={2} />
+          <ArrowUpRight className="h-4 w-4" strokeWidth={1.75} />
         </span>
       </div>
 

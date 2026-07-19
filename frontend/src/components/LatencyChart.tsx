@@ -161,7 +161,10 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
           style={{ left: tipLeft, top: 6 }}
         >
           <div className="flex items-center gap-2">
-            <span className={`led ${hoverCheck.status === 'success' ? 'led-ok' : 'led-crit'}`} />
+            <span
+              className="w-[3px] rounded-full"
+              style={{ height: '0.75rem', background: hoverCheck.status === 'success' ? '#34d399' : '#f87171' }}
+            />
             <span className="data text-[13px] font-bold text-txt-hi">{hoverCheck.latency_ms}ms</span>
           </div>
           <div className="mt-0.5 font-mono text-[9px] text-txt-lo">

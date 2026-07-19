@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Activity, LayoutGrid, Settings as SettingsIcon, LogOut } from 'lucide-react'
+import { LayoutDashboard, Settings as SettingsIcon, LogOut } from 'lucide-react'
 import { logout, getStoredUser } from '../lib/auth'
+import Logo from './Logo'
 import type { User } from '../types'
 
 function getInitials(name: string): string {
@@ -59,11 +60,11 @@ export default function TopNav() {
     <aside className="sticky top-0 z-40 flex h-screen w-16 shrink-0 select-none flex-col items-center border-r border-white/[0.06] bg-ink-900/70 backdrop-blur-xl">
       {/* Brand */}
       <Link to="/dashboard" className="group flex h-16 w-full items-center justify-center">
-        <span className="relative grid h-9 w-9 place-items-center rounded-lg bg-accent-sheen shadow-glow-accent transition-transform duration-200 group-hover:scale-105">
-          <Activity className="h-[18px] w-[18px] text-white" strokeWidth={2.6} />
-          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-ok shadow-glow-ok">
-            <span className="absolute inset-0 rounded-full bg-ok animate-pulse-ring" />
-          </span>
+        <span
+          className="relative transition-transform duration-200 group-hover:scale-105"
+          style={{ filter: 'drop-shadow(0 4px 14px rgba(250,92,41,0.45))' }}
+        >
+          <Logo size={34} className="block" />
         </span>
       </Link>
 
@@ -72,10 +73,10 @@ export default function TopNav() {
       {/* Nav */}
       <nav className="flex w-full flex-1 flex-col items-center gap-1 pt-2">
         <NavItem to="/dashboard" label="Overview" active={dashActive}>
-          <LayoutGrid className="h-[18px] w-[18px]" strokeWidth={2} />
+          <LayoutDashboard className="h-[18px] w-[18px]" strokeWidth={1.75} />
         </NavItem>
         <NavItem to="/settings" label="Settings" active={pathname === '/settings'}>
-          <SettingsIcon className="h-[18px] w-[18px]" strokeWidth={2} />
+          <SettingsIcon className="h-[18px] w-[18px]" strokeWidth={1.75} />
         </NavItem>
       </nav>
 
@@ -93,7 +94,7 @@ export default function TopNav() {
           title="Sign out"
           className="group grid h-9 w-9 place-items-center rounded-lg text-txt-lo transition-colors hover:bg-crit/10 hover:text-crit"
         >
-          <LogOut className="h-[16px] w-[16px]" strokeWidth={2} />
+          <LogOut className="h-[16px] w-[16px]" strokeWidth={1.75} />
         </button>
       </div>
     </aside>

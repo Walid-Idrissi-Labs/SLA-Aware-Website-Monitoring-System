@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Fingerprint, Mail, User as UserIcon, Bell, Check, TriangleAlert } from 'lucide-react'
+import { Hash, Mail, User as UserIcon, Bell, Check, TriangleAlert } from 'lucide-react'
 import Shell from '../components/Shell'
 import TickerStat from '../components/TickerStat'
 import { getMe, putMe } from '../lib/api'
@@ -66,7 +66,7 @@ export default function Settings() {
                   : 'border-crit/25 bg-crit/[0.06] text-crit'
               }`}
             >
-              {message.type === 'success' ? <Check className="h-3.5 w-3.5" strokeWidth={2.6} /> : <TriangleAlert className="h-3.5 w-3.5" strokeWidth={2.2} />}
+              {message.type === 'success' ? <Check className="h-3.5 w-3.5" strokeWidth={1.75} /> : <TriangleAlert className="h-3.5 w-3.5" strokeWidth={1.75} />}
               {message.text}
             </div>
           )}
@@ -74,7 +74,7 @@ export default function Settings() {
           {/* Identity (read-only) */}
           <div className="panel mt-5 animate-fade-up p-5" style={{ animationDelay: '80ms' }}>
             <div className="flex items-center gap-2.5">
-              <span className="led led-accent" />
+              <span className="mark" />
               <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Identity</span>
               <span className="ml-auto rounded border border-white/[0.08] px-1.5 py-0.5 font-mono text-[9px] text-txt-lo">Cognito</span>
             </div>
@@ -82,14 +82,14 @@ export default function Settings() {
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-md border border-white/[0.06] bg-ink-950/60 p-3">
                 <div className="flex items-center gap-1.5 text-txt-lo">
-                  <Fingerprint className="h-3.5 w-3.5" strokeWidth={2} />
+                  <Hash className="h-3.5 w-3.5" strokeWidth={1.75} />
                   <span className="micro">User ID</span>
                 </div>
                 <p className="mt-1.5 truncate font-mono text-[12px] text-txt-mid">{user?.user_id}</p>
               </div>
               <div className="rounded-md border border-white/[0.06] bg-ink-950/60 p-3">
                 <div className="flex items-center gap-1.5 text-txt-lo">
-                  <Mail className="h-3.5 w-3.5" strokeWidth={2} />
+                  <Mail className="h-3.5 w-3.5" strokeWidth={1.75} />
                   <span className="micro">Login Email</span>
                 </div>
                 <p className="mt-1.5 truncate font-mono text-[12px] text-txt-mid">{user?.email}</p>
@@ -100,20 +100,20 @@ export default function Settings() {
           {/* Editable profile */}
           <form onSubmit={handleSubmit} className="panel mt-3 animate-fade-up p-5" style={{ animationDelay: '140ms' }}>
             <div className="flex items-center gap-2.5">
-              <span className="led led-accent" />
+              <span className="mark" />
               <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Profile & Notifications</span>
             </div>
 
             <div className="mt-4 space-y-4">
               <div>
                 <label className="field-label" htmlFor="displayName">
-                  <span className="inline-flex items-center gap-1.5"><UserIcon className="h-3 w-3" strokeWidth={2} /> Display Name</span>
+                  <span className="inline-flex items-center gap-1.5"><UserIcon className="h-3 w-3" strokeWidth={1.75} /> Display Name</span>
                 </label>
                 <input id="displayName" type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="field" placeholder="Your display name" />
               </div>
               <div>
                 <label className="field-label" htmlFor="notificationEmail">
-                  <span className="inline-flex items-center gap-1.5"><Bell className="h-3 w-3" strokeWidth={2} /> Notification Email</span>
+                  <span className="inline-flex items-center gap-1.5"><Bell className="h-3 w-3" strokeWidth={1.75} /> Notification Email</span>
                 </label>
                 <input id="notificationEmail" type="email" value={notificationEmail} onChange={(e) => setNotificationEmail(e.target.value)} className="field" placeholder="alerts@example.com" />
                 <p className="mt-1.5 text-[10px] text-txt-dim">Destination for downtime alerts and weekly SLA reports.</p>
@@ -122,7 +122,7 @@ export default function Settings() {
 
             <div className="mt-5 flex justify-end border-t border-white/[0.06] pt-4">
               <button type="submit" disabled={saving} className="btn-accent">
-                {saving ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Check className="h-3.5 w-3.5" strokeWidth={2.6} />}
+                {saving ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Check className="h-3.5 w-3.5" strokeWidth={1.75} />}
                 {saving ? 'Saving…' : 'Save Changes'}
               </button>
             </div>

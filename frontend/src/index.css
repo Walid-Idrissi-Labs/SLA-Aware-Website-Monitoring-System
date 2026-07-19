@@ -79,21 +79,16 @@ body {
     font-variant-numeric: tabular-nums;
   }
 
-  /* Status LED with soft outer glow */
-  .led {
-    @apply relative inline-block h-2 w-2 rounded-full;
-  }
-  .led-ok {
-    background: #34d399;
-    box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.25), 0 0 9px 0 rgba(52, 211, 153, 0.75);
-  }
-  .led-crit {
-    background: #f87171;
-    box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.25), 0 0 9px 0 rgba(248, 113, 113, 0.8);
-  }
-  .led-accent {
+  /* Vertical accent marker — the section/status motif that replaced status dots */
+  .mark {
+    @apply inline-block w-[3px] rounded-full;
+    height: 0.875rem;
     background: #fa5c29;
-    box-shadow: 0 0 0 1px rgba(250, 92, 41, 0.3), 0 0 9px 0 rgba(250, 92, 41, 0.8);
+    box-shadow: 0 0 8px -1px rgba(250, 92, 41, 0.55);
+  }
+  .mark-ok {
+    background: #34d399;
+    box-shadow: 0 0 8px -1px rgba(52, 211, 153, 0.6);
   }
 
   /* Corner-bracket instrument framing */
