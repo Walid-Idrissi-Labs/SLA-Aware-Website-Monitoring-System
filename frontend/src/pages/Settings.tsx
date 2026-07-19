@@ -54,7 +54,7 @@ export default function Settings() {
         <div className="mx-auto w-full max-w-2xl">
           <div className="animate-fade-up">
             <p className="kicker mb-1.5">Account</p>
-            <h1 className="font-display text-[26px] font-bold tracking-tight text-txt-hi">Settings</h1>
+            <h1 className="text-sheen font-display text-[26px] font-bold tracking-tight">Settings</h1>
             <p className="mt-1 text-[12px] text-txt-lo">Manage your identity and where alerts are delivered.</p>
           </div>
 
@@ -73,11 +73,11 @@ export default function Settings() {
 
           {/* Identity (read-only) */}
           <div className="panel mt-5 animate-fade-up p-5" style={{ animationDelay: '80ms' }}>
-            <div className="flex items-center gap-2.5">
-              <span className="mark" />
+            <div className="flex items-center justify-between">
               <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Identity</span>
-              <span className="ml-auto rounded border border-white/[0.08] px-1.5 py-0.5 font-mono text-[9px] text-txt-lo">Cognito</span>
+              <span className="rounded border border-white/[0.08] px-1.5 py-0.5 font-mono text-[9px] text-txt-lo">Cognito</span>
             </div>
+            <div className="hr-accent mt-3" />
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-md border border-white/[0.06] bg-ink-950/60 p-3">
@@ -99,10 +99,8 @@ export default function Settings() {
 
           {/* Editable profile */}
           <form onSubmit={handleSubmit} className="panel mt-3 animate-fade-up p-5" style={{ animationDelay: '140ms' }}>
-            <div className="flex items-center gap-2.5">
-              <span className="mark" />
-              <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Profile & Notifications</span>
-            </div>
+            <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Profile & Notifications</span>
+            <div className="hr-accent mt-3" />
 
             <div className="mt-4 space-y-4">
               <div>

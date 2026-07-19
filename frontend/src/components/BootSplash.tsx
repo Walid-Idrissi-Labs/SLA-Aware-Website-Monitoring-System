@@ -40,9 +40,8 @@ export default function BootSplash({ title, lines }: Props) {
               className="flex items-center gap-2 font-mono text-[10px] text-txt-lo animate-fade-in"
               style={{ animationDelay: `${300 + i * 350}ms`, opacity: 0, animationFillMode: 'forwards' }}
             >
-              <span className="mark" style={{ height: '0.7rem' }} />
-              {line}
               <span className="text-accent">›</span>
+              {line}
             </div>
           ))}
         </div>

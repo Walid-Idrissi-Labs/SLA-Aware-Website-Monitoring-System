@@ -352,10 +352,7 @@ export default function ProjectDetail() {
         {/* Chart */}
         <div className="panel-flush lg:col-span-2 animate-fade-up" style={{ animationDelay: '120ms' }}>
           <div className="panel-head">
-            <div className="flex items-center gap-2.5">
-              <span className="mark" />
-              <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Latency Analytics</span>
-            </div>
+            <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Latency Analytics</span>
             <div className="flex gap-1">
               {[1, 24, 72].map((h) => (
                 <button
@@ -385,10 +382,8 @@ export default function ProjectDetail() {
 
         {/* Vitals */}
         <div className="panel animate-fade-up p-5" style={{ animationDelay: '180ms' }}>
-          <div className="flex items-center gap-2.5">
-            <span className="mark" />
-            <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Vitals</span>
-          </div>
+          <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Vitals</span>
+          <div className="hr-accent mt-3" />
 
           <div className="mt-4 flex justify-center">
             <UptimeGauge value={uptime} label={`Uptime · ${hours}h`} />
@@ -415,7 +410,6 @@ export default function ProjectDetail() {
       <div className="panel-flush mt-3 animate-fade-up" style={{ animationDelay: '240ms' }}>
         <div className="panel-head">
           <div className="flex items-center gap-2.5">
-            <span className="mark" />
             <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Weekly SLA Reports</span>
             <span className="font-mono text-[11px] text-txt-dim">[{reports.length}]</span>
           </div>

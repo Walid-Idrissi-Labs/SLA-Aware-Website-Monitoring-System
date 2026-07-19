@@ -84,7 +84,7 @@ export default function Dashboard() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="animate-fade-up">
           <p className="kicker mb-1.5">Operations Overview</p>
-          <h1 className="font-display text-[26px] font-bold tracking-tight text-txt-hi">Mission Control</h1>
+          <h1 className="text-sheen font-display text-[26px] font-bold tracking-tight">Mission Control</h1>
           <p className="mt-1 text-[12px] text-txt-lo">Real-time uptime, latency, and SLA posture across every endpoint.</p>
         </div>
         <div className="flex items-center gap-2 animate-fade-up" style={{ animationDelay: '80ms' }}>
@@ -138,10 +138,11 @@ export default function Dashboard() {
 
       {/* Section header */}
       <div className="mt-8 flex items-center gap-3">
-        <span className="mark" />
         <h2 className="font-mono text-[12px] font-bold uppercase tracking-micro text-txt-hi">Monitored Endpoints</h2>
-        <span className="font-mono text-[11px] text-txt-dim">[{total}]</span>
-        <span className="h-px flex-1 bg-white/[0.06]" />
+        <span className="rounded-md border border-white/[0.08] bg-white/[0.02] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-txt-mid">
+          {total}
+        </span>
+        <span className="hr-accent flex-1" />
       </div>
 
       {/* Content */}

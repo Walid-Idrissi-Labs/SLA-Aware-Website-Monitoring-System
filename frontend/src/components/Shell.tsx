@@ -39,14 +39,10 @@ export default function Shell({ ticker, children }: Props) {
 
         {/* Status footer */}
         <footer className="sticky bottom-0 z-20 flex h-7 items-center gap-4 border-t border-white/[0.06] bg-ink-900/70 px-4 font-mono text-[9px] uppercase tracking-wider text-txt-lo backdrop-blur-xl">
-          <span className="flex items-center gap-2">
-            <span className="mark mark-ok" style={{ height: '0.625rem' }} />
-            Connection OK
-          </span>
-          <span className="hidden sm:inline">Runtime · Lambda</span>
+          <span className="text-txt-lo">Connection OK</span>
+          <span className="hidden text-txt-dim sm:inline">Runtime · Lambda</span>
           <span className="flex-1" />
-          <span className="flex items-center gap-2 font-semibold text-accent">
-            <span className="mark" style={{ height: '0.625rem' }} />
+          <span className="bg-gradient-to-r from-accent-300 to-accent-600 bg-clip-text font-semibold text-transparent">
             Live · us-east-1
           </span>
         </footer>

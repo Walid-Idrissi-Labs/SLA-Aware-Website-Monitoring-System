@@ -22,17 +22,18 @@ export default function ProjectCard({ project, checks, index = 0 }: Props) {
   return (
     <Link
       to={`/projects/${project.project_id}`}
-      className="panel group relative flex flex-col overflow-hidden p-4 transition-all duration-200 animate-fade-up hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-panel-hover"
+      className={`panel group relative flex flex-col overflow-hidden p-4 transition-all duration-200 animate-fade-up hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-panel-hover ${
+        isUp ? '' : 'border-crit/25'
+      }`}
       style={{ animationDelay: `${index * 60}ms` }}
     >
-      {/* status accent rail */}
-      <span
-        className={`absolute inset-y-0 left-0 w-[3px] ${isUp ? 'bg-ok/70' : 'bg-crit'}`}
-        style={isUp ? undefined : { boxShadow: '0 0 12px 0 rgba(248,113,113,0.6)' }}
-      />
+      {/* down-state gradient wash */}
+      {!isUp && (
+        <span className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-crit/[0.09] via-crit/[0.02] to-transparent" />
+      )}
 
       {/* Header */}
-      <div className="flex items-start justify-between gap-3 pl-1.5">
+      <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className={`flex items-center gap-1.5 ${isUp ? 'text-ok' : 'text-crit'}`}>
             {isUp ? (
@@ -55,7 +56,7 @@ export default function ProjectCard({ project, checks, index = 0 }: Props) {
       </div>
 
       {/* Metrics row */}
-      <div className="mt-4 flex items-end justify-between pl-1.5">
+      <div className="relative mt-4 flex items-end justify-between">
         <div>
           <span className="micro">Latency</span>
           <div className="mt-1 flex items-baseline gap-1">
@@ -74,7 +75,7 @@ export default function ProjectCard({ project, checks, index = 0 }: Props) {
       </div>
 
       {/* Latency sparkline */}
-      <div className="mt-3 pl-1.5">
+      <div className="relative mt-3">
         {latencyValues.length >= 2 ? (
           <Sparkline
             values={latencyValues}
@@ -89,12 +90,12 @@ export default function ProjectCard({ project, checks, index = 0 }: Props) {
       </div>
 
       {/* Uptime bar strip */}
-      <div className="mt-3 pl-1.5">
+      <div className="relative mt-3">
         <StatusStrip checks={checks} bars={44} />
       </div>
 
       {/* Footer */}
-      <div className="mt-3 flex items-center justify-between border-t border-white/[0.05] pl-1.5 pt-3 font-mono text-[10px] text-txt-lo">
+      <div className="relative mt-3 flex items-center justify-between border-t border-white/[0.05] pt-3 font-mono text-[10px] text-txt-lo">
         <span className="flex items-center gap-1.5">
           <span className="text-txt-dim">CHK</span>
           {project.last_checked_at ? timeAgo(project.last_checked_at) : '—'}
