@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import TopNav from '../components/TopNav'
-import TickerClock from '../components/TickerClock'
+import { Activity, Gauge, TriangleAlert, Globe, RefreshCw, Plus } from 'lucide-react'
+import Shell from '../components/Shell'
+import TickerStat from '../components/TickerStat'
+import StatCard from '../components/StatCard'
 import ProjectCard from '../components/ProjectCard'
 import AddProjectModal from '../components/AddProjectModal'
 import { getProjects, getProjectStatus } from '../lib/api'
@@ -23,9 +25,7 @@ export default function Dashboard() {
       const data = await getProjects()
       setProjects(data)
 
-      const results = await Promise.allSettled(
-        data.map((p) => getProjectStatus(p.project_id, 1))
-      )
+      const results = await Promise.allSettled(data.map((p) => getProjectStatus(p.project_id, 1)))
       const statusMap: Record<string, ProjectStatus> = {}
       results.forEach((res, i) => {
         if (res.status === 'fulfilled') {
@@ -46,20 +46,14 @@ export default function Dashboard() {
   }, [loadProjects])
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      loadProjects()
-    }, 60000)
-
+    const intervalId = window.setInterval(() => loadProjects(), 60000)
     return () => window.clearInterval(intervalId)
   }, [loadProjects])
 
   useEffect(() => {
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        loadProjects()
-      }
+      if (document.visibilityState === 'visible') loadProjects()
     }
-
     document.addEventListener('visibilitychange', handleVisibility)
     return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [loadProjects])
@@ -67,189 +61,146 @@ export default function Dashboard() {
   const activeProjects = projects.filter((p) => p.active)
   const total = activeProjects.length
   const healthy = activeProjects.filter((p) => p.current_status === 'success').length
+  const withLatency = activeProjects.filter((p) => p.last_latency_ms !== undefined)
   const avgLatency =
-    total > 0
-      ? Math.round(
-          activeProjects.reduce((sum, p) => sum + (p.last_latency_ms || 0), 0) /
-            Math.max(activeProjects.filter((p) => p.last_latency_ms !== undefined).length, 1)
-        )
+    withLatency.length > 0
+      ? Math.round(withLatency.reduce((sum, p) => sum + (p.last_latency_ms || 0), 0) / withLatency.length)
       : 0
   const incidents = activeProjects.filter((p) => p.current_status !== 'success').length
+  const healthPct = total > 0 ? (healthy / total) * 100 : 0
+
+  const ticker = (
+    <>
+      <TickerStat label="Health" value={`${healthPct.toFixed(1)}%`} color={healthPct >= 99 ? '#34d399' : '#fbbf24'} />
+      <TickerStat label="Avg Lat" value={`${avgLatency}ms`} />
+      <TickerStat label="Incidents" value={String(incidents)} color={incidents > 0 ? '#f87171' : '#34d399'} />
+      <TickerStat label="Endpoints" value={String(total)} />
+    </>
+  )
 
   return (
-    <div className="min-h-screen bg-[#050505] text-[#d4d4d8] flex text-[11px] font-mono">
-      <TopNav />
-
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Ticker Bar */}
-        <header className="h-9 bg-[#08080a] border-b border-[#1a1a1e] flex items-center px-3 shrink-0">
-          <div className="flex items-center gap-1.5 mr-4">
-            <span className="text-[9px] font-bold text-[#fa5c29] uppercase tracking-widest">SLA_AWARE_WEBSITE_MONITORING_SYSTEM</span>
-            <span className="text-[#27272a]">|</span>
-            <span className="text-[9px] text-[#6b6b73]">MONITOR_v2.4.1</span>
-          </div>
-
-          <div className="flex-1 flex items-center gap-5 overflow-hidden">
-            <div className="flex items-center gap-1 text-[9px]">
-              <span className="text-[#3f3f46] uppercase">SYS_HEALTH</span>
-              <span className="text-[#4ade80] font-bold">
-                {total > 0 ? ((healthy / total) * 100).toFixed(1) : '0.0'}%
-              </span>
-            </div>
-            <div className="flex items-center gap-1 text-[9px]">
-              <span className="text-[#3f3f46] uppercase">AVG_LAT</span>
-              <span className="text-[#d4d4d8] font-bold">{avgLatency}ms</span>
-            </div>
-            <div className="flex items-center gap-1 text-[9px]">
-              <span className="text-[#3f3f46] uppercase">ACTIVE_INC</span>
-              <span className={`font-bold ${incidents > 0 ? 'text-[#f87171]' : 'text-[#4ade80]'}`}>{incidents}</span>
-            </div>
-            <div className="flex items-center gap-1 text-[9px]">
-              <span className="text-[#3f3f46] uppercase">ENDPOINTS</span>
-              <span className="text-[#d4d4d8] font-bold">{total}</span>
-            </div>
-          </div>
-
-          <TickerClock />
-        </header>
-
-        <main className="flex-1 p-3 overflow-auto">
-          {/* Projects Module */}
-          <div className="border border-[#1a1a1e] bg-[#0d0d10] relative">
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                backgroundImage:
-                  'linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px)',
-                backgroundSize: '40px 40px',
-              }}
-            />
-
-            <div className="relative">
-              <div className="flex items-center justify-between px-3 py-2 border-b border-[#1a1a1e] bg-[#08080a]/50">
-                <div className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 bg-[#fa5c29]" />
-                  <span className="text-[10px] font-bold text-[#d4d4d8] uppercase tracking-widest">
-                    MONITORED_ENDPOINTS
-                  </span>
-                  <span className="text-[#27272a]">[{total}]</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={loadProjects}
-                    disabled={loading}
-                    className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold uppercase tracking-wider border border-[#1a1a1e] text-[#6b6b73] hover:border-[rgba(250,92,41,0.2)] hover:text-[#fa5c29] transition-colors disabled:opacity-50"
-                  >
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M4.5 12a7.5 7.5 0 0112.1-5.7M19.5 12a7.5 7.5 0 01-12.1 5.7M16.5 6.3V4.5H14.7M7.5 17.7V19.5H9.3"
-                      />
-                    </svg>
-                    {loading ? 'REFRESHING' : 'REFRESH'}
-                  </button>
-                  <button
-                    onClick={() => setShowAddModal(true)}
-                    className="flex items-center gap-1.5 px-2 py-1 bg-[#fa5c29] text-white text-[10px] font-bold uppercase tracking-wider hover:bg-[#fa5c29]/90 active:scale-[0.97] transition-all"
-                  >
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                    </svg>
-                    NEW
-                  </button>
-                </div>
-              </div>
-
-              {loading && (
-                <div className="flex justify-center py-12">
-                  <div className="w-5 h-5 border-2 border-[#fa5c29] border-t-transparent animate-spin" />
-                </div>
-              )}
-
-              {error && (
-                <div className="px-3 py-2 border-b border-[#1a1a1e] text-[#f87171] text-[11px]">
-                  {error}
-                  <button className="ml-3 underline hover:text-white transition-colors" onClick={loadProjects}>
-                    Retry
-                  </button>
-                </div>
-              )}
-
-              {!loading && !error && activeProjects.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <p className="text-[11px] text-[#3f3f46] mb-3">No endpoints configured</p>
-                  <button
-                    onClick={() => setShowAddModal(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#fa5c29] text-white text-[10px] font-bold uppercase tracking-wider hover:bg-[#fa5c29]/90 transition-all"
-                  >
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                    </svg>
-                    ADD FIRST ENDPOINT
-                  </button>
-                </div>
-              )}
-
-              {!loading && !error && activeProjects.length > 0 && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-[#1a1a1e] bg-[#08080a]/30">
-                        <th className="px-3 py-1.5 text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider w-48">
-                          Endpoint
-                        </th>
-                        <th className="px-3 py-1.5 text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider w-20">
-                          Status
-                        </th>
-                        <th className="px-3 py-1.5 text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider w-24 text-right">
-                          Latency
-                        </th>
-                        <th className="px-3 py-1.5 text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider w-24 text-right">
-                          Uptime
-                        </th>
-                        <th className="px-3 py-1.5 text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider w-32">
-                          24h Trend
-                        </th>
-                        <th className="px-3 py-1.5 text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider w-24 text-right">
-                          Threshold
-                        </th>
-                        <th className="px-3 py-1.5 text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider w-20 text-right">
-                          Last
-                        </th>
-                        <th className="px-3 py-1.5 text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider w-10" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#1a1a1e]/50">
-                      {activeProjects.map((project) => (
-                        <ProjectCard
-                          key={project.project_id}
-                          project={project}
-                          checks={statuses[project.project_id]?.checks || []}
-                        />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        </main>
-
-        {/* Status Bar */}
-        <div className="h-6 bg-[#08080a] border-t border-[#1a1a1e] flex items-center px-3 text-[9px] text-[#3f3f46] shrink-0">
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1">
-              <span className="w-1 h-1 bg-[#4ade80]" />
-              CONN_OK
-            </span>
-            <span>LAT:14ms</span>
-          </div>
-          <div className="flex-1" />
-          <div className="flex items-center gap-3">
-            <span className="text-[#fa5c29] font-bold">● LIVE ON US-EAST-1</span>
-          </div>
+    <Shell ticker={ticker}>
+      {/* Page header */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="animate-fade-up">
+          <p className="kicker mb-1.5">Operations Overview</p>
+          <h1 className="font-display text-[26px] font-bold tracking-tight text-txt-hi">Mission Control</h1>
+          <p className="mt-1 text-[12px] text-txt-lo">Real-time uptime, latency, and SLA posture across every endpoint.</p>
         </div>
+        <div className="flex items-center gap-2 animate-fade-up" style={{ animationDelay: '80ms' }}>
+          <button onClick={loadProjects} disabled={loading} className="btn-ghost">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin-slow' : ''}`} strokeWidth={2.2} />
+            {loading ? 'Syncing' : 'Refresh'}
+          </button>
+          <button onClick={() => setShowAddModal(true)} className="btn-accent">
+            <Plus className="h-3.5 w-3.5" strokeWidth={3} />
+            New Endpoint
+          </button>
+        </div>
+      </div>
+
+      {/* KPI tiles */}
+      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard
+          label="System Health"
+          value={healthPct}
+          decimals={1}
+          unit="%"
+          icon={<Activity className="h-4 w-4" strokeWidth={2.2} />}
+          accent={healthPct >= 99 ? '#34d399' : '#fbbf24'}
+          sub={<span>{healthy} of {total || 0} operational</span>}
+          index={0}
+        />
+        <StatCard
+          label="Avg Latency"
+          value={avgLatency}
+          unit="ms"
+          icon={<Gauge className="h-4 w-4" strokeWidth={2.2} />}
+          sub={<span>across active endpoints</span>}
+          index={1}
+        />
+        <StatCard
+          label="Active Incidents"
+          value={incidents}
+          icon={<TriangleAlert className="h-4 w-4" strokeWidth={2.2} />}
+          accent={incidents > 0 ? '#f87171' : '#34d399'}
+          sub={<span>{incidents > 0 ? 'requires attention' : 'all systems nominal'}</span>}
+          index={2}
+        />
+        <StatCard
+          label="Endpoints"
+          value={total}
+          icon={<Globe className="h-4 w-4" strokeWidth={2.2} />}
+          sub={<span>monitored every 60s</span>}
+          index={3}
+        />
+      </div>
+
+      {/* Section header */}
+      <div className="mt-8 flex items-center gap-3">
+        <span className="led led-accent" />
+        <h2 className="font-mono text-[12px] font-bold uppercase tracking-micro text-txt-hi">Monitored Endpoints</h2>
+        <span className="font-mono text-[11px] text-txt-dim">[{total}]</span>
+        <span className="h-px flex-1 bg-white/[0.06]" />
+      </div>
+
+      {/* Content */}
+      <div className="mt-4">
+        {loading && projects.length === 0 && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="panel h-[248px] p-4">
+                <div className="skeleton h-3 w-20" />
+                <div className="skeleton mt-3 h-4 w-40" />
+                <div className="skeleton mt-2 h-3 w-28" />
+                <div className="skeleton mt-6 h-8 w-24" />
+                <div className="skeleton mt-6 h-8 w-full" />
+                <div className="skeleton mt-3 h-6 w-full" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {error && (
+          <div className="panel flex items-center justify-between gap-4 border-crit/25 bg-crit/[0.04] p-4">
+            <div className="flex items-center gap-3">
+              <TriangleAlert className="h-4 w-4 shrink-0 text-crit" strokeWidth={2.2} />
+              <span className="text-[12px] text-crit">{error}</span>
+            </div>
+            <button onClick={loadProjects} className="btn-ghost">
+              Retry
+            </button>
+          </div>
+        )}
+
+        {!error && !loading && activeProjects.length === 0 && (
+          <div className="panel frame-corners flex flex-col items-center justify-center gap-4 py-20 text-center">
+            <span className="grid h-14 w-14 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.02] text-txt-lo">
+              <Globe className="h-6 w-6" strokeWidth={1.6} />
+            </span>
+            <div>
+              <p className="font-display text-[15px] font-semibold text-txt-hi">No endpoints configured</p>
+              <p className="mt-1 text-[12px] text-txt-lo">Add your first website to begin continuous monitoring.</p>
+            </div>
+            <button onClick={() => setShowAddModal(true)} className="btn-accent">
+              <Plus className="h-3.5 w-3.5" strokeWidth={3} />
+              Add First Endpoint
+            </button>
+          </div>
+        )}
+
+        {!error && activeProjects.length > 0 && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {activeProjects.map((project, i) => (
+              <ProjectCard
+                key={project.project_id}
+                project={project}
+                checks={statuses[project.project_id]?.checks || []}
+                index={i}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {showAddModal && (
@@ -259,13 +210,11 @@ export default function Dashboard() {
             setShowAddModal(false)
             setProjects((prev) => [...prev, project])
             getProjectStatus(project.project_id, 1)
-              .then((status) => {
-                setStatuses((prev) => ({ ...prev, [project.project_id]: status }))
-              })
+              .then((status) => setStatuses((prev) => ({ ...prev, [project.project_id]: status })))
               .catch(() => {})
           }}
         />
       )}
-    </div>
+    </Shell>
   )
 }

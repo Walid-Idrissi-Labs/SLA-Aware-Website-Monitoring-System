@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { X, Plus, TriangleAlert, Globe } from 'lucide-react'
 import { createProject } from '../lib/api'
 import type { Project, CreateProjectInput } from '../types'
 
@@ -17,6 +18,12 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !loading && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose, loading])
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim() || !url.trim()) {
@@ -34,14 +41,9 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
         name: name.trim(),
         url: normalizedUrl,
         failure_threshold: failureThreshold,
-        thresholds: {
-          min_uptime_pct: minUptime,
-          max_avg_latency_ms: maxLatency,
-        },
+        thresholds: { min_uptime_pct: minUptime, max_avg_latency_ms: maxLatency },
       }
-      if (notificationEmail.trim()) {
-        data.notification_email = notificationEmail.trim()
-      }
+      if (notificationEmail.trim()) data.notification_email = notificationEmail.trim()
       const project = await createProject(data)
       onSuccess(project)
     } catch (err) {
@@ -52,135 +54,77 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-[#0d0d10] border border-[#1a1a1e] w-full max-w-lg shadow-2xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-[#1a1a1e] bg-[#08080a] flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 bg-[#fa5c29]" />
-            <span className="text-[10px] font-bold text-[#d4d4d8] uppercase tracking-widest">ADD_PROJECT</span>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in"
+      onClick={(e) => e.target === e.currentTarget && !loading && onClose()}
+    >
+      <div className="panel frame-corners w-full max-w-lg animate-scale-in overflow-hidden">
+        <div className="panel-head">
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-6 w-6 place-items-center rounded-md bg-accent/[0.12] text-accent">
+              <Globe className="h-3.5 w-3.5" strokeWidth={2.4} />
+            </span>
+            <div className="leading-tight">
+              <p className="kicker">New Endpoint</p>
+              <p className="font-display text-[13px] font-semibold text-txt-hi">Register a website</p>
+            </div>
           </div>
-          <button onClick={onClose} className="text-[#3f3f46] hover:text-[#d4d4d8] transition-colors">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+          <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-txt-lo transition-colors hover:bg-white/[0.05] hover:text-txt-hi">
+            <X className="h-4 w-4" strokeWidth={2.2} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-3">
+        <form onSubmit={handleSubmit} className="space-y-4 p-5">
           {error && (
-            <div className="bg-[rgba(239,68,68,0.06)] border border-[rgba(239,68,68,0.15)] text-[#f87171] px-3 py-2 text-[11px]">
+            <div className="flex items-center gap-2 rounded-md border border-crit/25 bg-crit/[0.06] px-3 py-2 text-[12px] text-crit">
+              <TriangleAlert className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} />
               {error}
             </div>
           )}
 
           <div>
-            <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1" htmlFor="projName">
-              Project_Name *
-            </label>
-            <input
-              id="projName"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
-              placeholder="My Portfolio"
-              required
-            />
+            <label className="field-label" htmlFor="projName">Project Name *</label>
+            <input id="projName" type="text" value={name} onChange={(e) => setName(e.target.value)} className="field" placeholder="My Portfolio" required />
           </div>
 
           <div>
-            <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1" htmlFor="projUrl">
-              URL *
-            </label>
-            <input
-              id="projUrl"
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
-              placeholder="https://mysite.com"
-              required
-            />
+            <label className="field-label" htmlFor="projUrl">Target URL *</label>
+            <input id="projUrl" type="text" value={url} onChange={(e) => setUrl(e.target.value)} className="field" placeholder="https://mysite.com" required />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1" htmlFor="failureThresh">
-                Failure_Threshold
-              </label>
-              <input
-                id="failureThresh"
-                type="number"
-                min={1}
-                max={10}
-                value={failureThreshold}
-                onChange={(e) => setFailureThreshold(Number(e.target.value))}
-                className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
-              />
-              <p className="text-[9px] text-[#3f3f46] mt-1">Consecutive failures before alert</p>
+              <label className="field-label" htmlFor="failureThresh">Failure Threshold</label>
+              <input id="failureThresh" type="number" min={1} max={10} value={failureThreshold} onChange={(e) => setFailureThreshold(Number(e.target.value))} className="field" />
+              <p className="mt-1.5 text-[10px] text-txt-dim">Consecutive fails before alert</p>
             </div>
-
             <div>
-              <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1" htmlFor="notifEmail">
-                Notification_Email
-              </label>
-              <input
-                id="notifEmail"
-                type="email"
-                value={notificationEmail}
-                onChange={(e) => setNotificationEmail(e.target.value)}
-                className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
-                placeholder="Optional"
-              />
+              <label className="field-label" htmlFor="notifEmail">Notification Email</label>
+              <input id="notifEmail" type="email" value={notificationEmail} onChange={(e) => setNotificationEmail(e.target.value)} className="field" placeholder="Optional" />
+              <p className="mt-1.5 text-[10px] text-txt-dim">Defaults to your account email</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1" htmlFor="minUptime">
-                Min_Uptime_%
-              </label>
-              <input
-                id="minUptime"
-                type="number"
-                min={90}
-                max={100}
-                step={0.01}
-                value={minUptime}
-                onChange={(e) => setMinUptime(Number(e.target.value))}
-                className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
-              />
+              <label className="field-label" htmlFor="minUptime">Min Uptime %</label>
+              <input id="minUptime" type="number" min={90} max={100} step={0.01} value={minUptime} onChange={(e) => setMinUptime(Number(e.target.value))} className="field" />
             </div>
             <div>
-              <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1" htmlFor="maxLatency">
-                Max_Latency_MS
-              </label>
-              <input
-                id="maxLatency"
-                type="number"
-                min={50}
-                value={maxLatency}
-                onChange={(e) => setMaxLatency(Number(e.target.value))}
-                className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
-              />
+              <label className="field-label" htmlFor="maxLatency">Max Latency (ms)</label>
+              <input id="maxLatency" type="number" min={50} value={maxLatency} onChange={(e) => setMaxLatency(Number(e.target.value))} className="field" />
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-3 border-t border-[#1a1a1e]">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3 py-1.5 bg-[#08080a] border border-[#1a1a1e] text-[#6b6b73] text-[11px] font-bold hover:border-[#52525b] hover:text-[#d4d4d8] transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex items-center gap-1.5 px-4 py-1.5 bg-[#fa5c29] hover:bg-[#fa5c29]/90 text-white text-[11px] font-bold active:scale-[0.97] transition-all disabled:opacity-50"
-            >
-              {loading && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-              {loading ? 'Creating...' : 'Create_Project'}
+          <div className="flex justify-end gap-2 border-t border-white/[0.06] pt-4">
+            <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
+            <button type="submit" disabled={loading} className="btn-accent">
+              {loading ? (
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              ) : (
+                <Plus className="h-3.5 w-3.5" strokeWidth={3} />
+              )}
+              {loading ? 'Creating…' : 'Create Endpoint'}
             </button>
           </div>
         </form>

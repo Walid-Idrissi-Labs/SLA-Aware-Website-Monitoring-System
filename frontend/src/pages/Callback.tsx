@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChartNoAxesCombined } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
 import { setToken, decodeToken, storeUser } from '../lib/auth'
 import { getMe } from '../lib/api'
+import BootSplash from '../components/BootSplash'
 import type { User } from '../types'
 
 export default function Callback() {
@@ -75,14 +76,10 @@ export default function Callback() {
   }, [navigate])
 
   return (
-    <div className="min-h-screen bg-[#050505] flex items-center justify-center font-mono">
-      <div className="text-center">
-        <div className="w-8 h-8 bg-[#fa5c29] flex items-center justify-center mx-auto mb-3 animate-pulse">
-          <ChartNoAxesCombined className="w-4 h-4 text-white" strokeWidth={2.5} />
-        </div>
-        <p className="text-[11px] text-[#6b6b73] uppercase tracking-widest">Exchanging token...</p>
-        <p className="text-[9px] text-[#3f3f46] mt-2">PKCE flow in progress</p>
-      </div>
-    </div>
+    <BootSplash
+      icon={<ShieldCheck className="h-7 w-7 text-white" strokeWidth={2.4} />}
+      title="Establishing secure session"
+      lines={['Exchanging authorization code', 'Verifying identity token', 'Loading your workspace']}
+    />
   )
 }

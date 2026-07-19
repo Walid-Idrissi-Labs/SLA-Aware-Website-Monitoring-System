@@ -1,27 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import TopNav from '../components/TopNav'
-import TickerClock from '../components/TickerClock'
+import { useParams, useNavigate, Link } from 'react-router-dom'
+import {
+  ArrowLeft,
+  RefreshCw,
+  Pencil,
+  Trash2,
+  X,
+  TriangleAlert,
+  ExternalLink,
+  ChevronRight,
+} from 'lucide-react'
+import Shell from '../components/Shell'
+import TickerStat from '../components/TickerStat'
 import LatencyChart from '../components/LatencyChart'
+import UptimeGauge from '../components/UptimeGauge'
+import StatusStrip from '../components/StatusStrip'
 import { getProject, getProjectStatus, getProjectReports, updateProject, deleteProject } from '../lib/api'
 import type { ProjectStatus, ProjectReport, Project, UpdateProjectInput } from '../types'
+import { SEVERITY, uptimeFromChecks, bareUrl } from '../lib/format'
 
-const SEVERITY_LABELS: Record<string, string> = {
-  healthy: 'HEALTHY',
-  degraded: 'DEGRADED',
-  major: 'MAJOR',
-  critical: 'CRITICAL',
+function formatDowntime(sec: number): string {
+  if (!sec) return '0s'
+  if (sec < 60) return `${sec}s`
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  if (m < 60) return `${m}m ${s}s`
+  const h = Math.floor(m / 60)
+  return `${h}h ${m % 60}m`
 }
 
-const SEVERITY_COLORS: Record<string, string> = {
-  healthy: 'text-[#4ade80]',
-  degraded: 'text-[#fbbf24]',
-  major: 'text-[#f97316]',
-  critical: 'text-[#f87171]',
-}
-
-// ─── Edit Modal ────────────────────────────────────────────────────────────────
-
+// ─── Edit Modal ─────────────────────────────────────────────────────────────
 interface EditModalProps {
   project: Project
   onClose: () => void
@@ -42,6 +50,12 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !saving && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose, saving])
+
   async function handleSave() {
     setSaving(true)
     setError(null)
@@ -57,129 +71,80 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in"
+      onClick={(e) => e.target === e.currentTarget && !saving && onClose()}
     >
-      <div className="w-full max-w-lg bg-[#0d0d10] border border-[#1a1a1e] shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#1a1a1e] bg-[#08080a]">
-          <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 bg-[#fa5c29]" />
-            <span className="text-[10px] font-bold text-[#d4d4d8] uppercase tracking-widest">EDIT_PROJECT</span>
+      <div className="panel frame-corners w-full max-w-lg animate-scale-in overflow-hidden">
+        <div className="panel-head">
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-6 w-6 place-items-center rounded-md bg-accent/[0.12] text-accent">
+              <Pencil className="h-3.5 w-3.5" strokeWidth={2.4} />
+            </span>
+            <div className="leading-tight">
+              <p className="kicker">Configure</p>
+              <p className="font-display text-[13px] font-semibold text-txt-hi">Edit endpoint</p>
+            </div>
           </div>
-          <button onClick={onClose} className="text-[#3f3f46] hover:text-[#d4d4d8] transition-colors">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+          <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-txt-lo transition-colors hover:bg-white/[0.05] hover:text-txt-hi">
+            <X className="h-4 w-4" strokeWidth={2.2} />
           </button>
         </div>
 
-        <div className="p-4 space-y-3">
+        <div className="space-y-4 p-5">
           <div>
-            <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1">Project_Name</label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
-              placeholder="My Portfolio"
-            />
+            <label className="field-label">Project Name</label>
+            <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="field" />
           </div>
-
           <div>
-            <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1">Target_URL</label>
-            <input
-              type="url"
-              value={form.url}
-              onChange={(e) => setForm({ ...form, url: e.target.value })}
-              className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
-              placeholder="https://example.com"
-            />
+            <label className="field-label">Target URL</label>
+            <input type="url" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="field" />
           </div>
-
           <div>
-            <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1">Notification_Email</label>
-            <input
-              type="email"
-              value={form.notification_email}
-              onChange={(e) => setForm({ ...form, notification_email: e.target.value })}
-              className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
-              placeholder="alerts@example.com"
-            />
+            <label className="field-label">Notification Email</label>
+            <input type="email" value={form.notification_email} onChange={(e) => setForm({ ...form, notification_email: e.target.value })} className="field" />
           </div>
-
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1">Failure_Threshold</label>
-              <input
-                type="number"
-                min={1}
-                max={10}
-                value={form.failure_threshold}
-                onChange={(e) => setForm({ ...form, failure_threshold: Number(e.target.value) })}
-                className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
-              />
+              <label className="field-label">Failure Threshold</label>
+              <input type="number" min={1} max={10} value={form.failure_threshold} onChange={(e) => setForm({ ...form, failure_threshold: Number(e.target.value) })} className="field" />
             </div>
             <div>
-              <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1">Min_Uptime_%</label>
+              <label className="field-label">Min Uptime %</label>
               <input
                 type="number"
                 min={0}
                 max={100}
                 step={0.1}
                 value={form.thresholds?.min_uptime_pct}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    thresholds: { ...form.thresholds!, min_uptime_pct: Number(e.target.value) },
-                  })
-                }
-                className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
+                onChange={(e) => setForm({ ...form, thresholds: { ...form.thresholds!, min_uptime_pct: Number(e.target.value) } })}
+                className="field"
               />
             </div>
           </div>
-
           <div>
-            <label className="block text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider mb-1">Max_Latency_MS</label>
+            <label className="field-label">Max Latency (ms)</label>
             <input
               type="number"
               min={0}
               value={form.thresholds?.max_avg_latency_ms}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  thresholds: { ...form.thresholds!, max_avg_latency_ms: Number(e.target.value) },
-                })
-              }
-              className="w-full bg-[#08080a] border border-[#1a1a1e] text-[#d4d4d8] px-3 py-2 text-[12px] focus:border-[#fa5c29] focus:outline-none transition-colors"
+              onChange={(e) => setForm({ ...form, thresholds: { ...form.thresholds!, max_avg_latency_ms: Number(e.target.value) } })}
+              className="field"
             />
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 text-[#f87171] text-[11px] border border-[rgba(248,113,113,0.2)] bg-[rgba(248,113,113,0.06)] px-3 py-2">
-              <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-              </svg>
+            <div className="flex items-center gap-2 rounded-md border border-crit/25 bg-crit/[0.06] px-3 py-2 text-[12px] text-crit">
+              <TriangleAlert className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} />
               {error}
             </div>
           )}
         </div>
 
-        <div className="flex justify-end gap-2 px-4 py-3 border-t border-[#1a1a1e] bg-[#08080a]">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-[11px] font-bold text-[#6b6b73] border border-[#1a1a1e] hover:border-[rgba(250,92,41,0.2)] hover:text-[#d4d4d8] transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-3 py-1.5 text-[11px] font-bold bg-[#fa5c29] hover:bg-[#fa5c29]/90 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
-          >
-            {saving && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-            {saving ? 'Saving...' : 'Save_Changes'}
+        <div className="flex justify-end gap-2 border-t border-white/[0.06] bg-white/[0.01] px-5 py-4">
+          <button onClick={onClose} className="btn-ghost">Cancel</button>
+          <button onClick={handleSave} disabled={saving} className="btn-accent">
+            {saving && <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
+            {saving ? 'Saving…' : 'Save Changes'}
           </button>
         </div>
       </div>
@@ -187,8 +152,7 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
   )
 }
 
-// ─── Delete Confirm Modal ──────────────────────────────────────────────────────
-
+// ─── Delete Modal ───────────────────────────────────────────────────────────
 interface DeleteModalProps {
   projectName: string
   onClose: () => void
@@ -199,43 +163,27 @@ interface DeleteModalProps {
 function DeleteModal({ projectName, onClose, onConfirm, deleting }: DeleteModalProps) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !deleting) onClose()
-      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in"
+      onClick={(e) => e.target === e.currentTarget && !deleting && onClose()}
     >
-      <div className="w-full max-w-sm bg-[#0d0d10] border border-[rgba(248,113,113,0.2)] shadow-2xl overflow-hidden">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-[rgba(248,113,113,0.15)] bg-[rgba(248,113,113,0.04)]">
-          <svg className="w-4 h-4 text-[#f87171]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-          </svg>
-          <span className="text-[10px] font-bold text-[#f87171] uppercase tracking-widest">CONFIRM_DELETE</span>
+      <div className="panel w-full max-w-sm animate-scale-in overflow-hidden border-crit/25">
+        <div className="flex items-center gap-2.5 border-b border-crit/20 bg-crit/[0.05] px-5 h-11">
+          <TriangleAlert className="h-4 w-4 text-crit" strokeWidth={2.2} />
+          <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-crit">Confirm Delete</span>
         </div>
-
-        <div className="px-4 py-4 space-y-2">
-          <p className="text-[12px] text-[#d4d4d8] leading-relaxed">
-            This will stop monitoring <span className="text-[#fa5c29] font-bold">{projectName}</span>. Historical data is retained.
+        <div className="space-y-2 p-5">
+          <p className="text-[13px] leading-relaxed text-txt-mid">
+            This stops monitoring <span className="font-semibold text-accent">{projectName}</span>. Historical data is retained.
           </p>
-          <p className="text-[11px] text-[#3f3f46] border-l-2 border-[rgba(248,113,113,0.3)] pl-2">
-            The project will be deactivated (soft-delete). This can be reversed via the API.
+          <p className="border-l-2 border-crit/40 pl-3 text-[11px] text-txt-lo">
+            The endpoint is deactivated (soft-delete) and can be restored via the API.
           </p>
         </div>
-
-        <div className="flex justify-end gap-2 px-4 py-3 border-t border-[#1a1a1e] bg-[#08080a]">
-          <button
-            onClick={onClose}
-            disabled={deleting}
-            className="px-3 py-1.5 text-[11px] font-bold text-[#6b6b73] border border-[#1a1a1e] hover:text-[#d4d4d8] transition-colors disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={deleting}
-            className="px-3 py-1.5 text-[11px] font-bold bg-[rgba(248,113,113,0.1)] text-[#f87171] border border-[rgba(248,113,113,0.2)] hover:bg-[rgba(248,113,113,0.15)] transition-colors disabled:opacity-50 flex items-center gap-1.5"
-          >
-            {deleting && <div className="w-3 h-3 border-2 border-[#f87171]/30 border-t-[#f87171] rounded-full animate-spin" />}
-            {deleting ? 'Deleting...' : 'Confirm_Delete'}
+        <div className="flex justify-end gap-2 border-t border-white/[0.06] px-5 py-4">
+          <button onClick={onClose} disabled={deleting} className="btn-ghost">Cancel</button>
+          <button onClick={onConfirm} disabled={deleting} className="btn-danger">
+            {deleting && <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-crit/40 border-t-crit" />}
+            {deleting ? 'Deleting…' : 'Confirm Delete'}
           </button>
         </div>
       </div>
@@ -243,8 +191,19 @@ function DeleteModal({ projectName, onClose, onConfirm, deleting }: DeleteModalP
   )
 }
 
-// ─── Main Page ─────────────────────────────────────────────────────────────────
+// ─── Vitals metric row ──────────────────────────────────────────────────────
+function Metric({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) {
+  return (
+    <div className="flex items-center justify-between border-b border-white/[0.05] py-2.5 last:border-0">
+      <span className="micro">{label}</span>
+      <span className="data text-[14px] font-semibold" style={{ color: color ?? '#eceef0' }}>
+        {value}
+      </span>
+    </div>
+  )
+}
 
+// ─── Main Page ──────────────────────────────────────────────────────────────
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -264,11 +223,8 @@ export default function ProjectDetail() {
     async (options?: { silent?: boolean }) => {
       if (!id || loadingRef.current) return
       loadingRef.current = true
-      if (options?.silent) {
-        setRefreshing(true)
-      } else {
-        setLoading(true)
-      }
+      if (options?.silent) setRefreshing(true)
+      else setLoading(true)
       try {
         const [projectData, statusData, reportsData] = await Promise.all([
           getProject(id),
@@ -279,11 +235,8 @@ export default function ProjectDetail() {
         setStatus(statusData)
         setReports(reportsData)
       } finally {
-        if (options?.silent) {
-          setRefreshing(false)
-        } else {
-          setLoading(false)
-        }
+        if (options?.silent) setRefreshing(false)
+        else setLoading(false)
         loadingRef.current = false
       }
     },
@@ -295,10 +248,7 @@ export default function ProjectDetail() {
   }, [loadData])
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      loadData({ silent: true })
-    }, 60000)
-
+    const intervalId = window.setInterval(() => loadData({ silent: true }), 60000)
     return () => window.clearInterval(intervalId)
   }, [loadData])
 
@@ -314,291 +264,213 @@ export default function ProjectDetail() {
     }
   }
 
-  function handleEditSaved(updated: Project) {
-    setProject(updated)
-    setShowEdit(false)
-  }
-
-  const latestCheck = status?.checks[0]
+  const checks = status?.checks || []
+  const latestCheck = checks[0]
   const isUp = status?.current_status === 'success'
+  const uptime = uptimeFromChecks(checks)
+
+  const ticker = (
+    <>
+      <TickerStat label="Status" value={isUp ? 'UP' : 'DOWN'} color={isUp ? '#34d399' : '#f87171'} />
+      <TickerStat label="Latency" value={latestCheck ? `${latestCheck.latency_ms}ms` : '—'} />
+      <TickerStat label="Reports" value={String(reports.length)} />
+    </>
+  )
 
   return (
-    <div className="min-h-screen bg-[#050505] text-[#d4d4d8] flex text-[11px] font-mono">
-      <TopNav />
-
-      {showEdit && project && (
-        <EditModal project={project} onClose={() => setShowEdit(false)} onSaved={handleEditSaved} />
-      )}
+    <Shell ticker={ticker}>
+      {showEdit && project && <EditModal project={project} onClose={() => setShowEdit(false)} onSaved={(u) => { setProject(u); setShowEdit(false) }} />}
       {showDelete && project && (
-        <DeleteModal
-          projectName={project.name}
-          onClose={() => setShowDelete(false)}
-          onConfirm={handleDelete}
-          deleting={deleting}
-        />
+        <DeleteModal projectName={project.name} onClose={() => setShowDelete(false)} onConfirm={handleDelete} deleting={deleting} />
       )}
 
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Ticker */}
-        <header className="h-9 bg-[#08080a] border-b border-[#1a1a1e] flex items-center px-3 shrink-0">
-          <div className="flex items-center gap-1.5 mr-4">
-            <span className="text-[9px] font-bold text-[#fa5c29] uppercase tracking-widest">SLA_AWARE_WEBSITE_MONITORING_SYSTEM</span>
-            <span className="text-[#27272a]">|</span>
-            <span className="text-[9px] text-[#6b6b73]">v2.4.1</span>
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-1.5 font-mono text-[11px] text-txt-lo animate-fade-up">
+        <Link to="/dashboard" className="flex items-center gap-1.5 transition-colors hover:text-accent">
+          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2.2} />
+          Overview
+        </Link>
+        <ChevronRight className="h-3 w-3 text-txt-dim" strokeWidth={2.2} />
+        <span className="truncate text-txt-mid">{project?.name || '…'}</span>
+      </nav>
+
+      {/* Header */}
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-4 border-b border-white/[0.06] pb-5 animate-fade-up" style={{ animationDelay: '60ms' }}>
+        <div className="min-w-0">
+          <div className="flex items-center gap-3">
+            <h1 className="font-display text-[24px] font-bold tracking-tight text-txt-hi">{project?.name || 'Loading…'}</h1>
+            {project && (
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider ${
+                  isUp ? 'border-ok/25 bg-ok/[0.08] text-ok' : 'border-crit/25 bg-crit/[0.08] text-crit'
+                }`}
+              >
+                <span className={`led ${isUp ? 'led-ok' : 'led-crit animate-breathe'}`} />
+                {isUp ? 'Operational' : 'Down'}
+              </span>
+            )}
           </div>
+          {project && (
+            <a
+              href={project.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-flex items-center gap-1.5 font-mono text-[12px] text-txt-lo transition-colors hover:text-accent"
+            >
+              {bareUrl(project.url)}
+              <ExternalLink className="h-3 w-3" strokeWidth={2} />
+            </a>
+          )}
+        </div>
 
-          <div className="flex-1 flex items-center gap-5 overflow-hidden">
-            <div className="flex items-center gap-1 text-[9px]">
-              <span className="text-[#3f3f46] uppercase">STATUS</span>
-              <span className={`font-bold ${isUp ? 'text-[#4ade80]' : 'text-[#f87171]'}`}>{isUp ? 'UP' : 'DOWN'}</span>
-            </div>
-            <div className="flex items-center gap-1 text-[9px]">
-              <span className="text-[#3f3f46] uppercase">LAT</span>
-              <span className="text-[#d4d4d8] font-bold">{latestCheck?.latency_ms ?? '—'}ms</span>
-            </div>
-            <div className="flex items-center gap-1 text-[9px]">
-              <span className="text-[#3f3f46] uppercase">INC</span>
-              <span className="text-[#d4d4d8] font-bold">{reports.length}</span>
-            </div>
-          </div>
-
-          <TickerClock />
-        </header>
-
-        <main className="flex-1 p-3 overflow-auto">
-          {/* Breadcrumb */}
-          <div className="flex items-center gap-2 text-[10px] text-[#3f3f46] mb-4">
-            <button onClick={() => navigate('/dashboard')} className="hover:text-[#fa5c29] transition-colors">
-              PROJECTS
+        {project && (
+          <div className="flex items-center gap-2">
+            <button onClick={() => loadData({ silent: true })} disabled={loading || refreshing} className="btn-ghost">
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin-slow' : ''}`} strokeWidth={2.2} />
+              {refreshing ? 'Syncing' : 'Refresh'}
             </button>
-            <span>{'>'}</span>
-            <span className="text-[#d4d4d8]">{project?.name || '...'}</span>
+            <button onClick={() => setShowEdit(true)} className="btn-ghost">
+              <Pencil className="h-3.5 w-3.5" strokeWidth={2.2} />
+              Edit
+            </button>
+            <button onClick={() => setShowDelete(true)} className="btn-danger">
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={2.2} />
+              Delete
+            </button>
           </div>
+        )}
+      </div>
 
-          {/* Header */}
-          <div className="mb-5 pb-4 border-b border-[#1a1a1e]">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h1 className="text-[18px] font-bold tracking-tight">{project?.name || 'Loading...'}</h1>
-                <div className="flex items-center gap-3 mt-2">
-                  <span className="text-[11px] text-[#6b6b73]">
-                    URL: <span className="text-[#d4d4d8]">{project?.url || '—'}</span>
-                  </span>
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 text-[9px] font-bold border ${
-                      isUp
-                        ? 'text-[#4ade80] border-[rgba(74,222,128,0.15)] bg-[rgba(74,222,128,0.06)]'
-                        : 'text-[#f87171] border-[rgba(248,113,113,0.15)] bg-[rgba(248,113,113,0.06)]'
-                    }`}
-                  >
-                    <span className={`w-1 h-1 ${isUp ? 'bg-[#4ade80]' : 'bg-[#f87171] animate-pulse'}`} />
-                    {isUp ? 'UP' : 'DOWN'}
-                  </span>
-                </div>
-              </div>
-
-              {project && (
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={() => loadData({ silent: true })}
-                    disabled={loading || refreshing}
-                    className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold text-[#6b6b73] border border-[#1a1a1e] hover:border-[rgba(250,92,41,0.2)] hover:text-[#fa5c29] transition-colors disabled:opacity-50"
-                  >
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M4.5 12a7.5 7.5 0 0112.1-5.7M19.5 12a7.5 7.5 0 01-12.1 5.7M16.5 6.3V4.5H14.7M7.5 17.7V19.5H9.3"
-                      />
-                    </svg>
-                    {refreshing ? 'REFRESHING' : 'REFRESH'}
-                  </button>
-                  <button
-                    onClick={() => setShowEdit(true)}
-                    className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold text-[#6b6b73] border border-[#1a1a1e] hover:border-[rgba(250,92,41,0.2)] hover:text-[#fa5c29] transition-colors"
-                  >
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
-                    </svg>
-                    EDIT
-                  </button>
-                  <button
-                    onClick={() => setShowDelete(true)}
-                    className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold text-[#f87171] border border-[rgba(248,113,113,0.2)] hover:bg-[rgba(248,113,113,0.08)] transition-colors"
-                  >
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                    </svg>
-                    DELETE
-                  </button>
-                </div>
-              )}
+      {/* Chart + Vitals */}
+      <div className="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-3">
+        {/* Chart */}
+        <div className="panel-flush lg:col-span-2 animate-fade-up" style={{ animationDelay: '120ms' }}>
+          <div className="panel-head">
+            <div className="flex items-center gap-2.5">
+              <span className="led led-accent" />
+              <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Latency Analytics</span>
+            </div>
+            <div className="flex gap-1">
+              {[1, 24, 72].map((h) => (
+                <button
+                  key={h}
+                  onClick={() => setHours(h)}
+                  className={`rounded px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors ${
+                    hours === h
+                      ? 'border border-accent/40 bg-accent/[0.1] text-accent'
+                      : 'border border-white/[0.07] text-txt-lo hover:text-txt-mid'
+                  }`}
+                >
+                  {h}h
+                </button>
+              ))}
             </div>
           </div>
+          <div className="grid-overlay p-2">
+            {loading ? (
+              <div className="grid h-[260px] place-items-center">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+              </div>
+            ) : (
+              <LatencyChart checks={checks} />
+            )}
+          </div>
+        </div>
 
-          {/* Chart + Stats */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-3">
-            {/* Chart */}
-            <div className="lg:col-span-2 border border-[#1a1a1e] bg-[#0d0d10] relative">
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  backgroundImage:
-                    'linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px)',
-                  backgroundSize: '40px 40px',
-                }}
-              />
-              <div className="relative">
-                <div className="flex items-center justify-between px-3 py-2 border-b border-[#1a1a1e] bg-[#08080a]/50">
-                  <div className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 bg-[#fa5c29]" />
-                    <span className="text-[10px] font-bold text-[#d4d4d8] uppercase tracking-widest">
-                      LATENCY_ANALYTICS
-                    </span>
-                    <span className="text-[#27272a]">[{hours}H]</span>
-                  </div>
-                  <div className="flex gap-1">
-                    {[1, 24, 72].map((h) => (
-                      <button
-                        key={h}
-                        onClick={() => setHours(h)}
-                        className={`px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                          hours === h
-                            ? 'bg-[rgba(250,92,41,0.06)] text-[#fa5c29] border border-[rgba(250,92,41,0.2)]'
-                            : 'bg-[#08080a] text-[#3f3f46] border border-[#1a1a1e] hover:border-[rgba(250,92,41,0.15)]'
-                        }`}
-                      >
-                        {h}H
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {loading ? (
-                  <div className="h-48 flex items-center justify-center">
-                    <div className="w-5 h-5 border-2 border-[#fa5c29] border-t-transparent animate-spin" />
-                  </div>
-                ) : (
-                  <LatencyChart checks={status?.checks || []} />
-                )}
-              </div>
-            </div>
-
-            {/* Metrics */}
-            <div className="border border-[#1a1a1e] bg-[#0d0d10]">
-              <div className="px-3 py-2 border-b border-[#1a1a1e] bg-[#08080a]/50">
-                <div className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 bg-[#fa5c29]" />
-                  <span className="text-[10px] font-bold text-[#d4d4d8] uppercase tracking-widest">METRICS</span>
-                </div>
-              </div>
-              <div className="p-3 space-y-0">
-                <div className="flex justify-between items-center py-2 border-b border-[#1a1a1e]/30">
-                  <span className="text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider">CUR_LAT</span>
-                  <span className="text-[16px] font-bold text-[#d4d4d8]">
-                    {latestCheck?.latency_ms ?? '—'}
-                    <span className="text-[9px] text-[#3f3f46] ml-0.5">MS</span>
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-2 border-b border-[#1a1a1e]/30">
-                  <span className="text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider">STATUS</span>
-                  <span className={`text-[16px] font-bold ${isUp ? 'text-[#4ade80]' : 'text-[#f87171]'}`}>
-                    {isUp ? 'UP' : 'DOWN'}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-2 border-b border-[#1a1a1e]/30">
-                  <span className="text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider">INCIDENTS</span>
-                  <span className="text-[16px] font-bold text-[#d4d4d8]">{reports.length}</span>
-                </div>
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider">LAST_CHK</span>
-                  <span className="text-[12px] font-bold text-[#d4d4d8]">
-                    {latestCheck ? new Date(latestCheck.timestamp).toLocaleTimeString() : '—'}
-                  </span>
-                </div>
-              </div>
-            </div>
+        {/* Vitals */}
+        <div className="panel animate-fade-up p-5" style={{ animationDelay: '180ms' }}>
+          <div className="flex items-center gap-2.5">
+            <span className="led led-accent" />
+            <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Vitals</span>
           </div>
 
-          {/* Reports */}
-          <div className="border border-[#1a1a1e] bg-[#0d0d10] relative">
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                backgroundImage:
-                  'linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px)',
-                backgroundSize: '40px 40px',
-              }}
-            />
-            <div className="relative">
-              <div className="flex items-center gap-2 px-3 py-2 border-b border-[#1a1a1e] bg-[#08080a]/50">
-                <span className="w-1.5 h-1.5 bg-[#fa5c29]" />
-                <span className="text-[10px] font-bold text-[#d4d4d8] uppercase tracking-widest">SLA_REPORTS</span>
-                <span className="text-[#27272a]">[{reports.length}]</span>
-              </div>
+          <div className="mt-4 flex justify-center">
+            <UptimeGauge value={uptime} label={`Uptime · ${hours}h`} />
+          </div>
 
-              {reports.length === 0 && !loading && (
-                <div className="px-3 py-6 text-center text-[#3f3f46] text-[11px]">No reports generated yet.</div>
-              )}
+          <div className="mt-4">
+            <Metric label="Current Latency" value={latestCheck ? `${latestCheck.latency_ms}ms` : '—'} />
+            <Metric label="Status" value={isUp ? 'UP' : 'DOWN'} color={isUp ? '#34d399' : '#f87171'} />
+            <Metric label="HTTP Code" value={latestCheck ? latestCheck.http_status_code || 'ERR' : '—'} />
+            <Metric label="Checks · window" value={checks.length} />
+            <Metric label="Last Check" value={latestCheck ? new Date(latestCheck.timestamp).toLocaleTimeString() : '—'} />
+          </div>
 
-              {reports.length > 0 && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse text-[10px]">
-                    <thead>
-                      <tr className="border-b border-[#1a1a1e]">
-                        <th className="px-3 py-1.5 text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider">ID</th>
-                        <th className="px-3 py-1.5 text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider text-right">Uptime%</th>
-                        <th className="px-3 py-1.5 text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider text-right">AvgMs</th>
-                        <th className="px-3 py-1.5 text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider text-right">P95Ms</th>
-                        <th className="px-3 py-1.5 text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider text-right">Inc</th>
-                        <th className="px-3 py-1.5 text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider">Severity</th>
-                        <th className="px-3 py-1.5 text-[9px] font-bold text-[#3f3f46] uppercase tracking-wider text-right">Result</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#1a1a1e]/40">
-                      {reports.map((report) => (
-                        <tr key={report.report_id} className="hover:bg-[#08080a] transition-colors">
-                          <td className="px-3 py-1.5 text-[#d4d4d8] font-mono text-[9px]">{report.report_id}</td>
-                          <td className="px-3 py-1.5 text-right text-[#d4d4d8] font-mono">{report.uptime_pct.toFixed(2)}%</td>
-                          <td className="px-3 py-1.5 text-right text-[#d4d4d8] font-mono">{report.avg_latency_ms}ms</td>
-                          <td className="px-3 py-1.5 text-right text-[#d4d4d8] font-mono">{report.p95_latency_ms}ms</td>
-                          <td className="px-3 py-1.5 text-right text-[#d4d4d8] font-mono">{report.incident_count}</td>
-                          <td className="px-3 py-1.5">
-                            <span className={`text-[9px] font-bold uppercase ${SEVERITY_COLORS[report.severity]}`}>
-                              {SEVERITY_LABELS[report.severity]}
-                            </span>
-                          </td>
-                          <td className="px-3 py-1.5 text-right">
-                            {report.sla_pass ? (
-                              <span className="text-[#4ade80] font-bold text-[10px]">PASS</span>
-                            ) : (
-                              <span className="text-[#f87171] font-bold text-[10px]">FAIL</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+          <div className="mt-4">
+            <span className="micro">Recent probes</span>
+            <div className="mt-2">
+              <StatusStrip checks={checks} bars={48} />
             </div>
-          </div>
-        </main>
-
-        {/* Status Bar */}
-        <div className="h-6 bg-[#08080a] border-t border-[#1a1a1e] flex items-center px-3 text-[9px] text-[#3f3f46] shrink-0">
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1">
-              <span className="w-1 h-1 bg-[#4ade80]" />
-              CONN_OK
-            </span>
-            <span>LAT:14ms</span>
-          </div>
-          <div className="flex-1" />
-          <div className="flex items-center gap-3">
-            <span className="text-[#fa5c29] font-bold">● LIVE ON US-EAST-1</span>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* Reports */}
+      <div className="panel-flush mt-3 animate-fade-up" style={{ animationDelay: '240ms' }}>
+        <div className="panel-head">
+          <div className="flex items-center gap-2.5">
+            <span className="led led-accent" />
+            <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Weekly SLA Reports</span>
+            <span className="font-mono text-[11px] text-txt-dim">[{reports.length}]</span>
+          </div>
+        </div>
+
+        {reports.length === 0 && !loading && (
+          <div className="px-4 py-12 text-center font-mono text-[12px] text-txt-dim">
+            No reports generated yet — the first report lands Monday 08:00 UTC.
+          </div>
+        )}
+
+        {reports.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="border-b border-white/[0.06]">
+                  {['Report', 'Uptime', 'Avg', 'P95', 'Incidents', 'Downtime', 'Severity', 'Result'].map((h, i) => (
+                    <th
+                      key={h}
+                      className={`px-4 py-2.5 font-mono text-[9px] font-bold uppercase tracking-wider text-txt-dim ${
+                        i === 0 ? 'text-left' : 'text-right'
+                      } ${h === 'Severity' ? '!text-left' : ''}`}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {reports.map((r) => {
+                  const sev = SEVERITY[r.severity] ?? SEVERITY.healthy
+                  return (
+                    <tr key={r.report_id} className="border-b border-white/[0.04] transition-colors last:border-0 hover:bg-white/[0.02]">
+                      <td className="px-4 py-3 text-left font-mono text-[12px] font-semibold text-txt-hi">{r.report_id}</td>
+                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{r.uptime_pct.toFixed(2)}%</td>
+                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{r.avg_latency_ms}ms</td>
+                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{r.p95_latency_ms}ms</td>
+                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{r.incident_count}</td>
+                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{formatDowntime(r.total_downtime_sec)}</td>
+                      <td className="px-4 py-3 text-left">
+                        <span
+                          className="inline-flex items-center gap-1.5 rounded border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider"
+                          style={{ color: sev.color, borderColor: `${sev.color}40`, background: sev.dim }}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full" style={{ background: sev.color }} />
+                          {sev.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className={`font-mono text-[11px] font-bold ${r.sla_pass ? 'text-ok' : 'text-crit'}`}>
+                          {r.sla_pass ? 'PASS' : 'FAIL'}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Shell>
   )
 }
