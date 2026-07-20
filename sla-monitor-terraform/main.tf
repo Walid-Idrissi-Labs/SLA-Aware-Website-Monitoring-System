@@ -288,6 +288,7 @@ module "lambda_api" {
     CHECKS_TABLE_NAME   = module.dynamodb.checks_table_name
     INCIDENTS_TABLE_NAME = module.dynamodb.incidents_table_name
     REPORTS_TABLE_NAME  = module.dynamodb.reports_table_name
+    REPORTS_BUCKET_NAME = module.s3.reports_bucket_name
   }
 
   eventbridge_rule_arns    = []
@@ -311,6 +312,7 @@ module "lambda_project_manager" {
   environment_variables = {
     USERS_TABLE_NAME    = module.dynamodb.users_table_name
     PROJECTS_TABLE_NAME = module.dynamodb.projects_table_name
+    REPORT_GENERATOR_FUNCTION_NAME = module.lambda_report_generator.function_name
   }
 
   eventbridge_rule_arns    = []

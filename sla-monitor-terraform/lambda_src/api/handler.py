@@ -14,6 +14,9 @@ _checks_table = None
 _reports_table = None
 _project_gsi_name = None
 
+s3_client = boto3.client("s3")
+REPORTS_BUCKET_NAME = os.environ.get("REPORTS_BUCKET_NAME", "")
+
 
 class DecimalEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -214,6 +217,46 @@ def handle_get_projects_reports(event: dict) -> dict:
 
 
 
+def handle_report_download(event: dict) -> dict:
+    """Return a short-lived pre-signed S3 URL for a report's HTML or JSON file."""
+    user_id = get_user_id(event)
+    project_id = event["pathParameters"]["project_id"]
+    report_id = event["pathParameters"]["report_id"]
+
+    project = get_project_or_403(project_id, user_id)
+    if not project:
+        return error_response(403, "Forbidden")
+
+    query_params = event.get("queryStringParameters") or {}
+    fmt = (query_params.get("format") or "html").lower()
+    if fmt not in ("html", "json"):
+        return error_response(400, "format must be 'html' or 'json'")
+
+    key = f"reports/{project_id}/{report_id}.{fmt}"
+    content_type = "text/html" if fmt == "html" else "application/json"
+
+    # Confirm the artifact exists so we 404 cleanly instead of handing back a URL
+    # that resolves to a NoSuchKey error.
+    try:
+        s3_client.head_object(Bucket=REPORTS_BUCKET_NAME, Key=key)
+    except ClientError as e:
+        if e.response["Error"]["Code"] in ("404", "NoSuchKey", "NotFound"):
+            return error_response(404, "Report file not found")
+        raise
+
+    url = s3_client.generate_presigned_url(
+        "get_object",
+        Params={
+            "Bucket": REPORTS_BUCKET_NAME,
+            "Key": key,
+            "ResponseContentType": content_type,
+            "ResponseContentDisposition": f'attachment; filename="{report_id}.{fmt}"',
+        },
+        ExpiresIn=300,
+    )
+    return success(200, {"url": url, "expires_in": 300})
+
+
 def lambda_handler(event: dict, context) -> dict:
     try:
         #payload_format_version = "2.0" #(HTTP API)
@@ -232,6 +275,10 @@ def lambda_handler(event: dict, context) -> dict:
 
         if method == "GET" and path == "/projects":
             return handle_get_projects(event)
+
+        # GET /projects/{project_id}/reports/{report_id}/download
+        if method == "GET" and path_params.get("report_id"):
+            return handle_report_download(event)
 
         if method == "GET" and path_params.get("project_id"):
             project_id = path_params["project_id"]

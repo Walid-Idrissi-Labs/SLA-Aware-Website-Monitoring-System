@@ -14,6 +14,9 @@ dynamodb = boto3.resource("dynamodb")
 users_table =    dynamodb.Table(os.environ["USERS_TABLE_NAME"])
 projects_table = dynamodb.Table(os.environ["PROJECTS_TABLE_NAME"])
 
+lambda_client = boto3.client("lambda")
+REPORT_GENERATOR_FUNCTION_NAME = os.environ.get("REPORT_GENERATOR_FUNCTION_NAME", "")
+
 def floats_to_decimal(obj):
     """Recursively convert floats to Decimal for DynamoDB compatibility."""
     if isinstance(obj, float):
@@ -274,6 +277,33 @@ def handle_delete_projects_id(event: dict) -> dict:
 
 
 
+def handle_generate_report(event: dict) -> dict:
+    """Kick off an on-demand report for one project (async; no email)."""
+    user_id = get_user_id(event)
+    project_id = event["pathParameters"]["project_id"]
+
+    project = get_project_or_403(project_id, user_id)
+    if not project:
+        return error_response(403, "Forbidden")
+
+    body = json.loads(event.get("body") or "{}")
+    try:
+        days = int(body.get("days", 7))
+    except (TypeError, ValueError):
+        days = 7
+    if days not in (1, 7, 30):
+        return error_response(400, "days must be 1, 7, or 30")
+
+    # Fire-and-forget: the report generator does the heavy lifting asynchronously.
+    lambda_client.invoke(
+        FunctionName=REPORT_GENERATOR_FUNCTION_NAME,
+        InvocationType="Event",
+        Payload=json.dumps({"project_id": project_id, "days": days}).encode("utf-8"),
+    )
+
+    return success(202, {"message": "Report generation started", "days": days})
+
+
 def lambda_handler(event: dict, context) -> dict:
     method = event["requestContext"]["http"]["method"]
     path = event["requestContext"]["http"]["path"]
@@ -288,6 +318,10 @@ def lambda_handler(event: dict, context) -> dict:
 
         if method == "POST" and path == "/projects":
             return handle_post_projects(event)
+
+        # POST /projects/{project_id}/reports  (the only POST with a path param)
+        if method == "POST" and path_params.get("project_id"):
+            return handle_generate_report(event)
 
         if method == "PUT" and path_params.get("project_id"):
             project_id = path_params["project_id"]

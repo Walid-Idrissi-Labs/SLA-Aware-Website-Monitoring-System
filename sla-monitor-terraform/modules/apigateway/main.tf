@@ -218,6 +218,32 @@ resource "aws_apigatewayv2_route" "get_projects_reports" {
 }
 
 
+# On-demand report generation (async trigger) -> Project Manager Lambda
+resource "aws_apigatewayv2_route" "post_projects_reports" {
+  api_id = aws_apigatewayv2_api.main.id
+
+  route_key = "POST /projects/{project_id}/reports"
+
+  target = "integrations/${aws_apigatewayv2_integration.project_manager_lambda.id}"
+
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+}
+
+
+# Pre-signed download of a report's HTML/JSON artifact -> API Lambda
+resource "aws_apigatewayv2_route" "get_report_download" {
+  api_id = aws_apigatewayv2_api.main.id
+
+  route_key = "GET /projects/{project_id}/reports/{report_id}/download"
+
+  target = "integrations/${aws_apigatewayv2_integration.api_lambda.id}"
+
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+}
+
+
 #base url
 resource "aws_apigatewayv2_stage" "default" {
   api_id = aws_apigatewayv2_api.main.id

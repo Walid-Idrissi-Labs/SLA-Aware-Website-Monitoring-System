@@ -372,6 +372,18 @@ data "aws_iam_policy_document" "api_lambda_policy" {
       var.reports_table_arn,
     ]
   }
+
+  # Read report artifacts to serve pre-signed download URLs.
+  statement {
+    sid    = "DownloadReportFiles"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+    ]
+    resources = [
+      "${var.reports_bucket_arn}/reports/*",
+    ]
+  }
 }
 
 
@@ -447,6 +459,18 @@ data "aws_iam_policy_document" "project_manager_lambda_policy" {
     ]
     resources = [
       var.projects_table_arn,
+    ]
+  }
+
+  # Trigger on-demand report generation (async) for a single project.
+  statement {
+    sid    = "InvokeReportGenerator"
+    effect = "Allow"
+    actions = [
+      "lambda:InvokeFunction",
+    ]
+    resources = [
+      "arn:aws:lambda:${var.region}:${var.account_id}:function:${var.name_prefix}-report-generator-lambda",
     ]
   }
 }
