@@ -36,7 +36,13 @@ export default function AuthLayout({ kicker, title, subtitle, children, footer }
 
         {/* Card */}
         <div className="panel frame-corners mt-6 p-6">
-          <p className="kicker">{kicker}</p>
+          <div className="relative flex items-center justify-between mb-6 gap-3">
+            <p className="kicker">{kicker}</p>
+
+            <span className="font-mono text-[10px] uppercase tracking-micro  text-txt-dim">
+              Secured by Amazon Cognito
+            </span>
+          </div>
           <h2 className="mt-1 font-display text-[18px] font-semibold text-txt-hi">{title}</h2>
           {subtitle && <p className="mt-1 text-[12px] leading-relaxed text-txt-lo">{subtitle}</p>}
           <div className="hr-accent mt-4" />
@@ -44,14 +50,6 @@ export default function AuthLayout({ kicker, title, subtitle, children, footer }
         </div>
 
         {footer && <div className="mt-5 text-center text-[12px] text-txt-lo">{footer}</div>}
-
-        {/* Trust badge — surfaces the AWS integration (portfolio signal). */}
-        <div className="mt-6 flex items-center justify-center gap-1.5 text-txt-dim">
-          <ShieldCheck className="h-3 w-3" strokeWidth={1.75} />
-          <span className="font-mono text-[10px] uppercase tracking-micro">
-            Secured by Amazon Cognito
-          </span>
-        </div>
       </div>
     </div>
   )
