@@ -121,20 +121,15 @@ def close_incident(project_id: str, start_time_sec: int, end_time_sec: int) -> b
 
 
 def detect_recovery(checks: list[dict]) -> int | None:
-
-    if not checks:
-        return None
-
-    most_recent = checks[-1]
-    if most_recent["status"] != "success":
-        return None
-
-
-    prior_failures = [c for c in checks[:-1] if c["status"] == "failure"]
-    if not prior_failures:
-        return None
-
-    return most_recent["timestamp"]
+    # checks are oldest-first; the true recovery is the FIRST success that
+    # follows a failure run, not the most recent check in the window.
+    saw_failure = False
+    for c in checks:
+        if c["status"] == "failure":
+            saw_failure = True
+        elif saw_failure:  # first success after >= 1 failure
+            return c["timestamp"]
+    return None
 
 
 

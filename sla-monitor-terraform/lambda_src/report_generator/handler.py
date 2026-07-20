@@ -135,7 +135,10 @@ def build_report(
         perf["avg_latency_ms"],
     )
 
-    report_id = week_end.strftime("%Y-W%V")
+    # ISO year+week of the Monday that begins the reported week. Uses isocalendar
+    # (not %Y+%V) so the year is correct across calendar-year boundaries.
+    iso_year, iso_week, _ = week_start.isocalendar()
+    report_id = f"{iso_year}-W{iso_week:02d}"
     generated_at = datetime.now(timezone.utc).isoformat()
 
     report = {
@@ -157,9 +160,10 @@ def build_report(
 
 
 def upload_report_files(report: dict, project_id: str, week_start: datetime) -> None:
-    year = week_start.strftime("%Y")
-    week_num = week_start.strftime("%V")
-    base_key = f"reports/{project_id}/{year}/week-{week_num}"
+    # Derive the S3 path from the same ISO year/week as report_id so the
+    # filename always matches the report it contains.
+    iso_year, iso_week, _ = week_start.isocalendar()
+    base_key = f"reports/{project_id}/{iso_year}/week-{iso_week:02d}"
 
 
     json_key = f"{base_key}.json"
