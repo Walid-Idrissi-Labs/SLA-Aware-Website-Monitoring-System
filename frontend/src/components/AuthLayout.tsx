@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import { ShieldCheck } from 'lucide-react'
 import Logo from './Logo'
 
 interface Props {
