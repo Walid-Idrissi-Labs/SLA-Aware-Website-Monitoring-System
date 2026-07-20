@@ -109,6 +109,18 @@ resource "aws_apigatewayv2_route" "get_me" {
 }
 
 
+resource "aws_apigatewayv2_route" "post_me" {
+  api_id = aws_apigatewayv2_api.main.id
+
+  route_key = "POST /me"
+
+  target = "integrations/${aws_apigatewayv2_integration.project_manager_lambda.id}"
+
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+}
+
+
 resource "aws_apigatewayv2_route" "put_me" {
   api_id = aws_apigatewayv2_api.main.id
 

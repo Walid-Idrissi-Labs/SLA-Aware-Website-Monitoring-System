@@ -83,6 +83,37 @@ def get_project_or_403(project_id: str, user_id: str) -> dict | None:
 
 
 
+def handle_post_me(event: dict) -> dict:
+    # First-login profile bootstrap. Idempotent: creates the full user record from
+    # the JWT claims, and never clobbers an existing one.
+    user_id = get_user_id(event)
+    claims = event["requestContext"]["authorizer"]["jwt"]["claims"]
+    email = claims.get("email", "")
+    display_name = claims.get("name") or (email.split("@")[0] if email else "User")
+    now = datetime.now(timezone.utc).isoformat()
+
+    profile = {
+        "user_id": user_id,
+        "email": email,
+        "display_name": display_name,
+        "notification_email": email,
+        "created_at": now,
+    }
+
+    try:
+        users_table.put_item(
+            Item=profile,
+            ConditionExpression="attribute_not_exists(user_id)",
+        )
+        return success(201, profile)
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            # Already bootstrapped — return the existing profile.
+            existing = users_table.get_item(Key={"user_id": user_id}).get("Item")
+            return success(200, existing or profile)
+        raise
+
+
 def handle_put_me(event: dict) -> dict:
     user_id = get_user_id(event)
     body = json.loads(event.get("body") or "{}")
@@ -104,6 +135,16 @@ def handle_put_me(event: dict) -> dict:
 
     if not update_parts:
         return error_response(400, "No valid fields provided")
+
+    # Backfill immutable identity fields on first write, so a Settings-save before
+    # the profile is bootstrapped still yields a complete record (never overwrites).
+    update_parts.append("#em = if_not_exists(#em, :em)")
+    expression_names["#em"] = "email"
+    expression_values[":em"] = get_user_email(event)
+
+    update_parts.append("#ca = if_not_exists(#ca, :ca)")
+    expression_names["#ca"] = "created_at"
+    expression_values[":ca"] = datetime.now(timezone.utc).isoformat()
 
     update_expression = "SET " + ", ".join(update_parts)
 
@@ -239,6 +280,9 @@ def lambda_handler(event: dict, context) -> dict:
     path_params = event.get("pathParameters") or {}
 
     try:
+        if method == "POST" and path == "/me":
+            return handle_post_me(event)
+
         if method == "PUT" and path == "/me":
             return handle_put_me(event)
 
