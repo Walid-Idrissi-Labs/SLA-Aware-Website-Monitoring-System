@@ -4,7 +4,7 @@ import time
 import logging
 
 import boto3
-from botocore.exceptions import ClientError, ConditionalCheckFailedException
+from botocore.exceptions import ClientError
 
 
 
@@ -111,9 +111,11 @@ def close_incident(project_id: str, start_time_sec: int, end_time_sec: int) -> b
         )
         return True
 
-    except ConditionalCheckFailedException:
-        logger.info(f"Incident for project {project_id} was already closed — skipping")
-        return False
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            logger.info(f"Incident for project {project_id} was already closed — skipping")
+            return False
+        raise
 
 
 
