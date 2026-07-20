@@ -3,10 +3,9 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Mail, Lock, Eye, EyeOff, ArrowRight, TriangleAlert, Check } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
 import GoogleIcon from '../components/GoogleIcon'
-import { isAuthenticated, setToken, storeUser, decodeToken, buildGoogleLoginUrl } from '../lib/auth'
+import { isAuthenticated, setToken, buildGoogleLoginUrl } from '../lib/auth'
 import { signIn, friendlyAuthMessage } from '../lib/cognito'
-import { getMe } from '../lib/api'
-import type { User } from '../types'
+import { hydrateProfile } from '../lib/api'
 
 interface LoginState {
   email?: string
@@ -32,26 +31,10 @@ export default function Login() {
     if (isAuthenticated()) navigate('/dashboard', { replace: true })
   }, [navigate])
 
-  // Persist the token, hydrate (or lazily create) the app profile, then enter the app.
+  // Persist the token, hydrate (creating on first login) the app profile, then enter.
   async function completeLogin(idToken: string) {
     setToken(idToken)
-    try {
-      const user = await getMe()
-      storeUser(user)
-    } catch {
-      const decoded = decodeToken(idToken)
-      if (decoded) {
-        const fallbackEmail = decoded.email || email
-        const minimal: User = {
-          user_id: decoded.sub,
-          email: fallbackEmail,
-          display_name: decoded.name || fallbackEmail.split('@')[0] || 'User',
-          notification_email: fallbackEmail,
-          created_at: new Date().toISOString(),
-        }
-        storeUser(minimal)
-      }
-    }
+    await hydrateProfile()
     navigate('/dashboard')
   }
 

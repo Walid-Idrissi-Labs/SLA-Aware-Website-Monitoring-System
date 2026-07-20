@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Hash, Mail, User as UserIcon, Bell, Check, TriangleAlert } from 'lucide-react'
 import Shell from '../components/Shell'
 import TickerStat from '../components/TickerStat'
-import { getMe, putMe } from '../lib/api'
+import { hydrateProfile, putMe } from '../lib/api'
 import type { User } from '../types'
 
 export default function Settings() {
@@ -16,7 +16,9 @@ export default function Settings() {
   useEffect(() => {
     async function load() {
       try {
-        const data = await getMe()
+        // Loads the profile, creating it server-side if this user predates the
+        // first-login bootstrap. Never throws — always resolves to a profile.
+        const data = await hydrateProfile()
         setUser(data)
         setDisplayName(data.display_name || '')
         setNotificationEmail(data.notification_email || '')

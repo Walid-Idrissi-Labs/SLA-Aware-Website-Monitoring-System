@@ -1,9 +1,8 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { setToken, decodeToken, storeUser } from '../lib/auth'
-import { getMe } from '../lib/api'
+import { setToken } from '../lib/auth'
+import { hydrateProfile } from '../lib/api'
 import BootSplash from '../components/BootSplash'
-import type { User } from '../types'
 
 export default function Callback() {
   const navigate = useNavigate()
@@ -50,24 +49,7 @@ export default function Callback() {
 
       const { id_token } = await tokenRes.json()
       setToken(id_token)
-
-      try {
-        const user = await getMe()
-        storeUser(user as unknown as User)
-      } catch {
-        const decoded = decodeToken(id_token)
-        if (decoded) {
-          const minimalUser: User = {
-            user_id: decoded.sub,
-            email: decoded.email || '',
-            display_name: decoded.name || decoded.email?.split('@')[0] || 'User',
-            notification_email: decoded.email || '',
-            created_at: new Date().toISOString(),
-          }
-          storeUser(minimalUser)
-        }
-      }
-
+      await hydrateProfile()
       navigate('/dashboard')
     }
 
