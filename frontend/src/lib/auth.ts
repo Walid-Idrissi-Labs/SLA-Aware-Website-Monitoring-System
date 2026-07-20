@@ -1,4 +1,5 @@
 import { generateRandomString, generateCodeChallenge } from './PKCE-helpers';
+import { signOutLocal } from './cognito';
 
 const TOKEN_KEY = 'id_token';
 const USER_KEY = 'user';
@@ -99,12 +100,43 @@ export async function buildLoginUrl(): Promise<string> {
 
 
 
-export function logout(): void {
-  clearToken();
+/**
+ * Direct Google sign-in: jumps straight to Google's consent screen (skips the
+ * Cognito page) via the OAuth authorize endpoint with identity_provider=Google.
+ * The returned `code` is handled by the existing Callback page — unchanged.
+ */
+export async function buildGoogleLoginUrl(): Promise<string> {
   const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID;
-  const logoutUri = `${window.location.origin}/login`;
+  const redirectUri = `${window.location.origin}/callback`;
   const cognitoUrl = import.meta.env.VITE_COGNITO_HOSTED_UI_URL;
-  window.location.href = `${cognitoUrl}/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(logoutUri)}`;
+
+  const codeVerifier = generateRandomString(64);
+  const codeChallenge = await generateCodeChallenge(codeVerifier);
+  sessionStorage.setItem('pkce_verifier', codeVerifier);
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    response_type: 'code',
+    scope: 'openid email profile',
+    redirect_uri: redirectUri,
+    identity_provider: 'Google',
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256',
+  });
+
+  return `${cognitoUrl}/oauth2/authorize?${params.toString()}`;
+}
+
+export function logout(): void {
+  // Clear our token + the SDK's cached session. No hosted-UI round-trip needed
+  // for password sign-ins; the user simply returns to the custom /login page.
+  try {
+    signOutLocal();
+  } catch {
+    /* pool may be unconfigured; the local token clear below is what matters */
+  }
+  clearToken();
+  window.location.href = '/login';
 }
 
 export function storeUser(user: unknown): void {

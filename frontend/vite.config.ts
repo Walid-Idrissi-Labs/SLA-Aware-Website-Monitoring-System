@@ -11,5 +11,8 @@ export default defineConfig({
   },
   define: {
     'process.env': {},
+    // amazon-cognito-identity-js references the Node `global`; map it to the
+    // browser global so the SRP auth flow runs without a "global is not defined" error.
+    global: 'globalThis',
   },
 })

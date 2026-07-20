@@ -1,80 +1,40 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Mail, Lock, Eye, EyeOff, ArrowRight, TriangleAlert, Check } from 'lucide-react'
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { User as UserIcon, Mail, Lock, Eye, EyeOff, ArrowRight, TriangleAlert } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
 import GoogleIcon from '../components/GoogleIcon'
-import { isAuthenticated, setToken, storeUser, decodeToken, buildGoogleLoginUrl } from '../lib/auth'
-import { signIn, friendlyAuthMessage } from '../lib/cognito'
-import { getMe } from '../lib/api'
-import type { User } from '../types'
+import { buildGoogleLoginUrl } from '../lib/auth'
+import { signUp, friendlyAuthMessage } from '../lib/cognito'
 
-interface LoginState {
-  email?: string
-  justConfirmed?: boolean
-}
-
-export default function Login() {
+export default function Signup() {
   const navigate = useNavigate()
-  const location = useLocation()
-  const state = (location.state ?? null) as LoginState | null
-
-  const [email, setEmail] = useState(state?.email ?? '')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(
-    state?.justConfirmed ? 'Email verified — you can sign in now.' : null
-  )
-
-  useEffect(() => {
-    if (isAuthenticated()) navigate('/dashboard', { replace: true })
-  }, [navigate])
-
-  // Persist the token, hydrate (or lazily create) the app profile, then enter the app.
-  async function completeLogin(idToken: string) {
-    setToken(idToken)
-    try {
-      const user = await getMe()
-      storeUser(user)
-    } catch {
-      const decoded = decodeToken(idToken)
-      if (decoded) {
-        const fallbackEmail = decoded.email || email
-        const minimal: User = {
-          user_id: decoded.sub,
-          email: fallbackEmail,
-          display_name: decoded.name || fallbackEmail.split('@')[0] || 'User',
-          notification_email: fallbackEmail,
-          created_at: new Date().toISOString(),
-        }
-        storeUser(minimal)
-      }
-    }
-    navigate('/dashboard')
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!email.trim() || !password) {
-      setError('Enter your email and password.')
+      setError('Email and password are required.')
+      return
+    }
+    if (password !== confirm) {
+      setError('Passwords do not match.')
       return
     }
     setLoading(true)
     setError(null)
-    setNotice(null)
     try {
-      const idToken = await signIn(email.trim(), password)
-      await completeLogin(idToken)
+      await signUp(email.trim(), password, name)
+      // Cognito has emailed a verification code; go collect it.
+      navigate('/confirm', { state: { email: email.trim() } })
     } catch (err) {
-      const { code, message } = friendlyAuthMessage(err)
-      // An unconfirmed account can't sign in — send them to verify instead.
-      if (code === 'UserNotConfirmedException') {
-        navigate('/confirm', { state: { email: email.trim() } })
-        return
-      }
-      setError(message)
+      setError(friendlyAuthMessage(err).message)
       setLoading(false)
     }
   }
@@ -94,31 +54,43 @@ export default function Login() {
 
   return (
     <AuthLayout
-      kicker="Secure Access"
-      title="Sign in"
-      subtitle="Access your endpoints, uptime history, and SLA reports."
+      kicker="Get Started"
+      title="Create your account"
+      subtitle="Monitor uptime and latency, and get weekly SLA reports by email."
       footer={
         <>
-          New to SLA Monitor?{' '}
-          <Link to="/signup" className="font-medium text-accent hover:underline">
-            Create an account
+          Already have an account?{' '}
+          <Link to="/login" className="font-medium text-accent hover:underline">
+            Sign in
           </Link>
         </>
       }
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        {notice && (
-          <div className="flex items-center gap-2 rounded-md border border-ok/25 bg-ok/[0.06] px-3 py-2 text-[12px] text-ok animate-fade-in">
-            <Check className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
-            {notice}
-          </div>
-        )}
         {error && (
           <div className="flex items-center gap-2 rounded-md border border-crit/25 bg-crit/[0.06] px-3 py-2 text-[12px] text-crit animate-fade-in">
             <TriangleAlert className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
             {error}
           </div>
         )}
+
+        <div>
+          <label className="field-label" htmlFor="name">
+            <span className="inline-flex items-center gap-1.5">
+              <UserIcon className="h-3 w-3" strokeWidth={1.75} /> Name{' '}
+              <span className="normal-case text-txt-dim">(optional)</span>
+            </span>
+          </label>
+          <input
+            id="name"
+            type="text"
+            autoComplete="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="field"
+            placeholder="Jane Doe"
+          />
+        </div>
 
         <div>
           <label className="field-label" htmlFor="email">
@@ -148,7 +120,7 @@ export default function Login() {
             <input
               id="password"
               type={showPw ? 'text' : 'password'}
-              autoComplete="current-password"
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="field pr-10"
@@ -165,6 +137,27 @@ export default function Login() {
               {showPw ? <EyeOff className="h-3.5 w-3.5" strokeWidth={1.75} /> : <Eye className="h-3.5 w-3.5" strokeWidth={1.75} />}
             </button>
           </div>
+          <p className="mt-1.5 text-[10px] text-txt-dim">
+            Min 8 characters, with an uppercase letter, a number, and a symbol.
+          </p>
+        </div>
+
+        <div>
+          <label className="field-label" htmlFor="confirm">
+            <span className="inline-flex items-center gap-1.5">
+              <Lock className="h-3 w-3" strokeWidth={1.75} /> Confirm password
+            </span>
+          </label>
+          <input
+            id="confirm"
+            type={showPw ? 'text' : 'password'}
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            className="field"
+            placeholder="••••••••"
+            required
+          />
         </div>
 
         <button
@@ -176,7 +169,7 @@ export default function Login() {
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
           ) : (
             <>
-              Sign in <ArrowRight className="h-4 w-4" strokeWidth={2} />
+              Create account <ArrowRight className="h-4 w-4" strokeWidth={2} />
             </>
           )}
         </button>

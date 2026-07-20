@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { isAuthenticated } from './lib/auth'
 import Login from './pages/Login'
+import Signup from './pages/Signup'
+import ConfirmSignup from './pages/ConfirmSignup'
 import Callback from './pages/Callback'
 import Dashboard from './pages/Dashboard'
 import ProjectDetail from './pages/ProjectDetail'
@@ -18,6 +20,8 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/confirm" element={<ConfirmSignup />} />
         <Route path="/callback" element={<Callback />} />
         <Route
           path="/dashboard"
