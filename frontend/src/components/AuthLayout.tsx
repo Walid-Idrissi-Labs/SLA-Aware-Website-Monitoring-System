@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { ShieldCheck } from 'lucide-react'
 import Logo from './Logo'
 
 interface Props {
@@ -43,6 +44,14 @@ export default function AuthLayout({ kicker, title, subtitle, children, footer }
         </div>
 
         {footer && <div className="mt-5 text-center text-[12px] text-txt-lo">{footer}</div>}
+
+        {/* Trust badge — surfaces the AWS integration (portfolio signal). */}
+        <div className="mt-6 flex items-center justify-center gap-1.5 text-txt-dim">
+          <ShieldCheck className="h-3 w-3" strokeWidth={1.75} />
+          <span className="font-mono text-[10px] uppercase tracking-micro">
+            Secured by Amazon Cognito
+          </span>
+        </div>
       </div>
     </div>
   )
