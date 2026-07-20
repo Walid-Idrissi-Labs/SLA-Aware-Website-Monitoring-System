@@ -11,13 +11,24 @@ import {
   ChevronRight,
   CircleCheck,
   CircleAlert,
+  Download,
+  Sheet,
+  Zap,
 } from 'lucide-react'
 import Shell from '../components/Shell'
 import TickerStat from '../components/TickerStat'
 import LatencyChart from '../components/LatencyChart'
 import UptimeGauge from '../components/UptimeGauge'
 import StatusStrip from '../components/StatusStrip'
-import { getProject, getProjectStatus, getProjectReports, updateProject, deleteProject } from '../lib/api'
+import {
+  getProject,
+  getProjectStatus,
+  getProjectReports,
+  updateProject,
+  deleteProject,
+  generateReport,
+  getReportDownloadUrl,
+} from '../lib/api'
 import type { ProjectStatus, ProjectReport, Project, UpdateProjectInput } from '../types'
 import { SEVERITY, uptimeFromChecks, bareUrl } from '../lib/format'
 
@@ -221,6 +232,11 @@ export default function ProjectDetail() {
   const [showDelete, setShowDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  const [genDays, setGenDays] = useState<1 | 7 | 30>(7)
+  const [generating, setGenerating] = useState(false)
+  const [genMsg, setGenMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null)
+  const [downloadKey, setDownloadKey] = useState<string | null>(null)
+
   const loadData = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!id || loadingRef.current) return
@@ -267,9 +283,77 @@ export default function ProjectDetail() {
   }
 
   const checks = status?.checks || []
-  const latestCheck = checks[0]
+  const latestCheck = checks[checks.length - 1]
   const isUp = status?.current_status === 'success'
   const uptime = uptimeFromChecks(checks)
+  const sortedReports = [...reports].sort((a, b) => b.generated_at.localeCompare(a.generated_at))
+
+  async function handleGenerate() {
+    if (!id) return
+    setGenerating(true)
+    setGenMsg(null)
+    const today = new Date().toISOString().slice(0, 10)
+    const expectedId = `${genDays}d-${today}`
+    const prevGeneratedAt = reports.find((r) => r.report_id === expectedId)?.generated_at ?? null
+    try {
+      await generateReport(id, genDays)
+      setGenMsg({ type: 'info', text: 'Generating report…' })
+      // Poll until the expected report appears (or is refreshed with new data).
+      let done = false
+      for (let attempt = 0; attempt < 15 && !done; attempt++) {
+        await new Promise((res) => setTimeout(res, 2000))
+        const fresh = await getProjectReports(id)
+        const match = fresh.find((r) => r.report_id === expectedId)
+        if (match && match.generated_at !== prevGeneratedAt) {
+          setReports(fresh)
+          setGenMsg({ type: 'success', text: `Report ${expectedId} is ready.` })
+          done = true
+        }
+      }
+      if (!done) setGenMsg({ type: 'info', text: 'Still processing — it will appear shortly. Try Refresh.' })
+    } catch (e) {
+      setGenMsg({ type: 'error', text: e instanceof Error ? e.message : 'Could not start report generation.' })
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  async function downloadReport(reportId: string, format: 'html' | 'json') {
+    if (!id) return
+    setDownloadKey(`${reportId}:${format}`)
+    try {
+      const { url } = await getReportDownloadUrl(id, reportId, format)
+      const a = document.createElement('a')
+      a.href = url
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    } catch (e) {
+      setGenMsg({ type: 'error', text: e instanceof Error ? e.message : 'Download failed.' })
+    } finally {
+      setDownloadKey(null)
+    }
+  }
+
+  function exportCsv() {
+    const cols: (keyof ProjectReport)[] = [
+      'report_id', 'uptime_pct', 'avg_latency_ms', 'p95_latency_ms',
+      'incident_count', 'total_downtime_sec', 'severity', 'sla_pass', 'generated_at',
+    ]
+    const esc = (v: unknown) => {
+      const s = String(v ?? '')
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    }
+    const csv = [cols.join(','), ...sortedReports.map((r) => cols.map((c) => esc(r[c])).join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${(project?.name || 'project').replace(/\s+/g, '-')}-sla-reports.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   const ticker = (
     <>
@@ -410,14 +494,66 @@ export default function ProjectDetail() {
       <div className="panel-flush mt-3 animate-fade-up" style={{ animationDelay: '240ms' }}>
         <div className="panel-head">
           <div className="flex items-center gap-2.5">
-            <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Weekly SLA Reports</span>
+            <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">SLA Reports</span>
             <span className="font-mono text-[11px] text-txt-dim">[{reports.length}]</span>
           </div>
         </div>
 
+        {/* Generate toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            <span className="micro text-txt-lo">Period</span>
+            <div className="flex overflow-hidden rounded-md border border-white/[0.08]">
+              {([1, 7, 30] as const).map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setGenDays(d)}
+                  disabled={generating}
+                  className={`px-2.5 py-1 font-mono text-[10px] font-bold uppercase transition-colors disabled:opacity-50 ${
+                    genDays === d ? 'bg-accent/[0.12] text-accent' : 'text-txt-lo hover:text-txt-mid'
+                  }`}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+            <button onClick={handleGenerate} disabled={generating} className="btn-accent">
+              {generating ? (
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              ) : (
+                <Zap className="h-3.5 w-3.5" strokeWidth={1.75} />
+              )}
+              {generating ? 'Generating' : 'Generate'}
+            </button>
+          </div>
+          {reports.length > 0 && (
+            <button onClick={exportCsv} disabled={generating} className="btn-ghost">
+              <Sheet className="h-3.5 w-3.5" strokeWidth={1.75} />
+              Export CSV
+            </button>
+          )}
+        </div>
+
+        {genMsg && (
+          <div
+            className={`mx-4 mt-3 flex items-center gap-2 rounded-md border px-3 py-2 text-[12px] ${
+              genMsg.type === 'success'
+                ? 'border-ok/25 bg-ok/[0.06] text-ok'
+                : genMsg.type === 'error'
+                ? 'border-crit/25 bg-crit/[0.06] text-crit'
+                : 'border-white/[0.1] bg-white/[0.03] text-txt-mid'
+            }`}
+          >
+            {genMsg.type === 'info' && (
+              <div className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            )}
+            {genMsg.text}
+          </div>
+        )}
+
         {reports.length === 0 && !loading && (
           <div className="px-4 py-12 text-center font-mono text-[12px] text-txt-dim">
-            No reports generated yet — the first report lands Monday 08:00 UTC.
+            No reports yet — generate one above, or the weekly report lands Monday 08:00 UTC.
           </div>
         )}
 
@@ -426,7 +562,7 @@ export default function ProjectDetail() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="border-b border-white/[0.06]">
-                  {['Report', 'Uptime', 'Avg', 'P95', 'Incidents', 'Downtime', 'Severity', 'Result'].map((h, i) => (
+                  {['Report', 'Uptime', 'Avg', 'P95', 'Incidents', 'Downtime', 'Severity', 'Result', 'Files'].map((h, i) => (
                     <th
                       key={h}
                       className={`px-4 py-2.5 font-mono text-[9px] font-bold uppercase tracking-wider text-txt-dim ${
@@ -439,7 +575,7 @@ export default function ProjectDetail() {
                 </tr>
               </thead>
               <tbody>
-                {reports.map((r) => {
+                {sortedReports.map((r) => {
                   const sev = SEVERITY[r.severity] ?? SEVERITY.healthy
                   return (
                     <tr key={r.report_id} className="border-b border-white/[0.04] transition-colors last:border-0 hover:bg-white/[0.02]">
@@ -462,6 +598,29 @@ export default function ProjectDetail() {
                         <span className={`font-mono text-[11px] font-bold ${r.sla_pass ? 'text-ok' : 'text-crit'}`}>
                           {r.sla_pass ? 'PASS' : 'FAIL'}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          {(['html', 'json'] as const).map((fmt) => {
+                            const busy = downloadKey === `${r.report_id}:${fmt}`
+                            return (
+                              <button
+                                key={fmt}
+                                onClick={() => downloadReport(r.report_id, fmt)}
+                                disabled={busy}
+                                title={`Download ${fmt.toUpperCase()}`}
+                                className="inline-flex items-center gap-1 rounded border border-white/[0.08] px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-txt-lo transition-colors hover:border-accent/40 hover:text-accent disabled:opacity-50"
+                              >
+                                {busy ? (
+                                  <div className="h-2.5 w-2.5 animate-spin rounded-full border border-current border-t-transparent" />
+                                ) : (
+                                  <Download className="h-2.5 w-2.5" strokeWidth={2} />
+                                )}
+                                {fmt}
+                              </button>
+                            )
+                          })}
+                        </div>
                       </td>
                     </tr>
                   )

@@ -114,3 +114,18 @@ export function getProjectStatus(projectId: string, hours = 24): Promise<Project
 export function getProjectReports(projectId: string): Promise<ProjectReport[]> {
   return request<ProjectReport[]>('GET', `/projects/${projectId}/reports`);
 }
+
+export function generateReport(projectId: string, days: number): Promise<{ message: string; days: number }> {
+  return request('POST', `/projects/${projectId}/reports`, { days });
+}
+
+export function getReportDownloadUrl(
+  projectId: string,
+  reportId: string,
+  format: 'html' | 'json'
+): Promise<{ url: string; expires_in: number }> {
+  return request(
+    'GET',
+    `/projects/${projectId}/reports/${encodeURIComponent(reportId)}/download?format=${format}`
+  );
+}
