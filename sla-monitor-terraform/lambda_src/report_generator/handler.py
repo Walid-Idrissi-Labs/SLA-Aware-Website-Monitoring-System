@@ -3,6 +3,7 @@ import os
 import time
 import logging
 from datetime import datetime, timezone, timedelta
+from decimal import Decimal
 from typing import Any
 
 import boto3
@@ -28,6 +29,15 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
+def floats_to_decimal(obj):
+    """Recursively convert floats to Decimal for DynamoDB compatibility."""
+    if isinstance(obj, float):
+        return Decimal(str(obj))  # str() avoids float precision noise
+    if isinstance(obj, dict):
+        return {k: floats_to_decimal(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [floats_to_decimal(i) for i in obj]
+    return obj
 
 
 def get_sender_email() -> str:
@@ -63,7 +73,8 @@ def compute_availability_metrics(checks: list[dict]) -> dict[str, float]:
 
 
 def compute_performance_metrics(checks: list[dict]) -> dict[str, float]:
-    latencies = [c["latency_ms"] for c in checks if c["status"] == "success"]
+    # DynamoDB returns numbers as Decimal; cast to float so the report is JSON-safe.
+    latencies = [float(c["latency_ms"]) for c in checks if c["status"] == "success"]
 
     if not latencies:
         return {"avg_latency_ms": 0.0, "p95_latency_ms": 0.0}
@@ -71,16 +82,15 @@ def compute_performance_metrics(checks: list[dict]) -> dict[str, float]:
     avg = round(sum(latencies) / len(latencies), 1)
     sorted_lat = sorted(latencies)
     p95_index = int(len(sorted_lat) * 0.95)
-    p95 = sorted_lat[p95_index]
+    p95 = float(sorted_lat[p95_index])
     return {"avg_latency_ms": avg, "p95_latency_ms": p95}
 
 
 def compute_reliability_metrics(incidents: list[dict]) -> dict[str, Any]:
     incident_count = len(incidents)
     resolved = [i for i in incidents if i.get("resolved") is True]
-    total_downtime = sum(
-        i.get("duration_seconds", 0) for i in resolved
-    )
+    # duration_seconds comes back as Decimal; coerce to int (and guard None).
+    total_downtime = int(sum(int(i.get("duration_seconds") or 0) for i in resolved))
     return {
         "incident_count": incident_count,
         "total_downtime_sec": total_downtime,
@@ -388,42 +398,49 @@ def lambda_handler(event: dict, context) -> dict:
         project_id = project["project_id"]
         logger.info(f"Generating report for project {project_id}")
 
-
-        checks = query_checks_paginated(project_id, from_ms, to_ms)
-        logger.info(f"  Fetched {len(checks)} checks")
-
-        incidents_response = incidents_table.query(
-            KeyConditionExpression="project_id = :pid AND start_time BETWEEN :from_sec AND :to_sec",
-            ExpressionAttributeValues={
-                ":pid": project_id,
-                ":from_sec": from_sec,
-                ":to_sec": to_sec,
-            },
-        )
-        incidents = incidents_response.get("Items", [])
-        logger.info(f"  Fetched {len(incidents)} incidents")
-
-
-        report = build_report(project, checks, incidents, week_start, week_end)
-        logger.info(f"  Report: uptime={report['uptime_pct']}%, severity={report['severity']}, sla_pass={report['sla_pass']}")
-
-
-        reports_table.put_item(Item=report)
-        logger.info(f"  Stored report in DynamoDB")
-
-
         try:
-            upload_report_files(report, project_id, week_start)
-        except ClientError as e:
-            logger.error(f"  S3 upload failed for project {project_id}: {e}")
+            checks = query_checks_paginated(project_id, from_ms, to_ms)
+            logger.info(f"  Fetched {len(checks)} checks")
+
+            incidents_response = incidents_table.query(
+                KeyConditionExpression="project_id = :pid AND start_time BETWEEN :from_sec AND :to_sec",
+                ExpressionAttributeValues={
+                    ":pid": project_id,
+                    ":from_sec": from_sec,
+                    ":to_sec": to_sec,
+                },
+            )
+            incidents = incidents_response.get("Items", [])
+            logger.info(f"  Fetched {len(incidents)} incidents")
 
 
-        subject, html_body = build_report_email(project, report, week_start, week_end)
-        try:
-            send_report_email(project["notification_email"], subject, html_body)
-            logger.info(f"  Report email sent to {project['notification_email']}")
-        except ClientError as e:
-            logger.error(f"  Email failed for project {project_id}: {e}")
+            report = build_report(project, checks, incidents, week_start, week_end)
+            logger.info(f"  Report: uptime={report['uptime_pct']}%, severity={report['severity']}, sla_pass={report['sla_pass']}")
+
+
+            # report holds native floats/ints (JSON-safe for S3/email); convert
+            # floats -> Decimal only for the DynamoDB write.
+            reports_table.put_item(Item=floats_to_decimal(report))
+            logger.info(f"  Stored report in DynamoDB")
+
+
+            try:
+                upload_report_files(report, project_id, week_start)
+            except ClientError as e:
+                logger.error(f"  S3 upload failed for project {project_id}: {e}")
+
+
+            subject, html_body = build_report_email(project, report, week_start, week_end)
+            try:
+                send_report_email(project["notification_email"], subject, html_body)
+                logger.info(f"  Report email sent to {project['notification_email']}")
+            except ClientError as e:
+                logger.error(f"  Email failed for project {project_id}: {e}")
+
+        except Exception:
+            # One project's failure must not abort reports for the others.
+            logger.exception(f"Failed to generate report for project {project_id} — skipping")
+            continue
 
     logger.info("Report Generator Lambda completed successfully")
     return {"statusCode": 200, "body": json.dumps({"message": "OK"})}
