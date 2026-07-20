@@ -121,8 +121,7 @@ def build_report(
     project: dict,
     checks: list[dict],
     incidents: list[dict],
-    week_start: datetime,
-    week_end: datetime,
+    report_id: str,
 ) -> dict:
 
     avail = compute_availability_metrics(checks)
@@ -135,10 +134,6 @@ def build_report(
         perf["avg_latency_ms"],
     )
 
-    # ISO year+week of the Monday that begins the reported week. Uses isocalendar
-    # (not %Y+%V) so the year is correct across calendar-year boundaries.
-    iso_year, iso_week, _ = week_start.isocalendar()
-    report_id = f"{iso_year}-W{iso_week:02d}"
     generated_at = datetime.now(timezone.utc).isoformat()
 
     report = {
@@ -159,11 +154,18 @@ def build_report(
 
 
 
-def upload_report_files(report: dict, project_id: str, week_start: datetime) -> None:
-    # Derive the S3 path from the same ISO year/week as report_id so the
-    # filename always matches the report it contains.
-    iso_year, iso_week, _ = week_start.isocalendar()
-    base_key = f"reports/{project_id}/{iso_year}/week-{iso_week:02d}"
+def upload_report_files(
+    report: dict,
+    project: dict,
+    incidents: list[dict],
+    window_start: datetime,
+    window_end: datetime,
+    report_kind: str,
+) -> None:
+    project_id = project["project_id"]
+    # report_id is unique per report (weekly ISO week, or on-demand), so it doubles
+    # as the filename — any report is then downloadable by id.
+    base_key = f"reports/{project_id}/{report['report_id']}"
 
 
     json_key = f"{base_key}.json"
@@ -176,7 +178,7 @@ def upload_report_files(report: dict, project_id: str, week_start: datetime) -> 
 
 
     html_key = f"{base_key}.html"
-    html_body = build_html_report(report, project_id, week_start)
+    html_body = build_html_report(report, project, incidents, window_start, window_end, report_kind)
     s3.put_object(
         Bucket=REPORTS_BUCKET_NAME,
         Key=html_key,
@@ -187,68 +189,252 @@ def upload_report_files(report: dict, project_id: str, week_start: datetime) -> 
     logger.info(f"Uploaded report files to s3://{REPORTS_BUCKET_NAME}/{base_key}.*")
 
 
-def build_html_report(report: dict, project_id: str, week_start: datetime) -> str:
+_SEVERITY_STYLES = {
+    "healthy":  {"color": "#15803d", "soft": "#ecfdf5", "label": "SLA Met"},
+    "degraded": {"color": "#b45309", "soft": "#fffbeb", "label": "Degraded Performance"},
+    "major":    {"color": "#c2410c", "soft": "#fff7ed", "label": "Major SLA Violation"},
+    "critical": {"color": "#b91c1c", "soft": "#fef2f2", "label": "Critical — Severe Downtime"},
+}
+
+_OK = "#15803d"
+_BAD = "#b91c1c"
+
+
+def _fmt_duration(seconds) -> str:
+    seconds = int(seconds or 0)
+    if seconds <= 0:
+        return "0s"
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    parts = []
+    if h:
+        parts.append(f"{h}h")
+    if m:
+        parts.append(f"{m}m")
+    if s and not h:
+        parts.append(f"{s}s")
+    return " ".join(parts) or "0s"
+
+
+def _fmt_epoch(epoch_sec) -> str:
+    try:
+        return datetime.fromtimestamp(int(epoch_sec), tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    except (TypeError, ValueError, OSError):
+        return "—"
+
+
+def build_html_report(
+    report: dict,
+    project: dict,
+    incidents: list[dict],
+    window_start: datetime,
+    window_end: datetime,
+    report_kind: str,
+) -> str:
+    """A self-contained, print-friendly SLA report (no external assets)."""
     severity = report["severity"]
     sla_pass = report["sla_pass"]
+    sev = _SEVERITY_STYLES.get(
+        severity, {"color": "#475569", "soft": "#f1f5f9", "label": severity.title()}
+    )
 
-    # Color and label per severity
-    severity_map = {
-        "healthy": ("#16a34a", "🟢 SLA Met"),
-        "degraded": ("#eab308", "🟡 Degraded Performance"),
-        "major": ("#ea580c", "🟠 Major SLA Violation"),
-        "critical": ("#dc2626", "🔴 Critical — Severe Downtime"),
-    }
-    banner_color, banner_label = severity_map.get(severity, ("#666", severity))
+    thresholds = project.get("thresholds", {})
+    min_uptime = thresholds.get("min_uptime_pct", 99.9)
+    max_latency = thresholds.get("max_avg_latency_ms", 300)
 
-    sla_result_label = "PASS ✅" if sla_pass else "FAIL ❌"
+    uptime = report["uptime_pct"]
+    avg = report["avg_latency_ms"]
+    p95 = report["p95_latency_ms"]
+    incident_count = report["incident_count"]
+    downtime = report["total_downtime_sec"]
 
-    week_end = week_start + timedelta(days=7)
-    week_start_str = week_start.strftime("%Y-%m-%d")
-    week_end_str = week_end.strftime("%Y-%m-%d")
+    uptime_ok = float(uptime) >= float(min_uptime)
+    latency_ok = float(avg) <= float(max_latency)
 
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>SLA Report — {report['report_id']}</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 0; padding: 0; }}
-            .banner {{ background-color: {banner_color}; color: white; padding: 20px; }}
-            .banner h1 {{ margin: 0; font-size: 24px; }}
-            .content {{ padding: 20px; }}
-            table {{ border-collapse: collapse; width: 100%; max-width: 600px; }}
-            th, td {{ text-align: left; padding: 10px; border-bottom: 1px solid #eee; }}
-            th {{ color: #666; font-weight: normal; width: 40%; }}
-            .pass {{ color: #16a34a; font-weight: bold; }}
-            .fail {{ color: #dc2626; font-weight: bold; }}
-            .footer {{ padding: 20px; color: #999; font-size: 12px; }}
-        </style>
-    </head>
-    <body>
-        <div class="banner">
-            <h1>{banner_label}</h1>
-            <p>SLA Report — {report['report_id']}</p>
-        </div>
-        <div class="content">
-            <table>
-                <tr><th>Reporting Period</th><td>{week_start_str} to {week_end_str}</td></tr>
-                <tr><th>Uptime</th><td>{report['uptime_pct']}%</td></tr>
-                <tr><th>SLA Result</th><td class="{'pass' if sla_pass else 'fail'}">{sla_result_label}</td></tr>
-                <tr><th>Avg Response Time</th><td>{report['avg_latency_ms']} ms</td></tr>
-                <tr><th>P95 Response Time</th><td>{report['p95_latency_ms']} ms</td></tr>
-                <tr><th>Incidents</th><td>{report['incident_count']}</td></tr>
-                <tr><th>Total Downtime</th><td>{report['total_downtime_sec']} seconds</td></tr>
-                <tr><th>Severity</th><td>{severity.upper()}</td></tr>
-            </table>
-        </div>
-        <div class="footer">
-            Generated at {report['generated_at']} by SLA Monitor
-        </div>
-    </body>
-    </html>
+    period = f"{window_start.strftime('%b %d, %Y')} – {window_end.strftime('%b %d, %Y')}"
+    project_name = project.get("name", "Untitled")
+    project_url = project.get("url", "")
+
+    verdict_color = _OK if sla_pass else _BAD
+    verdict_soft = "#ecfdf5" if sla_pass else "#fef2f2"
+    verdict_text = "SLA MET" if sla_pass else "SLA BREACHED"
+
+    def pill(passed: bool) -> str:
+        c, bg, txt = (_OK, "#ecfdf5", "PASS") if passed else (_BAD, "#fef2f2", "FAIL")
+        return f'<span class="pill" style="color:{c};background:{bg};border-color:{c}33">{txt}</span>'
+
+    def kpi(label, value, sub, accent="#0f172a") -> str:
+        return (
+            f'<div class="kpi"><div class="kpi-label">{label}</div>'
+            f'<div class="kpi-value" style="color:{accent}">{value}</div>'
+            f'<div class="kpi-sub">{sub}</div></div>'
+        )
+
+    kpis = "".join([
+        kpi("Uptime", f"{uptime}%", f"target ≥ {min_uptime}%", _OK if uptime_ok else _BAD),
+        kpi("Avg Response", f"{avg}<span class='u'>ms</span>", f"target ≤ {max_latency} ms", _OK if latency_ok else _BAD),
+        kpi("P95 Response", f"{p95}<span class='u'>ms</span>", "95th percentile"),
+        kpi("Incidents", f"{incident_count}", "this period", _OK if incident_count == 0 else _BAD),
+        kpi("Total Downtime", _fmt_duration(downtime), "cumulative"),
+    ])
+
+    uptime_pos = min(float(uptime), 100)
+    target_pos = min(float(min_uptime), 100)
+    uptime_bar = (
+        f'<div class="bar-track">'
+        f'<div class="bar-fill" style="width:{uptime_pos}%;background:{_OK if uptime_ok else _BAD}"></div>'
+        f'<div class="bar-target" style="left:{target_pos}%"></div></div>'
+        f'<div class="bar-legend"><span>0%</span>'
+        f'<span class="bar-target-label" style="left:{target_pos}%">SLA {min_uptime}%</span>'
+        f'<span>100%</span></div>'
+    )
+
+    compliance = (
+        f'<tr><td>Availability (Uptime)</td><td class="mono">≥ {min_uptime}%</td>'
+        f'<td class="mono">{uptime}%</td><td>{pill(uptime_ok)}</td></tr>'
+        f'<tr><td>Avg Response Time</td><td class="mono">≤ {max_latency} ms</td>'
+        f'<td class="mono">{avg} ms</td><td>{pill(latency_ok)}</td></tr>'
+    )
+
+    if incidents:
+        rows = []
+        for idx, inc in enumerate(sorted(incidents, key=lambda x: int(x.get("start_time", 0))), start=1):
+            resolved = inc.get("resolved") is True
+            start = _fmt_epoch(inc.get("start_time"))
+            end = _fmt_epoch(inc.get("end_time")) if inc.get("end_time") is not None else "—"
+            dur = _fmt_duration(inc.get("duration_seconds")) if resolved else "ongoing"
+            status = (
+                f'<span class="pill" style="color:{_OK};background:#ecfdf5;border-color:{_OK}33">Resolved</span>'
+                if resolved else
+                f'<span class="pill" style="color:{_BAD};background:#fef2f2;border-color:{_BAD}33">Ongoing</span>'
+            )
+            rows.append(
+                f'<tr><td class="mono">{idx}</td><td class="mono">{start}</td>'
+                f'<td class="mono">{end}</td><td class="mono">{dur}</td><td>{status}</td></tr>'
+            )
+        incidents_section = (
+            '<table class="data"><thead><tr><th>#</th><th>Started</th>'
+            '<th>Recovered</th><th>Duration</th><th>Status</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table>'
+        )
+    else:
+        incidents_section = (
+            '<div class="empty"><div class="empty-dot"></div><div>'
+            '<strong>No incidents recorded.</strong><br>'
+            '<span>The endpoint stayed within its failure threshold all period.</span>'
+            '</div></div>'
+        )
+
+    url_line = f'<a class="url" href="{project_url}">{project_url}</a>' if project_url else ""
+
+    css = """
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:#eef1f5; color:#0f172a;
+             font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+             -webkit-font-smoothing:antialiased; }
+      .mono { font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
+              font-variant-numeric:tabular-nums; }
+      .page { max-width:860px; margin:0 auto; padding:28px 18px 48px; }
+      .card { background:#fff; border:1px solid #e4e8ee; border-radius:16px;
+              box-shadow:0 1px 2px rgba(16,24,40,.04); overflow:hidden; }
+      .head { padding:26px 28px; border-bottom:1px solid #eef1f5; }
+      .brand { display:flex; align-items:center; gap:9px; font-weight:800; letter-spacing:.14em;
+               font-size:12px; text-transform:uppercase; color:#64748b; }
+      .brand .mark { width:22px; height:22px; border-radius:6px; background:#fa5c29;
+                     display:inline-block; position:relative; }
+      .brand .mark:after { content:''; position:absolute; inset:6px; border-radius:2px; background:#fff; }
+      .head h1 { margin:14px 0 2px; font-size:22px; letter-spacing:-.01em; }
+      .head .url { color:#fa5c29; text-decoration:none; font-size:13px; }
+      .head .meta { margin-top:12px; display:flex; flex-wrap:wrap; gap:18px; font-size:12.5px; color:#64748b; }
+      .head .meta b { color:#0f172a; font-weight:600; }
+      .verdict { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 28px; }
+      .v-badge { font-size:15px; font-weight:800; letter-spacing:.04em; padding:8px 14px; border-radius:10px; }
+      .sev { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+             padding:6px 12px; border-radius:999px; }
+      .section { padding:22px 28px; }
+      .section h2 { font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:#64748b;
+                    margin:0 0 14px; font-weight:700; }
+      .kpis { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+      .kpi { border:1px solid #eef1f5; border-radius:12px; padding:14px; background:#fbfcfd; }
+      .kpi-label { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#94a3b8; font-weight:600; }
+      .kpi-value { font-size:23px; font-weight:800; margin-top:8px; letter-spacing:-.02em;
+                   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+                   font-variant-numeric:tabular-nums; }
+      .kpi-value .u { font-size:13px; font-weight:600; color:#94a3b8; margin-left:2px; }
+      .kpi-sub { font-size:11px; color:#94a3b8; margin-top:4px; }
+      .bar-track { position:relative; height:12px; background:#eef1f5; border-radius:999px; }
+      .bar-fill { height:100%; border-radius:999px; }
+      .bar-target { position:absolute; top:-3px; width:2px; height:18px; background:#0f172a; opacity:.55; }
+      .bar-legend { position:relative; margin-top:8px; height:14px; font-size:10.5px; color:#94a3b8; }
+      .bar-legend > span:first-child { position:absolute; left:0; }
+      .bar-legend > span:last-child { position:absolute; right:0; }
+      .bar-target-label { position:absolute; transform:translateX(-50%); color:#0f172a; font-weight:600; }
+      table.data { width:100%; border-collapse:collapse; font-size:13px; }
+      table.data th { text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em;
+                      color:#94a3b8; font-weight:700; padding:0 10px 10px; border-bottom:1px solid #eef1f5; }
+      table.data td { padding:11px 10px; border-bottom:1px solid #f2f4f7; }
+      table.data tr:last-child td { border-bottom:0; }
+      .pill { display:inline-block; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px;
+              border:1px solid; letter-spacing:.03em; }
+      .empty { display:flex; align-items:center; gap:12px; padding:16px 18px; background:#ecfdf5;
+               border:1px solid #15803d22; border-radius:12px; font-size:13px; color:#166534; }
+      .empty span { color:#3f8f5f; }
+      .empty-dot { width:10px; height:10px; border-radius:999px; background:#15803d; flex:none; }
+      .foot { padding:18px 28px 4px; color:#94a3b8; font-size:11.5px;
+              display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+      @media (max-width:640px) {
+        .kpis { grid-template-columns:repeat(2,1fr); }
+        .verdict { flex-direction:column; align-items:flex-start; }
+      }
     """
-    return html
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SLA Report · {project_name} · {report['report_id']}</title>
+<style>{css}</style>
+</head>
+<body>
+  <div class="page">
+    <div class="card">
+      <div class="head">
+        <div class="brand"><span class="mark"></span> SLA Monitor · {report_kind}</div>
+        <h1>{project_name}</h1>
+        {url_line}
+        <div class="meta">
+          <span>Report <b>{report['report_id']}</b></span>
+          <span>Period <b>{period}</b></span>
+          <span>Generated <b>{report['generated_at'][:10]}</b></span>
+        </div>
+      </div>
+
+      <div class="verdict" style="background:{verdict_soft}">
+        <div class="v-badge" style="color:{verdict_color};background:#fff;border:1px solid {verdict_color}33">{verdict_text}</div>
+        <div class="sev" style="color:{sev['color']};background:{sev['soft']}">{sev['label']}</div>
+      </div>
+
+      <div class="section"><h2>Key Metrics</h2><div class="kpis">{kpis}</div></div>
+
+      <div class="section" style="padding-top:0"><h2>Availability</h2>{uptime_bar}</div>
+
+      <div class="section"><h2>SLA Compliance</h2>
+        <table class="data"><thead><tr><th>Metric</th><th>Target</th><th>Actual</th><th>Result</th></tr></thead>
+        <tbody>{compliance}</tbody></table>
+      </div>
+
+      <div class="section"><h2>Incident Log · {incident_count}</h2>{incidents_section}</div>
+
+      <div class="foot">
+        <span>Generated by SLA Monitor · {report['generated_at']}</span>
+        <span>{project_name} · {report['report_id']}</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>"""
 
 
 def build_report_email(
@@ -365,86 +551,116 @@ def query_checks_paginated(project_id: str, from_ms: int, to_ms: int) -> list[di
 
 
 
-#invoked by Eventbridge rule every Monday 08:00 UTC
-def lambda_handler(event: dict, context) -> dict:
-    logger.info("Report Generator Lambda invoked")
+def generate_for_project(
+    project: dict,
+    report_id: str,
+    window_start: datetime,
+    window_end: datetime,
+    report_kind: str,
+    send_email: bool,
+) -> dict:
+    """Compute, store, archive (and optionally email) one project's report for a window."""
+    project_id = project["project_id"]
+    from_ms = int(window_start.timestamp() * 1000)
+    to_ms = int(window_end.timestamp() * 1000)
+    from_sec, to_sec = from_ms // 1000, to_ms // 1000
+
+    checks = query_checks_paginated(project_id, from_ms, to_ms)
+    incidents = incidents_table.query(
+        KeyConditionExpression="project_id = :pid AND start_time BETWEEN :from_sec AND :to_sec",
+        ExpressionAttributeValues={":pid": project_id, ":from_sec": from_sec, ":to_sec": to_sec},
+    ).get("Items", [])
+    logger.info(f"  {project_id}: {len(checks)} checks, {len(incidents)} incidents ({report_kind})")
+
+    report = build_report(project, checks, incidents, report_id)
+    # report holds native floats/ints (JSON-safe for S3/email); convert floats ->
+    # Decimal only for the DynamoDB write.
+    reports_table.put_item(Item=floats_to_decimal(report))
+    logger.info(f"  Stored report {report_id}: uptime={report['uptime_pct']}%, sla_pass={report['sla_pass']}")
+
+    try:
+        upload_report_files(report, project, incidents, window_start, window_end, report_kind)
+    except ClientError as e:
+        logger.error(f"  S3 upload failed for project {project_id}: {e}")
+
+    if send_email:
+        subject, html_body = build_report_email(project, report, window_start, window_end)
+        try:
+            send_report_email(project["notification_email"], subject, html_body)
+            logger.info(f"  Report email sent to {project['notification_email']}")
+        except ClientError as e:
+            logger.error(f"  Email failed for project {project_id}: {e}")
+
+    return report
 
 
-    response = projects_table.scan(
+def _run_scheduled() -> dict:
+    """Weekly path: every active project, the last completed Mon–Mon week."""
+    projects = projects_table.scan(
         FilterExpression="active = :active",
         ExpressionAttributeValues={":active": True},
-    )
-    projects = response.get("Items", [])
+    ).get("Items", [])
 
     if not projects:
         logger.info("No active projects — exiting")
         return {"statusCode": 200, "body": json.dumps({"message": "No active projects"})}
 
-    logger.info(f"Processing {len(projects)} active project(s)")
-
-
     now_utc = datetime.now(timezone.utc)
-
-    days_since_monday = now_utc.weekday()
-    last_monday = now_utc - timedelta(days=days_since_monday)
-    week_end = last_monday.replace(hour=0, minute=0, second=0, microsecond=0)  
+    week_end = (now_utc - timedelta(days=now_utc.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
     week_start = week_end - timedelta(days=7)
-
-    from_ms = int(week_start.timestamp() * 1000)
-    to_ms = int(week_end.timestamp() * 1000)
-
-    from_sec = int(from_ms / 1000)
-    to_sec = int(to_ms / 1000)
-
-    logger.info(f"Reporting window: {week_start.isoformat()} to {week_end.isoformat()}")
+    iso_year, iso_week, _ = week_start.isocalendar()
+    report_id = f"{iso_year}-W{iso_week:02d}"
+    logger.info(
+        f"Weekly window {week_start.isoformat()} .. {week_end.isoformat()} "
+        f"({report_id}), {len(projects)} project(s)"
+    )
 
     for project in projects:
-        project_id = project["project_id"]
-        logger.info(f"Generating report for project {project_id}")
-
         try:
-            checks = query_checks_paginated(project_id, from_ms, to_ms)
-            logger.info(f"  Fetched {len(checks)} checks")
-
-            incidents_response = incidents_table.query(
-                KeyConditionExpression="project_id = :pid AND start_time BETWEEN :from_sec AND :to_sec",
-                ExpressionAttributeValues={
-                    ":pid": project_id,
-                    ":from_sec": from_sec,
-                    ":to_sec": to_sec,
-                },
-            )
-            incidents = incidents_response.get("Items", [])
-            logger.info(f"  Fetched {len(incidents)} incidents")
-
-
-            report = build_report(project, checks, incidents, week_start, week_end)
-            logger.info(f"  Report: uptime={report['uptime_pct']}%, severity={report['severity']}, sla_pass={report['sla_pass']}")
-
-
-            # report holds native floats/ints (JSON-safe for S3/email); convert
-            # floats -> Decimal only for the DynamoDB write.
-            reports_table.put_item(Item=floats_to_decimal(report))
-            logger.info(f"  Stored report in DynamoDB")
-
-
-            try:
-                upload_report_files(report, project_id, week_start)
-            except ClientError as e:
-                logger.error(f"  S3 upload failed for project {project_id}: {e}")
-
-
-            subject, html_body = build_report_email(project, report, week_start, week_end)
-            try:
-                send_report_email(project["notification_email"], subject, html_body)
-                logger.info(f"  Report email sent to {project['notification_email']}")
-            except ClientError as e:
-                logger.error(f"  Email failed for project {project_id}: {e}")
-
+            generate_for_project(project, report_id, week_start, week_end, "Weekly Report", send_email=True)
         except Exception:
             # One project's failure must not abort reports for the others.
-            logger.exception(f"Failed to generate report for project {project_id} — skipping")
+            logger.exception(f"Failed weekly report for {project.get('project_id')} — skipping")
             continue
 
-    logger.info("Report Generator Lambda completed successfully")
+    logger.info("Report Generator (scheduled) completed successfully")
     return {"statusCode": 200, "body": json.dumps({"message": "OK"})}
+
+
+def _run_on_demand(project_id: str, event: dict) -> dict:
+    """On-demand path: one project, a trailing 1/7/30-day window, no email."""
+    days = int(event.get("days", 7))
+    if days not in (1, 7, 30):
+        days = 7
+
+    project = projects_table.get_item(Key={"project_id": project_id}).get("Item")
+    if not project:
+        logger.warning(f"On-demand report requested for unknown project {project_id}")
+        return {"statusCode": 404, "body": json.dumps({"message": "Project not found"})}
+
+    window_end = datetime.now(timezone.utc)
+    window_start = window_end - timedelta(days=days)
+    report_id = f"{days}d-{window_end.strftime('%Y-%m-%d')}"
+    report_kind = f"On-Demand · {days}-Day"
+    logger.info(
+        f"On-demand {report_id} for {project_id}: "
+        f"{window_start.isoformat()} .. {window_end.isoformat()}"
+    )
+
+    generate_for_project(project, report_id, window_start, window_end, report_kind, send_email=False)
+    logger.info(f"On-demand report {report_id} completed for {project_id}")
+    return {"statusCode": 200, "body": json.dumps({"message": "OK", "report_id": report_id})}
+
+
+# Invoked by EventBridge weekly (empty payload -> scheduled) OR asynchronously by the
+# Project Manager Lambda for an on-demand report (payload: {"project_id", "days"}).
+def lambda_handler(event: dict, context) -> dict:
+    logger.info("Report Generator Lambda invoked")
+    event = event or {}
+    project_id = event.get("project_id")
+
+    if project_id:
+        return _run_on_demand(project_id, event)
+    return _run_scheduled()
