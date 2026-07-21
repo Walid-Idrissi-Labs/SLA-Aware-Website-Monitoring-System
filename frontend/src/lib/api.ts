@@ -115,7 +115,10 @@ export function getProjectReports(projectId: string): Promise<ProjectReport[]> {
   return request<ProjectReport[]>('GET', `/projects/${projectId}/reports`);
 }
 
-export function generateReport(projectId: string, days: number): Promise<{ message: string; days: number }> {
+export function generateReport(
+  projectId: string,
+  days: number
+): Promise<{ message: string; report_id?: string; days: number }> {
   return request('POST', `/projects/${projectId}/reports`, { days });
 }
 

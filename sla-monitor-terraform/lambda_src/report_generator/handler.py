@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 import logging
 from datetime import datetime, timezone, timedelta
@@ -37,6 +38,17 @@ def floats_to_decimal(obj):
         return {k: floats_to_decimal(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [floats_to_decimal(i) for i in obj]
+    return obj
+
+
+def decimals_to_native(obj):
+    """Inverse of floats_to_decimal: make a DynamoDB item JSON-safe (Decimal -> int/float)."""
+    if isinstance(obj, Decimal):
+        return int(obj) if obj % 1 == 0 else float(obj)
+    if isinstance(obj, dict):
+        return {k: decimals_to_native(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [decimals_to_native(i) for i in obj]
     return obj
 
 
@@ -654,13 +666,80 @@ def _run_on_demand(project_id: str, event: dict) -> dict:
     return {"statusCode": 200, "body": json.dumps({"message": "OK", "report_id": report_id})}
 
 
-# Invoked by EventBridge weekly (empty payload -> scheduled) OR asynchronously by the
-# Project Manager Lambda for an on-demand report (payload: {"project_id", "days"}).
+def _window_from_report_id(report_id: str):
+    """Reconstruct (window_start, window_end, report_kind) from a report_id.
+
+    Handles both id shapes the system produces:
+      - on-demand: "<N>d-YYYY-MM-DD"  (e.g. "7d-2026-07-21")
+      - weekly ISO: "YYYY-WNN"        (e.g. "2025-W18")
+    Returns None if the id isn't recognised.
+    """
+    m = re.match(r"^(\d+)d-(\d{4}-\d{2}-\d{2})$", report_id)
+    if m:
+        days = int(m.group(1))
+        window_end = datetime.strptime(m.group(2), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        window_start = window_end - timedelta(days=days)
+        return window_start, window_end, f"On-Demand · {days}-Day"
+
+    m = re.match(r"^(\d{4})-W(\d{2})$", report_id)
+    if m:
+        iso_year, iso_week = int(m.group(1)), int(m.group(2))
+        week_start = datetime.fromisocalendar(iso_year, iso_week, 1).replace(tzinfo=timezone.utc)
+        week_end = week_start + timedelta(days=7)
+        return week_start, week_end, "Weekly Report"
+
+    return None
+
+
+def _run_rebuild(project_id: str, report_id: str) -> dict:
+    """Regenerate the S3 artifacts (HTML + JSON) for a report that already exists in
+    the Reports table but whose files are missing (e.g. produced by older code).
+    Rebuilds faithfully from the stored row — the KPIs are authoritative, not recomputed."""
+    project = projects_table.get_item(Key={"project_id": project_id}).get("Item")
+    if not project:
+        logger.warning(f"Rebuild requested for unknown project {project_id}")
+        return {"statusCode": 404, "body": json.dumps({"message": "Project not found"})}
+
+    row = reports_table.get_item(
+        Key={"project_id": project_id, "report_id": report_id}
+    ).get("Item")
+    if not row:
+        logger.warning(f"Rebuild requested for unknown report {project_id}/{report_id}")
+        return {"statusCode": 404, "body": json.dumps({"message": "Report not found"})}
+
+    window = _window_from_report_id(report_id)
+    if window:
+        window_start, window_end, report_kind = window
+    else:
+        # Unknown id shape — still emit files, just without an exact period.
+        window_start = window_end = datetime.now(timezone.utc)
+        report_kind = "Report"
+
+    from_sec = int(window_start.timestamp())
+    to_sec = int(window_end.timestamp())
+    incidents = incidents_table.query(
+        KeyConditionExpression="project_id = :pid AND start_time BETWEEN :from_sec AND :to_sec",
+        ExpressionAttributeValues={":pid": project_id, ":from_sec": from_sec, ":to_sec": to_sec},
+    ).get("Items", [])
+
+    report = decimals_to_native(row)
+    upload_report_files(report, project, incidents, window_start, window_end, report_kind)
+    logger.info(f"Rebuilt artifacts for {project_id}/{report_id}")
+    return {"statusCode": 200, "body": json.dumps({"message": "OK", "report_id": report_id})}
+
+
+# Invocation modes (all through the same handler):
+#   {}                                 -> weekly scheduled run (EventBridge)
+#   {"project_id", "days"}             -> on-demand generation (Project Manager Lambda)
+#   {"project_id", "report_id"}        -> rebuild missing S3 artifacts (API Lambda, download self-heal)
 def lambda_handler(event: dict, context) -> dict:
     logger.info("Report Generator Lambda invoked")
     event = event or {}
     project_id = event.get("project_id")
+    report_id = event.get("report_id")
 
+    if project_id and report_id:
+        return _run_rebuild(project_id, report_id)
     if project_id:
         return _run_on_demand(project_id, event)
     return _run_scheduled()

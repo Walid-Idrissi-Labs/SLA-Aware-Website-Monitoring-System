@@ -278,7 +278,11 @@ def handle_delete_projects_id(event: dict) -> dict:
 
 
 def handle_generate_report(event: dict) -> dict:
-    """Kick off an on-demand report for one project (async; no email)."""
+    """Generate an on-demand report for one project (synchronous; no email).
+
+    We invoke the report generator RequestResponse and surface its real outcome, so a
+    failure shows up in the UI instead of silently never appearing.
+    """
     user_id = get_user_id(event)
     project_id = event["pathParameters"]["project_id"]
 
@@ -294,14 +298,33 @@ def handle_generate_report(event: dict) -> dict:
     if days not in (1, 7, 30):
         return error_response(400, "days must be 1, 7, or 30")
 
-    # Fire-and-forget: the report generator does the heavy lifting asynchronously.
-    lambda_client.invoke(
+    if not REPORT_GENERATOR_FUNCTION_NAME:
+        return error_response(500, "Report generator is not configured")
+
+    resp = lambda_client.invoke(
         FunctionName=REPORT_GENERATOR_FUNCTION_NAME,
-        InvocationType="Event",
+        InvocationType="RequestResponse",
         Payload=json.dumps({"project_id": project_id, "days": days}).encode("utf-8"),
     )
 
-    return success(202, {"message": "Report generation started", "days": days})
+    # An unhandled exception inside the report generator surfaces as FunctionError.
+    if resp.get("FunctionError"):
+        raw = resp["Payload"].read().decode("utf-8", "replace")
+        return error_response(502, f"Report generation failed: {raw[:300]}")
+
+    payload = json.loads(resp["Payload"].read() or "{}")
+    inner_status = payload.get("statusCode", 502)
+    inner_body = json.loads(payload.get("body") or "{}")
+
+    if inner_status == 200:
+        return success(200, {
+            "message": "Report generated",
+            "report_id": inner_body.get("report_id"),
+            "days": days,
+        })
+    if inner_status == 404:
+        return error_response(404, "Project not found")
+    return error_response(502, "Report generation failed")
 
 
 def lambda_handler(event: dict, context) -> dict:

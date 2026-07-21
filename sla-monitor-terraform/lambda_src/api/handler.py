@@ -15,7 +15,25 @@ _reports_table = None
 _project_gsi_name = None
 
 s3_client = boto3.client("s3")
+lambda_client = boto3.client("lambda")
 REPORTS_BUCKET_NAME = os.environ.get("REPORTS_BUCKET_NAME", "")
+REPORT_GENERATOR_FUNCTION_NAME = os.environ.get("REPORT_GENERATOR_FUNCTION_NAME", "")
+
+
+def _rebuild_report_artifact(project_id: str, report_id: str) -> None:
+    """Ask the report generator to (re)create a report's S3 files. Used as a self-heal
+    when the artifact is missing — e.g. a row produced by older code. Best-effort:
+    any failure just leaves the caller to return a clean 404."""
+    if not REPORT_GENERATOR_FUNCTION_NAME:
+        return
+    try:
+        lambda_client.invoke(
+            FunctionName=REPORT_GENERATOR_FUNCTION_NAME,
+            InvocationType="RequestResponse",
+            Payload=json.dumps({"project_id": project_id, "report_id": report_id}).encode("utf-8"),
+        )
+    except ClientError:
+        pass
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -236,13 +254,21 @@ def handle_report_download(event: dict) -> dict:
     content_type = "text/html" if fmt == "html" else "application/json"
 
     # Confirm the artifact exists so we 404 cleanly instead of handing back a URL
-    # that resolves to a NoSuchKey error.
-    try:
-        s3_client.head_object(Bucket=REPORTS_BUCKET_NAME, Key=key)
-    except ClientError as e:
-        if e.response["Error"]["Code"] in ("404", "NoSuchKey", "NotFound"):
+    # that resolves to a NoSuchKey error. If it's missing but the report row exists,
+    # self-heal by asking the report generator to rebuild the files, then re-check.
+    def _exists() -> bool:
+        try:
+            s3_client.head_object(Bucket=REPORTS_BUCKET_NAME, Key=key)
+            return True
+        except ClientError as e:
+            if e.response["Error"]["Code"] in ("404", "NoSuchKey", "NotFound"):
+                return False
+            raise
+
+    if not _exists():
+        _rebuild_report_artifact(project_id, report_id)
+        if not _exists():
             return error_response(404, "Report file not found")
-        raise
 
     url = s3_client.generate_presigned_url(
         "get_object",

@@ -292,27 +292,17 @@ export default function ProjectDetail() {
     if (!id) return
     setGenerating(true)
     setGenMsg(null)
-    const today = new Date().toISOString().slice(0, 10)
-    const expectedId = `${genDays}d-${today}`
-    const prevGeneratedAt = reports.find((r) => r.report_id === expectedId)?.generated_at ?? null
     try {
-      await generateReport(id, genDays)
-      setGenMsg({ type: 'info', text: 'Generating report…' })
-      // Poll until the expected report appears (or is refreshed with new data).
-      let done = false
-      for (let attempt = 0; attempt < 15 && !done; attempt++) {
-        await new Promise((res) => setTimeout(res, 2000))
-        const fresh = await getProjectReports(id)
-        const match = fresh.find((r) => r.report_id === expectedId)
-        if (match && match.generated_at !== prevGeneratedAt) {
-          setReports(fresh)
-          setGenMsg({ type: 'success', text: `Report ${expectedId} is ready.` })
-          done = true
-        }
-      }
-      if (!done) setGenMsg({ type: 'info', text: 'Still processing — it will appear shortly. Try Refresh.' })
+      // Generation is synchronous: the report is stored by the time this resolves.
+      const res = await generateReport(id, genDays)
+      const fresh = await getProjectReports(id)
+      setReports(fresh)
+      setGenMsg({
+        type: 'success',
+        text: res?.report_id ? `Report ${res.report_id} is ready.` : 'Report generated.',
+      })
     } catch (e) {
-      setGenMsg({ type: 'error', text: e instanceof Error ? e.message : 'Could not start report generation.' })
+      setGenMsg({ type: 'error', text: e instanceof Error ? e.message : 'Could not generate report.' })
     } finally {
       setGenerating(false)
     }

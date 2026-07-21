@@ -384,6 +384,19 @@ data "aws_iam_policy_document" "api_lambda_policy" {
       "${var.reports_bucket_arn}/reports/*",
     ]
   }
+
+  # Self-heal missing report artifacts on download by asking the report generator
+  # to rebuild them from the stored row.
+  statement {
+    sid    = "RebuildReportArtifacts"
+    effect = "Allow"
+    actions = [
+      "lambda:InvokeFunction",
+    ]
+    resources = [
+      "arn:aws:lambda:${var.region}:${var.account_id}:function:${var.name_prefix}-report-generator-lambda",
+    ]
+  }
 }
 
 
