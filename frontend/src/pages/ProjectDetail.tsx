@@ -13,9 +13,9 @@ import {
   CircleAlert,
   Download,
   Sheet,
-  Zap,
 } from 'lucide-react'
 import Shell from '../components/Shell'
+import SpecularButton from '../components/SpecularButton'
 import TickerStat from '../components/TickerStat'
 import LatencyChart from '../components/LatencyChart'
 import UptimeGauge from '../components/UptimeGauge'
@@ -572,10 +572,18 @@ export default function ProjectDetail() {
                 </button>
               ))}
             </div>
-            <button onClick={handleGenerate} disabled={generating} className="btn-accent">
-              {generating ? <Spinner /> : <Zap className="h-3.5 w-3.5" strokeWidth={1.75} />}
-              {generating ? 'Generating' : 'Generate'}
-            </button>
+            <SpecularButton
+              size="sm"
+              radius={10}
+              lineColor="#fa5c29"
+              baseColor="#fa5c29"
+              textColor="#ffffff"
+              className="transition-colors duration-150 hover:text-accent"
+              onClick={handleGenerate}
+              disabled={generating}
+            >
+              {generating ? 'Generating…' : 'Generate Report'}
+            </SpecularButton>
           </div>
           {reports.length > 0 && (
             <button onClick={exportCsv} disabled={generating} className="btn-ghost">
