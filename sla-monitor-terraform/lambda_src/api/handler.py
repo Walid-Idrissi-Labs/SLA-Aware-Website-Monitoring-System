@@ -63,6 +63,19 @@ def _get_tables():
     return _users_table, _projects_table, _checks_table, _reports_table, _project_gsi_name
 
 
+# Incidents live behind a dedicated lazy accessor rather than the 5-tuple above:
+# _get_tables() is unpacked positionally at every call site, so widening it would
+# break each one.
+_incidents_table = None
+
+
+def _get_incidents_table():
+    global _incidents_table
+    if _incidents_table is None:
+        _incidents_table = boto3.resource("dynamodb").Table(os.environ["INCIDENTS_TABLE_NAME"])
+    return _incidents_table
+
+
 CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
     "Content-Type": "application/json",
@@ -262,6 +275,115 @@ def handle_get_projects_reports(event: dict) -> dict:
     return success(200, reports)
 
 
+def _reliability_metrics(incidents: list[dict], thresholds: dict, from_sec: int, now_sec: int) -> dict:
+    """Derive SRE reliability metrics from a project's incidents over a window.
+
+    DynamoDB numbers arrive as Decimal; coerce to int/float here so the math is
+    plain and the returned dict is JSON-safe. An ongoing (unresolved) incident
+    accrues downtime up to `now_sec`.
+    """
+    window_sec = max(now_sec - from_sec, 1)
+    resolved = [i for i in incidents if i.get("resolved") is True]
+    open_incidents = [i for i in incidents if not i.get("resolved")]
+
+    incident_count = len(incidents)
+    durations = [int(i["duration_seconds"]) for i in resolved if i.get("duration_seconds") is not None]
+
+    # By design there is at most one open incident; it counts up to now.
+    open_downtime = 0
+    if open_incidents:
+        open_start = int(open_incidents[0]["start_time"])
+        open_downtime = max(now_sec - open_start, 0)
+
+    total_downtime = sum(durations) + open_downtime
+    mttr_sec = round(sum(durations) / len(durations)) if durations else 0
+
+    longest_candidates = list(durations)
+    if open_incidents:
+        longest_candidates.append(open_downtime)
+    longest_outage_sec = max(longest_candidates) if longest_candidates else 0
+
+    # MTBF as uptime ÷ failures — well-defined at a single incident, unlike the
+    # gap-between-starts variant.
+    uptime_sec = max(window_sec - total_downtime, 0)
+    mtbf_sec = round(uptime_sec / incident_count) if incident_count > 0 else None
+
+    downtime_pct = round(total_downtime / window_sec * 100, 2)
+
+    min_uptime = float(thresholds.get("min_uptime_pct", 99.9))
+    allowed = window_sec * (1 - min_uptime / 100)
+    consumed = total_downtime
+    if allowed <= 0:
+        # min_uptime_pct == 100 leaves no budget at all: any downtime is a breach.
+        burn_pct = 0.0 if consumed == 0 else 100.0
+    else:
+        burn_pct = round(consumed / allowed * 100, 2)
+
+    return {
+        "incident_count": incident_count,
+        "open_incident": len(open_incidents) > 0,
+        "mttr_sec": mttr_sec,
+        "mtbf_sec": mtbf_sec,
+        "longest_outage_sec": longest_outage_sec,
+        "total_downtime_sec": total_downtime,
+        "downtime_pct": downtime_pct,
+        "error_budget": {
+            "min_uptime_pct": min_uptime,
+            "allowed_downtime_sec": round(allowed),
+            "consumed_downtime_sec": consumed,
+            "remaining_sec": round(allowed - consumed),
+            "burn_pct": burn_pct,
+            "ok": consumed <= allowed,
+        },
+    }
+
+
+def handle_get_projects_incidents(event: dict) -> dict:
+    user_id = get_user_id(event)
+    project_id = event["pathParameters"]["project_id"]
+
+    project = get_project_or_403(project_id, user_id)
+    if not project:
+        return error_response(403, "Forbidden")
+
+    query_params = event.get("queryStringParameters") or {}
+    try:
+        days = int(query_params.get("days", 30))
+    except (TypeError, ValueError):
+        return error_response(400, "days must be an integer")
+    days = min(max(days, 1), 365)
+
+    now_sec = int(time.time())
+    from_sec = now_sec - (days * 86400)
+
+    incidents_table = _get_incidents_table()
+    incidents = []
+    # start_time is the numeric sort key (epoch seconds); range-query the window.
+    query_kwargs = {
+        "KeyConditionExpression": "project_id = :pid AND start_time BETWEEN :from_ts AND :now_ts",
+        "ExpressionAttributeValues": {
+            ":pid": project_id,
+            ":from_ts": from_sec,
+            ":now_ts": now_sec,
+        },
+        "ScanIndexForward": False,  # newest first
+    }
+    while True:
+        response = incidents_table.query(**query_kwargs)
+        incidents.extend(response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_kwargs["ExclusiveStartKey"] = last_key
+
+    metrics = _reliability_metrics(incidents, project.get("thresholds", {}), from_sec, now_sec)
+
+    return success(200, {
+        "project_id": project_id,
+        "window_days": days,
+        "incidents": incidents,
+        "metrics": metrics,
+    })
 
 
 def handle_report_download(event: dict) -> dict:
@@ -352,6 +474,9 @@ def lambda_handler(event: dict, context) -> dict:
 
             if path == f"/projects/{project_id}/reports":
                 return handle_get_projects_reports(event)
+
+            if path == f"/projects/{project_id}/incidents":
+                return handle_get_projects_incidents(event)
 
         return error_response(404, "Not found")
 

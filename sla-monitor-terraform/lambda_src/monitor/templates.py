@@ -75,14 +75,28 @@ def _status_eyebrow(color: str, label: str) -> str:
     )
 
 
-def build_down_email(project: dict, first_failure_ts_ms: int, last_http_status: int = 0) -> tuple:
+# Friendly labels for a connection-level failure cause (no HTTP status available).
+_ERROR_LABELS = {
+    "timeout": "Timed out",
+    "dns": "DNS resolution failed",
+    "conn": "Connection refused",
+    "tls": "TLS handshake failed",
+}
+
+
+def build_down_email(
+    project: dict, first_failure_ts_ms: int, last_http_status: int = 0, error_type: str | None = None
+) -> tuple:
     first_failure_dt = datetime.fromtimestamp(first_failure_ts_ms / 1000, tz=timezone.utc)
     first_failure_str = first_failure_dt.strftime("%Y-%m-%d %H:%M:%S UTC")
 
     name = html_lib.escape(str(project["name"]))
     url = html_lib.escape(str(project["url"]), quote=True)
     threshold = int(project.get("failure_threshold", 3))
-    http_status = f"HTTP {int(last_http_status)}" if last_http_status else "No response (connection failed)"
+    if last_http_status:
+        http_status = f"HTTP {int(last_http_status)}"
+    else:
+        http_status = _ERROR_LABELS.get(error_type or "", "No response (connection failed)")
 
     subject = f"[DOWN] {project['name']} is unreachable"
 

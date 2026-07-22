@@ -198,6 +198,19 @@ resource "aws_apigatewayv2_route" "get_projects_reports" {
 }
 
 
+# Incident timeline + reliability metrics -> API Lambda
+resource "aws_apigatewayv2_route" "get_projects_incidents" {
+  api_id = aws_apigatewayv2_api.main.id
+
+  route_key = "GET /projects/{project_id}/incidents"
+
+  target = "integrations/${aws_apigatewayv2_integration.api_lambda.id}"
+
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+}
+
+
 # On-demand report generation (async trigger) -> Project Manager Lambda
 resource "aws_apigatewayv2_route" "post_projects_reports" {
   api_id = aws_apigatewayv2_api.main.id

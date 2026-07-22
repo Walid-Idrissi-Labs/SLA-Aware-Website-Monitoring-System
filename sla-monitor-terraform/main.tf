@@ -183,6 +183,7 @@ module "lambda_monitor" {
     SES_SENDER_PARAM_PATH     = "/sla-monitor/${var.environment}/ses/sender-email"
     FAILURE_THRESHOLD_DEFAULT = "3"
     HTTP_TIMEOUT_SECONDS      = "10"
+    CERT_REFRESH_SECONDS      = "21600"
     DASHBOARD_URL             = var.dashboard_url
   }
 

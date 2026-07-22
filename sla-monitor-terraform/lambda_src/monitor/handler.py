@@ -1,8 +1,11 @@
 import json
 import os
+import ssl
+import socket
 import time
 import logging
 import decimal
+from urllib.parse import urlparse
 
 import boto3
 import requests
@@ -25,6 +28,9 @@ FAILURE_THRESHOLD_DEFAULT = int(os.environ.get("FAILURE_THRESHOLD_DEFAULT", "3")
 HTTP_TIMEOUT_SECONDS = int(os.environ.get("HTTP_TIMEOUT_SECONDS", "10"))
 MAX_REDIRECTS = 3
 SES_SENDER_PARAM_PATH = os.environ["SES_SENDER_PARAM_PATH"]
+# Cert expiry is slow-moving per-project state; refresh it at most this often
+# rather than on every per-minute check.
+CERT_REFRESH_SECONDS = int(os.environ.get("CERT_REFRESH_SECONDS", "21600"))  # 6h
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -58,6 +64,55 @@ def send_email(to_address: str, subject: str, html_body: str) -> None:
     )
 
 
+def classify_error(exc: Exception) -> str:
+    """Map a requests exception to a coarse failure cause.
+
+    requests uses multiple inheritance — ConnectTimeout is both a ConnectionError
+    and a Timeout, and SSLError subclasses ConnectionError — so the specific bases
+    must be tested before the general ConnectionError.
+    """
+    if isinstance(exc, requests.exceptions.Timeout):
+        return "timeout"
+    if isinstance(exc, requests.exceptions.SSLError):
+        return "tls"
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        text = str(exc).lower()
+        dns_markers = (
+            "nameresolution", "failed to resolve", "name or service not known",
+            "nodename nor servname", "temporary failure in name resolution", "getaddrinfo",
+        )
+        return "dns" if any(m in text for m in dns_markers) else "conn"
+    return "conn"
+
+
+def probe_certificate(url: str, timeout: int = 5) -> dict | None:
+    """Best-effort TLS certificate read for HTTPS URLs.
+
+    Returns {cert_expiry_days, cert_issuer} or None for http:// URLs and any
+    failure. Never raises — cert probing must not break the health check.
+    """
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme != "https":
+            return None
+        host = parsed.hostname
+        port = parsed.port or 443
+        ctx = ssl.create_default_context()
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            with ctx.wrap_socket(sock, server_hostname=host) as tls:
+                cert = tls.getpeercert()
+        not_after = ssl.cert_time_to_seconds(cert["notAfter"])
+        days = int((not_after - time.time()) // 86400)
+        issuer = {k: v for rdn in cert.get("issuer", ()) for (k, v) in rdn}
+        return {
+            "cert_expiry_days": days,
+            "cert_issuer": issuer.get("commonName") or issuer.get("organizationName") or "",
+        }
+    except Exception as exc:
+        logger.warning(f"Cert probe failed for {url}: {exc}")
+        return None
+
+
 def perform_http_check(url: str) -> dict:
     session = requests.Session()
     session.max_redirects = MAX_REDIRECTS
@@ -66,15 +121,58 @@ def perform_http_check(url: str) -> dict:
         response   = session.get(url, timeout=HTTP_TIMEOUT_SECONDS, allow_redirects=True)
         latency_ms = int((time.time() - start_time) * 1000)
         http_status = response.status_code
-        status      = "success" if http_status == 200 else "failure"
-    except requests.exceptions.RequestException:
+        if http_status == 200:
+            status     = "success"
+            error_type = None
+        else:
+            status     = "failure"
+            error_type = "http"  # a response came back, just not a healthy one
+    except requests.exceptions.RequestException as exc:
         latency_ms  = HTTP_TIMEOUT_SECONDS * 1000
         http_status = 0
         status      = "failure"
+        error_type  = classify_error(exc)
     finally:
         session.close()
 
-    return {"status": status, "latency_ms": latency_ms, "http_status_code": http_status}
+    return {
+        "status": status,
+        "latency_ms": latency_ms,
+        "http_status_code": http_status,
+        "error_type": error_type,
+    }
+
+
+def refresh_certificate_if_stale(project: dict) -> None:
+    """Refresh the project's cached TLS cert fields at most every CERT_REFRESH_SECONDS.
+
+    Cert data is stored on the project row (slow-moving state), not on every
+    per-minute check row (which TTLs out at 90 days).
+    """
+    url = project.get("url", "")
+    if not url.lower().startswith("https"):
+        return
+    last_checked = int(project.get("cert_checked_at") or 0)
+    if (int(time.time()) - last_checked) <= CERT_REFRESH_SECONDS:
+        return
+
+    cert = probe_certificate(url)
+    if not cert:
+        return
+
+    projects_table.update_item(
+        Key={"project_id": project["project_id"]},
+        UpdateExpression="SET cert_expiry_days = :d, cert_issuer = :i, cert_checked_at = :t",
+        ExpressionAttributeValues={
+            ":d": cert["cert_expiry_days"],
+            ":i": cert["cert_issuer"],
+            ":t": int(time.time()),
+        },
+    )
+    logger.info(
+        f"Refreshed cert for {project.get('name')}: expires in "
+        f"{cert['cert_expiry_days']}d (issuer={cert['cert_issuer']})"
+    )
 
 
 
@@ -153,13 +251,23 @@ def check_project(project: dict) -> None:
         "http_status_code": check_result["http_status_code"],
         "ttl": ttl_seconds,
     }
+    # Only stored on failures — success has no cause and a null attribute is noise.
+    if check_result.get("error_type"):
+        check_record["error_type"] = check_result["error_type"]
     checks_table.put_item(Item=check_record)
 
     logger.info(
         f"Checked {project['name']} ({project['url']}) — "
         f"status={check_result['status']}, latency={check_result['latency_ms']}ms, "
-        f"http_status={check_result['http_status_code']}"
+        f"http_status={check_result['http_status_code']}, error_type={check_result['error_type']}"
     )
+
+    # Slow-moving cert state, refreshed on its own cadence. Isolated so a write
+    # failure here can never suppress the alerting below.
+    try:
+        refresh_certificate_if_stale(project)
+    except Exception as exc:
+        logger.warning(f"Cert refresh failed for {project_id}: {exc}")
 
 
     recent_checks = fetch_recent_checks(project_id, failure_threshold)
@@ -173,7 +281,9 @@ def check_project(project: dict) -> None:
 
     if transition == "down":
         first_failure_ts = get_first_failure_timestamp(recent_checks)
-        subject, html_body = build_down_email(project, first_failure_ts, check_result["http_status_code"])
+        subject, html_body = build_down_email(
+            project, first_failure_ts, check_result["http_status_code"], check_result.get("error_type")
+        )
         try:
             send_email(notification_email, subject, html_body)
             logger.info(f"DOWN alert sent for project {project_id}")

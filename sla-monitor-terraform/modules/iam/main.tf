@@ -41,6 +41,18 @@ data "aws_iam_policy_document" "monitor_lambda_policy" {
     ]
   }
 
+  # Cache each project's TLS cert expiry/issuer on its own row (throttled refresh).
+  statement {
+    sid    = "UpdateProjectCert"
+    effect = "Allow"
+    actions = [
+      "dynamodb:UpdateItem",
+    ]
+    resources = [
+      var.projects_table_arn,
+    ]
+  }
+
   statement {
     sid    = "WriteAndReadChecks"
     effect = "Allow"
@@ -371,6 +383,18 @@ data "aws_iam_policy_document" "api_lambda_policy" {
     ]
     resources = [
       var.reports_table_arn,
+    ]
+  }
+
+  # Serve the incident timeline + reliability metrics endpoint.
+  statement {
+    sid    = "ReadIncidents"
+    effect = "Allow"
+    actions = [
+      "dynamodb:Query",
+    ]
+    resources = [
+      var.incidents_table_arn,
     ]
   }
 

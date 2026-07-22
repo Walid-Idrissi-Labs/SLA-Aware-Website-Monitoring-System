@@ -22,6 +22,19 @@ logger.setLevel(logging.INFO)
 
 
 
+def _dominant_cause(checks: list[dict]) -> str | None:
+    """Most common error_type across a failure run (per-check field set by the
+    Monitor Lambda). None for legacy checks written before error_type existed."""
+    counts: dict[str, int] = {}
+    for check in checks:
+        cause = check.get("error_type")
+        if cause:
+            counts[cause] = counts.get(cause, 0) + 1
+    if not counts:
+        return None
+    return max(counts, key=counts.get)
+
+
 def find_failure_runs(checks: list[dict], failure_threshold: int) -> list[dict]:
     #failure run : status=failure > threshold
 
@@ -37,6 +50,7 @@ def find_failure_runs(checks: list[dict], failure_threshold: int) -> list[dict]:
                 runs.append({
                     "start_ts_ms": int(current_run[0]["timestamp"]),
                     "end_ts_ms": int(current_run[-1]["timestamp"]),
+                    "cause": _dominant_cause(current_run),
                 })
             current_run = []
 
@@ -46,6 +60,7 @@ def find_failure_runs(checks: list[dict], failure_threshold: int) -> list[dict]:
         runs.append({
             "start_ts_ms": int(current_run[0]["timestamp"]),
             "end_ts_ms": int(current_run[-1]["timestamp"]),
+            "cause": _dominant_cause(current_run),
         })
 
     return runs
@@ -69,19 +84,22 @@ def get_open_incident(project_id: str) -> dict | None:
     return items[0] if items else None
 
 
-def open_incident(project_id: str, start_time_sec: int) -> None:
+def open_incident(project_id: str, start_time_sec: int, cause: str | None = None) -> None:
     #Idempotency: caller should already have checked that no open incident exists
 
-    incidents_table.put_item(
-        Item={
-            "project_id": project_id,
-            "start_time": start_time_sec,
-            "end_time": None,
-            "duration_seconds": None,
-            "resolved": False,
-        }
+    item = {
+        "project_id": project_id,
+        "start_time": start_time_sec,
+        "end_time": None,
+        "duration_seconds": None,
+        "resolved": False,
+    }
+    if cause:
+        item["cause"] = cause
+    incidents_table.put_item(Item=item)
+    logger.info(
+        f"Opened incident for project {project_id}, start_time={start_time_sec}, cause={cause}"
     )
-    logger.info(f"Opened incident for project {project_id}, start_time={start_time_sec}")
 
 
 def close_incident(project_id: str, start_time_sec: int, end_time_sec: int) -> bool:
@@ -238,7 +256,7 @@ def process_project(project: dict) -> None:
             # This run is part of the incident closed in step 1.
             continue
 
-        open_incident(project_id, run_start_sec)
+        open_incident(project_id, run_start_sec, run.get("cause"))
 
         # If the site already recovered inside this window, close immediately —
         # otherwise a second run in the same window would be silently dropped.
