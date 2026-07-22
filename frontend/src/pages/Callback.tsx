@@ -72,10 +72,10 @@ export default function Callback() {
   if (error) {
     return (
       <div className="grid min-h-screen place-items-center p-4">
-        <div className="card flex w-full max-w-sm flex-col items-center gap-4 p-8 text-center">
-          <p className="text-[14px] font-semibold text-txt-hi">Sign-in failed</p>
-          <p className="text-[13px] text-txt-mid">{error}</p>
-          <Link to="/login" className="btn-primary">
+        <div className="panel flex w-full max-w-sm flex-col items-center gap-4 p-8 text-center">
+          <p className="font-display text-[15px] font-semibold text-txt-hi">Sign-in failed</p>
+          <p className="text-[12px] text-txt-lo">{error}</p>
+          <Link to="/login" className="btn-accent">
             Back to sign in
           </Link>
         </div>

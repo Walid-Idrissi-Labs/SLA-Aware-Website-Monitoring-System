@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { Mail, KeyRound, ShieldCheck } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
 import { Alert, Spinner } from '../components/ui'
 import { confirmSignUp, resendConfirmationCode, friendlyAuthMessage } from '../lib/cognito'
@@ -58,12 +59,13 @@ export default function ConfirmSignup() {
 
   return (
     <AuthLayout
-      title="Check your email"
-      subtitle="We sent a 6-digit verification code. Enter it to activate your account."
+      kicker="Verify Email"
+      title="Enter your code"
+      subtitle="We emailed you a 6-digit code. Enter it to activate your account."
       footer={
         <>
           Wrong address?{' '}
-          <Link to="/signup" className="link">
+          <Link to="/signup" className="font-medium text-accent hover:underline">
             Start over
           </Link>
         </>
@@ -82,8 +84,10 @@ export default function ConfirmSignup() {
         )}
 
         <div>
-          <label className="label" htmlFor="email">
-            Email
+          <label className="field-label" htmlFor="email">
+            <span className="inline-flex items-center gap-1.5">
+              <Mail className="h-3 w-3" strokeWidth={1.75} /> Email
+            </span>
           </label>
           <input
             id="email"
@@ -91,15 +95,17 @@ export default function ConfirmSignup() {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="input"
+            className="field"
             placeholder="you@example.com"
             required
           />
         </div>
 
         <div>
-          <label className="label" htmlFor="code">
-            Verification code
+          <label className="field-label" htmlFor="code">
+            <span className="inline-flex items-center gap-1.5">
+              <KeyRound className="h-3 w-3" strokeWidth={1.75} /> Verification code
+            </span>
           </label>
           <input
             id="code"
@@ -109,23 +115,34 @@ export default function ConfirmSignup() {
             maxLength={6}
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-            className="input tnum text-center font-mono text-[16px] tracking-[0.4em]"
+            className="field text-center text-[16px] tracking-[0.5em]"
             placeholder="123456"
             required
           />
         </div>
 
-        <button type="submit" disabled={loading} className="btn-primary h-10 w-full">
-          {loading ? <Spinner size={16} /> : 'Verify and continue'}
+        <button type="submit" disabled={loading} className="btn-auth">
+          {loading ? (
+            <Spinner size={16} />
+          ) : (
+            <>
+              <ShieldCheck className="h-4 w-4" strokeWidth={2} /> Verify &amp; continue
+            </>
+          )}
         </button>
       </form>
 
-      <p className="mt-4 text-center text-[13px] text-txt-mid">
-        Didn't get it?{' '}
-        <button type="button" onClick={handleResend} disabled={resending} className="link disabled:opacity-60">
+      <div className="mt-4 text-center text-[12px] text-txt-lo">
+        Didn’t get it?{' '}
+        <button
+          type="button"
+          onClick={handleResend}
+          disabled={resending}
+          className="font-medium text-accent hover:underline disabled:opacity-60"
+        >
           {resending ? 'Sending…' : 'Resend code'}
         </button>
-      </p>
+      </div>
     </AuthLayout>
   )
 }

@@ -3,10 +3,10 @@ import type { Check } from '../types'
 /** Status palette — the single source for status hexes used in inline SVG/styles.
  *  Mirrors the `ok`/`warn`/`crit`/`accent` tokens in tailwind.config.js. */
 export const STATUS = {
-  ok: '#3FB950',
-  warn: '#D29922',
-  crit: '#F85149',
-  accent: '#FA5C29',
+  ok: '#34d399',
+  warn: '#fbbf24',
+  crit: '#f87171',
+  accent: '#fa5c29',
 } as const
 
 /** How often live views re-poll the API (matches the 1-minute check cadence). */
@@ -47,10 +47,10 @@ export function uptimeFromChecks(checks: Check[]): number | null {
 
 /** Severity → display metadata (label + tailwind-friendly hex). */
 export const SEVERITY = {
-  healthy: { label: 'Healthy', color: STATUS.ok, dim: 'rgba(63,185,80,0.12)' },
-  degraded: { label: 'Degraded', color: STATUS.warn, dim: 'rgba(210,153,34,0.12)' },
-  major: { label: 'Major', color: '#F0883E', dim: 'rgba(240,136,62,0.12)' },
-  critical: { label: 'Critical', color: STATUS.crit, dim: 'rgba(248,81,73,0.12)' },
+  healthy: { label: 'HEALTHY', color: STATUS.ok, dim: 'rgba(52,211,153,0.14)' },
+  degraded: { label: 'DEGRADED', color: STATUS.warn, dim: 'rgba(251,191,36,0.14)' },
+  major: { label: 'MAJOR', color: '#fb923c', dim: 'rgba(251,146,60,0.14)' },
+  critical: { label: 'CRITICAL', color: STATUS.crit, dim: 'rgba(248,113,113,0.14)' },
 } as const
 
 export type Severity = keyof typeof SEVERITY
