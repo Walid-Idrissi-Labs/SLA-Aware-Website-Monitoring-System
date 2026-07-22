@@ -4,6 +4,9 @@ data "archive_file" "lambda_zip" {
 
   source_dir = var.source_dir
 
+  # Keep build/OS cruft out of the deployment package (bloat + confusion).
+  excludes = ["handler.zip", ".DS_Store", "__pycache__"]
+
   output_path = "${path.module}/tmp/${var.function_name}.zip"
 }
 

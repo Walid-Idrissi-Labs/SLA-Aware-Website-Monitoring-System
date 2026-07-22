@@ -206,6 +206,8 @@ data "aws_iam_policy_document" "report_generator_lambda_policy" {
     effect = "Allow"
     actions = [
       "dynamodb:Scan",
+      # GetItem: on-demand and rebuild paths fetch a single project by id.
+      "dynamodb:GetItem",
     ]
     resources = [
       var.projects_table_arn,
@@ -242,6 +244,9 @@ data "aws_iam_policy_document" "report_generator_lambda_policy" {
     effect = "Allow"
     actions = [
       "dynamodb:PutItem",
+      # GetItem: the rebuild path reads the stored report row to faithfully
+      # re-render its S3 artifacts.
+      "dynamodb:GetItem",
     ]
     resources = [
       var.reports_table_arn,
