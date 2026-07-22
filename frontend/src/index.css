@@ -20,20 +20,13 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: 'Inter', system-ui, sans-serif;
-  color: #eceef0;
-  background-color: #060708;
-  /* layered atmosphere: warm halo from the top + a whisper-fine engineering grid */
-  background-image:
-    radial-gradient(ellipse 90% 55% at 50% -12%, rgba(250, 92, 41, 0.12), transparent 62%),
-    radial-gradient(ellipse 60% 45% at 100% 0%, rgba(52, 211, 153, 0.05), transparent 60%),
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
-  background-attachment: fixed;
+  font-feature-settings: 'cv05', 'cv11';
+  color: #e8ebef;
+  background-color: #0a0c10;
 }
 
 ::selection {
-  background: rgba(250, 92, 41, 0.28);
+  background: rgba(250, 92, 41, 0.3);
   color: #fff;
 }
 
@@ -41,154 +34,102 @@ body {
    Component utilities
    ───────────────────────────────────────────────────────────────────────────── */
 @layer components {
-  /* Frosted instrument panel */
-  .panel {
-    @apply relative rounded-lg border border-white/[0.07] bg-ink-800/70 backdrop-blur-xl;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.045),
-      0 24px 48px -30px rgba(0, 0, 0, 0.9);
+  .card {
+    @apply rounded-xl border border-edge bg-panel shadow-card;
   }
 
-  .panel-flush {
-    @apply relative rounded-lg border border-white/[0.07] bg-ink-850/80 backdrop-blur-xl overflow-hidden;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  /* Tabular figures for metric values and table numbers */
+  .tnum {
+    font-variant-numeric: tabular-nums;
   }
 
-  /* Section header strip inside panels — accent lives in the gradient underline */
-  .panel-head {
-    @apply relative flex items-center justify-between gap-3 px-4 h-11
-           bg-gradient-to-b from-white/[0.03] to-transparent;
-  }
-  .panel-head::after {
-    content: '';
-    position: absolute;
-    inset: auto 0 0 0;
-    height: 1px;
-    background: linear-gradient(
-      90deg,
-      rgba(250, 92, 41, 0.55) 0%,
-      rgba(250, 92, 41, 0.14) 22%,
-      rgba(255, 255, 255, 0.05) 48%,
-      transparent 100%
-    );
+  /* ── Buttons ─────────────────────────────────────────────────────────── */
+  .btn-primary {
+    @apply inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg
+           bg-accent px-3.5 text-[13px] font-medium text-white
+           transition-colors duration-100 hover:bg-accent-hover active:bg-accent-press
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50
+           disabled:pointer-events-none disabled:opacity-50;
   }
 
-  /* Uppercase engineering micro-label */
-  .micro {
-    @apply font-mono text-[10px] font-semibold uppercase tracking-micro text-txt-lo;
-  }
-
-  .kicker {
-    @apply font-mono text-[10px] font-bold uppercase tracking-micro text-accent;
-  }
-
-  /* Numeric data readout */
-  .data {
-    @apply font-mono tabular-nums;
-    letter-spacing: -0.01em;
-  }
-
-  /* Signature gradient hairline — the accent rule for section headers */
-  .hr-accent {
-    height: 1px;
-    background: linear-gradient(90deg, rgba(250, 92, 41, 0.6), rgba(255, 255, 255, 0.055) 44%, transparent);
-  }
-
-  /* Subtle metallic sheen for display headings */
-  .text-sheen {
-    background: linear-gradient(178deg, #f4f6f7 8%, #b7bdc3 128%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-
-  /* Corner-bracket instrument framing */
-  .frame-corners::before,
-  .frame-corners::after {
-    content: '';
-    position: absolute;
-    width: 12px;
-    height: 12px;
-    pointer-events: none;
-    z-index: 1;
-  }
-  .frame-corners::before {
-    top: 7px;
-    left: 7px;
-    border-top: 1px solid rgba(250, 92, 41, 0.55);
-    border-left: 1px solid rgba(250, 92, 41, 0.55);
-  }
-  .frame-corners::after {
-    bottom: 7px;
-    right: 7px;
-    border-bottom: 1px solid rgba(250, 92, 41, 0.55);
-    border-right: 1px solid rgba(250, 92, 41, 0.55);
-  }
-
-  /* Fine grid overlay for panel interiors */
-  .grid-overlay {
-    background-image:
-      linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
-    background-size: 38px 38px;
-  }
-
-  /* Primary action button */
-  .btn-accent {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-3.5 h-8
-           font-mono text-[11px] font-bold uppercase tracking-wider text-white
-           bg-accent-sheen transition-all duration-150
-           hover:brightness-110 active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
-    box-shadow: 0 0 0 1px rgba(250, 92, 41, 0.4), 0 8px 22px -10px rgba(250, 92, 41, 0.7);
-  }
-
-  /* Ghost / secondary button */
-  .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 h-8
-           font-mono text-[11px] font-bold uppercase tracking-wider
-           text-txt-mid border border-white/[0.08] bg-white/[0.015]
-           transition-all duration-150
-           hover:text-accent hover:border-accent/40 hover:bg-accent/[0.06]
-           active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
+  .btn-secondary {
+    @apply inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg
+           border border-edge bg-panel px-3.5 text-[13px] font-medium text-txt-hi
+           transition-colors duration-100 hover:border-edge-strong hover:bg-soft
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40
+           disabled:pointer-events-none disabled:opacity-50;
   }
 
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 h-8
-           font-mono text-[11px] font-bold uppercase tracking-wider
-           text-crit border border-crit/25 bg-crit/[0.06]
-           transition-all duration-150 hover:bg-crit/[0.12]
-           active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
+    @apply inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg
+           border border-crit/30 px-3.5 text-[13px] font-medium text-crit
+           transition-colors duration-100 hover:border-crit/50 hover:bg-crit/10
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crit/40
+           disabled:pointer-events-none disabled:opacity-50;
   }
 
-  /* Full-width primary CTA for the auth pages (taller than .btn-accent) */
-  .btn-auth {
-    @apply inline-flex h-11 w-full items-center justify-center gap-2 rounded-md
-           bg-accent-sheen font-mono text-[12px] font-bold uppercase tracking-wider
-           text-white shadow-glow-accent transition-all duration-150
-           hover:brightness-110 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60;
+  /* Compact modifier for toolbar buttons */
+  .btn-compact {
+    @apply h-8 px-3 text-[12.5px];
   }
 
-  /* Form field */
-  .field {
-    @apply w-full rounded-md bg-ink-950/80 border border-white/[0.08] text-txt-hi
-           px-3 h-10 text-[13px] font-mono placeholder:text-txt-dim
-           transition-all duration-150
-           focus:outline-none focus:border-accent/70 focus:bg-ink-950
-           focus:ring-2 focus:ring-accent/20;
+  /* Quiet square icon button */
+  .icon-btn {
+    @apply grid h-8 w-8 shrink-0 place-items-center rounded-lg text-txt-lo
+           transition-colors duration-100 hover:bg-soft hover:text-txt-hi
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40
+           disabled:pointer-events-none disabled:opacity-50;
   }
 
-  .field-label {
-    @apply block font-mono text-[10px] font-semibold uppercase tracking-wider text-txt-lo mb-1.5;
+  /* ── Forms ───────────────────────────────────────────────────────────── */
+  .input {
+    @apply h-9 w-full rounded-lg border border-edge bg-well px-3 text-[13px] text-txt-hi
+           placeholder:text-txt-faint transition-[border-color,box-shadow] duration-100
+           focus:border-accent/60 focus:outline-none focus:ring-[3px] focus:ring-accent/15;
   }
 
-  /* Skeleton shimmer */
+  .label {
+    @apply mb-1.5 block text-[13px] font-medium text-txt-hi;
+  }
+
+  .help {
+    @apply mt-1.5 text-[12px] leading-relaxed text-txt-lo;
+  }
+
+  /* ── Tables ──────────────────────────────────────────────────────────── */
+  .th {
+    @apply px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.05em] text-txt-lo;
+  }
+
+  /* ── Segmented control ───────────────────────────────────────────────── */
+  .seg {
+    @apply inline-flex items-center gap-0.5 rounded-lg border border-edge bg-well p-0.5;
+  }
+
+  .seg-item {
+    @apply rounded-md px-2.5 py-1 text-[12px] font-medium text-txt-lo
+           transition-colors duration-100 hover:text-txt-mid
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40
+           disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .seg-item-active {
+    @apply bg-panel text-txt-hi shadow-card;
+  }
+
+  /* ── Text links ──────────────────────────────────────────────────────── */
+  .link {
+    @apply font-medium text-accent underline-offset-2 hover:underline;
+  }
+
+  /* ── Skeleton shimmer ────────────────────────────────────────────────── */
   .skeleton {
-    @apply relative overflow-hidden rounded bg-white/[0.04];
+    @apply relative overflow-hidden rounded-md bg-soft;
   }
   .skeleton::after {
     content: '';
     @apply absolute inset-0 -translate-x-full animate-shimmer;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
   }
 }
 
@@ -196,21 +137,19 @@ body {
    Scrollbar
    ───────────────────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e242c;
+  background: #2b313c;
   border-radius: 8px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
+  border: 3px solid #0a0c10;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #fa5c29;
-  background-clip: padding-box;
+  background: #3f4653;
 }
 
 @media (prefers-reduced-motion: reduce) {

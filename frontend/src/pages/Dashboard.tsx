@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ShieldCheck, Gauge, TriangleAlert, Radar, RefreshCw, Plus } from 'lucide-react'
+import { Activity, Plus, RefreshCw } from 'lucide-react'
 import Shell from '../components/Shell'
-import TickerStat from '../components/TickerStat'
 import StatCard from '../components/StatCard'
-import ProjectCard from '../components/ProjectCard'
+import MonitorRow, { MonitorListHeader } from '../components/MonitorRow'
 import AddProjectModal from '../components/AddProjectModal'
 import { Alert } from '../components/ui'
 import { getProjects, getProjectStatus } from '../lib/api'
-import { POLL_INTERVAL_MS, STATUS } from '../lib/format'
+import { POLL_INTERVAL_MS } from '../lib/format'
 import type { Project, ProjectStatus } from '../types'
 
 export default function Dashboard() {
@@ -73,97 +72,53 @@ export default function Dashboard() {
     withLatency.length > 0
       ? Math.round(withLatency.reduce((sum, p) => sum + (p.last_latency_ms || 0), 0) / withLatency.length)
       : null
-  const incidents = checked.filter((p) => p.current_status === 'failure').length
-  const healthPct = checked.length > 0 ? (healthy / checked.length) * 100 : null
-
-  const ticker = (
-    <>
-      <TickerStat
-        label="Health"
-        value={healthPct !== null ? `${healthPct.toFixed(1)}%` : '—'}
-        color={healthPct === null ? undefined : healthPct >= 99 ? STATUS.ok : STATUS.warn}
-      />
-      <TickerStat label="Avg Lat" value={avgLatency !== null ? `${avgLatency}ms` : '—'} />
-      <TickerStat label="Incidents" value={String(incidents)} color={incidents > 0 ? STATUS.crit : STATUS.ok} />
-      <TickerStat label="Endpoints" value={String(total)} />
-    </>
-  )
+  const down = checked.filter((p) => p.current_status === 'failure').length
 
   return (
-    <Shell ticker={ticker}>
+    <Shell>
       {/* Page header */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="animate-fade-up">
-          <p className="kicker mb-1.5">Operations</p>
-          <h1 className="text-sheen font-display text-[26px] font-bold tracking-tight">Overview</h1>
-          <p className="mt-1 text-[12px] text-txt-lo">Uptime, latency, and SLA posture across every endpoint.</p>
+      <div className="flex flex-wrap items-center justify-between gap-4 animate-fade-up">
+        <div>
+          <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-txt-hi">Monitors</h1>
+          <p className="mt-1 text-[13px] text-txt-mid">Uptime, response time, and SLA posture across your endpoints.</p>
         </div>
-        <div className="flex items-center gap-2 animate-fade-up" style={{ animationDelay: '80ms' }}>
-          <button onClick={loadProjects} disabled={loading} className="btn-ghost">
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin-slow' : ''}`} strokeWidth={1.75} />
-            {loading ? 'Refreshing' : 'Refresh'}
+        <div className="flex items-center gap-2">
+          <button onClick={loadProjects} disabled={loading} className="btn-secondary">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} strokeWidth={1.75} />
+            Refresh
           </button>
-          <button onClick={() => setShowAddModal(true)} className="btn-accent">
-            <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
-            New endpoint
+          <button onClick={() => setShowAddModal(true)} className="btn-primary">
+            <Plus className="h-4 w-4" strokeWidth={2} />
+            Add monitor
           </button>
         </div>
       </div>
 
-      {/* KPI tiles */}
-      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {/* Summary */}
+      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4 animate-fade-up" style={{ animationDelay: '40ms' }}>
         <StatCard
-          label="System Health"
-          value={healthPct}
-          decimals={1}
-          unit="%"
-          icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.75} />}
-          accent={healthPct === null || healthPct >= 99 ? STATUS.ok : STATUS.warn}
-          sub={<span>{checked.length > 0 ? `${healthy} of ${checked.length} responding` : 'no checks yet'}</span>}
-          index={0}
+          label="Operational"
+          value={checked.length > 0 ? `${healthy} / ${checked.length}` : null}
+          sub={checked.length > 0 ? 'monitors responding' : 'no checks yet'}
         />
+        <StatCard label="Avg response" value={avgLatency} unit="ms" sub="latest check, all monitors" />
         <StatCard
-          label="Avg Latency"
-          value={avgLatency}
-          unit="ms"
-          icon={<Gauge className="h-4 w-4" strokeWidth={1.75} />}
-          sub={<span>across active endpoints</span>}
-          index={1}
+          label="Down"
+          value={down}
+          tone={down > 0 ? 'crit' : 'default'}
+          sub={down > 0 ? 'failing right now' : 'all monitors passing'}
         />
-        <StatCard
-          label="Active Incidents"
-          value={incidents}
-          icon={<TriangleAlert className="h-4 w-4" strokeWidth={1.75} />}
-          accent={incidents > 0 ? STATUS.crit : STATUS.ok}
-          sub={<span>{incidents > 0 ? 'endpoints failing checks' : 'no failing endpoints'}</span>}
-          index={2}
-        />
-        <StatCard
-          label="Endpoints"
-          value={total}
-          icon={<Radar className="h-4 w-4" strokeWidth={1.75} />}
-          sub={<span>checked every minute</span>}
-          index={3}
-        />
+        <StatCard label="Monitors" value={total} sub="checked every minute" />
       </div>
 
-      {/* Section header */}
-      <div className="mt-8 flex items-center gap-3">
-        <h2 className="font-mono text-[12px] font-bold uppercase tracking-micro text-txt-hi">Monitored Endpoints</h2>
-        <span className="rounded-md border border-white/[0.08] bg-white/[0.02] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-txt-mid">
-          {total}
-        </span>
-        <span className="hr-accent flex-1" />
-      </div>
-
-      {/* Content */}
-      <div className="mt-4">
+      {/* Monitors list */}
+      <div className="mt-6 animate-fade-up" style={{ animationDelay: '80ms' }}>
         {error && (
           <Alert
             tone="error"
             className="mb-4"
             action={
-              <button onClick={loadProjects} className="btn-ghost">
+              <button onClick={loadProjects} className="btn-secondary btn-compact">
                 Retry
               </button>
             }
@@ -174,45 +129,43 @@ export default function Dashboard() {
         )}
 
         {loading && !loaded && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="panel h-[248px] p-4">
-                <div className="skeleton h-3 w-20" />
-                <div className="skeleton mt-3 h-4 w-40" />
-                <div className="skeleton mt-2 h-3 w-28" />
-                <div className="skeleton mt-6 h-8 w-24" />
-                <div className="skeleton mt-6 h-8 w-full" />
-                <div className="skeleton mt-3 h-6 w-full" />
+          <div className="card overflow-hidden">
+            <MonitorListHeader />
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 border-b border-edge/60 px-5 py-4 last:border-0">
+                <div className="skeleton h-2 w-2 rounded-full" />
+                <div className="flex-1">
+                  <div className="skeleton h-3.5 w-40" />
+                  <div className="skeleton mt-2 h-3 w-56" />
+                </div>
+                <div className="skeleton hidden h-5 w-44 md:block" />
+                <div className="skeleton h-3.5 w-16" />
               </div>
             ))}
           </div>
         )}
 
         {loaded && activeProjects.length === 0 && (
-          <div className="panel flex flex-col items-center justify-center gap-4 py-20 text-center">
-            <span className="grid h-14 w-14 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.02] text-txt-lo">
-              <Radar className="h-6 w-6" strokeWidth={1.75} />
+          <div className="card flex flex-col items-center justify-center gap-4 py-20 text-center">
+            <span className="grid h-12 w-12 place-items-center rounded-full border border-edge bg-soft text-txt-lo">
+              <Activity className="h-5 w-5" strokeWidth={1.75} />
             </span>
             <div>
-              <p className="font-display text-[15px] font-semibold text-txt-hi">No endpoints yet</p>
-              <p className="mt-1 text-[12px] text-txt-lo">Add a website to start checking it every minute.</p>
+              <p className="text-[14px] font-semibold text-txt-hi">No monitors yet</p>
+              <p className="mt-1 text-[13px] text-txt-mid">Add a website to start checking it every minute.</p>
             </div>
-            <button onClick={() => setShowAddModal(true)} className="btn-accent">
-              <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
-              Add endpoint
+            <button onClick={() => setShowAddModal(true)} className="btn-primary">
+              <Plus className="h-4 w-4" strokeWidth={2} />
+              Add monitor
             </button>
           </div>
         )}
 
         {activeProjects.length > 0 && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {activeProjects.map((project, i) => (
-              <ProjectCard
-                key={project.project_id}
-                project={project}
-                checks={statuses[project.project_id]?.checks || []}
-                index={i}
-              />
+          <div className="card divide-y divide-edge/60 overflow-hidden">
+            <MonitorListHeader />
+            {activeProjects.map((project) => (
+              <MonitorRow key={project.project_id} project={project} checks={statuses[project.project_id]?.checks || []} />
             ))}
           </div>
         )}

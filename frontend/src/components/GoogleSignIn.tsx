@@ -26,17 +26,12 @@ export default function GoogleSignIn({ onError }: Props) {
   return (
     <>
       <div className="my-5 flex items-center gap-3">
-        <div className="h-px flex-1 bg-white/[0.08]" />
-        <span className="font-mono text-[10px] uppercase tracking-micro text-txt-dim">or</span>
-        <div className="h-px flex-1 bg-white/[0.08]" />
+        <div className="h-px flex-1 bg-edge" />
+        <span className="text-[12px] text-txt-lo">or</span>
+        <div className="h-px flex-1 bg-edge" />
       </div>
 
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={loading}
-        className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-md border border-white/[0.1] bg-white/[0.02] font-mono text-[12px] font-semibold text-txt-mid transition-all duration-150 hover:border-white/20 hover:bg-white/[0.04] hover:text-txt-hi active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60"
-      >
+      <button type="button" onClick={handleClick} disabled={loading} className="btn-secondary h-10 w-full">
         {loading ? (
           <Spinner size={16} />
         ) : (

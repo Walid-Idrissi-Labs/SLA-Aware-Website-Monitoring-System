@@ -1,64 +1,36 @@
 import type { ReactNode } from 'react'
-import AnimatedNumber from './AnimatedNumber'
-import { STATUS } from '../lib/format'
 
 interface Props {
   label: string
-  /** null renders an em dash — used when there is no data to summarize yet. */
-  value: number | null
-  decimals?: number
+  /** Preformatted value ("99.9", "12 / 14"). Null renders an em dash. */
+  value: ReactNode | null
+  /** Muted unit rendered after the value (%, ms). */
   unit?: string
-  icon?: ReactNode
-  accent?: string
   sub?: ReactNode
-  index?: number
+  /** Colors the value for alarm states only — normal values stay neutral. */
+  tone?: 'default' | 'crit' | 'warn'
 }
 
-/** Hero KPI tile: micro-label, big animated readout, unit, and a support line. */
-export default function StatCard({
-  label,
-  value,
-  decimals = 0,
-  unit,
-  icon,
-  accent = STATUS.accent,
-  sub,
-  index = 0,
-}: Props) {
+const TONE_CLASS = {
+  default: 'text-txt-hi',
+  crit: 'text-crit',
+  warn: 'text-warn',
+} as const
+
+/** Summary KPI tile: quiet label, large tabular value, support line. */
+export default function StatCard({ label, value, unit, sub, tone = 'default' }: Props) {
   return (
-    <div
-      className="panel group relative overflow-hidden p-4 animate-fade-up"
-      style={{ animationDelay: `${index * 70}ms` }}
-    >
-      {/* accent hairline that lights up on hover */}
-      <span
-        className="absolute inset-x-0 top-0 h-px opacity-40 transition-opacity group-hover:opacity-100"
-        style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }}
-      />
-      <div className="flex items-center justify-between">
-        <span className="micro">{label}</span>
-        <span
-          className="grid h-7 w-7 place-items-center rounded-md border border-white/[0.06] bg-white/[0.02] transition-colors"
-          style={{ color: accent }}
-        >
-          {icon}
-        </span>
-      </div>
-
-      <div className="mt-3 flex items-baseline gap-1.5">
+    <div className="card px-5 py-4">
+      <p className="text-[12px] font-medium text-txt-mid">{label}</p>
+      <div className="mt-1.5 flex items-baseline gap-1">
         {value === null ? (
-          <span className="font-display data text-[32px] font-bold leading-none text-txt-dim">—</span>
+          <span className="text-[24px] font-semibold leading-tight tracking-[-0.02em] text-txt-faint">—</span>
         ) : (
-          <AnimatedNumber
-            value={value}
-            decimals={decimals}
-            className="font-display data text-[32px] font-bold leading-none text-txt-hi"
-          />
+          <span className={`tnum text-[24px] font-semibold leading-tight tracking-[-0.02em] ${TONE_CLASS[tone]}`}>{value}</span>
         )}
-        {unit && value !== null && <span className="data text-[13px] font-medium text-txt-lo">{unit}</span>}
+        {unit && value !== null && <span className="text-[13px] font-medium text-txt-lo">{unit}</span>}
       </div>
-
-      {sub && <div className="mt-2.5 text-[11px] text-txt-lo">{sub}</div>}
+      {sub && <p className="mt-1 text-[12px] text-txt-lo">{sub}</p>}
     </div>
   )
 }

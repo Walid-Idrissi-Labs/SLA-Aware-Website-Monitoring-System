@@ -183,6 +183,7 @@ module "lambda_monitor" {
     SES_SENDER_PARAM_PATH     = "/sla-monitor/${var.environment}/ses/sender-email"
     FAILURE_THRESHOLD_DEFAULT = "3"
     HTTP_TIMEOUT_SECONDS      = "10"
+    DASHBOARD_URL             = var.dashboard_url
   }
 
   eventbridge_rule_arns         = [aws_cloudwatch_event_rule.monitor.arn]
@@ -236,6 +237,7 @@ module "lambda_report_generator" {
     REPORTS_TABLE_NAME    = module.dynamodb.reports_table_name
     REPORTS_BUCKET_NAME   = module.s3.reports_bucket_name
     SES_SENDER_PARAM_PATH = "/sla-monitor/${var.environment}/ses/sender-email"
+    DASHBOARD_URL         = var.dashboard_url
   }
 
   eventbridge_rule_arns         = [aws_cloudwatch_event_rule.report_generator.arn]

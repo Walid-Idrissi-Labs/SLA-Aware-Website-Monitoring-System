@@ -1,15 +1,15 @@
-import html
 import json
 import os
 import time
 import logging
 import decimal
-from datetime import datetime, timezone
 
 import boto3
 import requests
 from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
+
+from templates import build_down_email, build_up_email
 
 
 
@@ -56,64 +56,6 @@ def send_email(to_address: str, subject: str, html_body: str) -> None:
             "Body": {"Html": {"Data": html_body, "Charset": "UTF-8"}},
         },
     )
-
-
-def build_down_email(project: dict, first_failure_ts_ms: int) -> tuple[str, str]:
-    first_failure_dt = datetime.fromtimestamp(first_failure_ts_ms / 1000, tz=timezone.utc)
-    first_failure_str = first_failure_dt.strftime("%Y-%m-%d %H:%M:%S UTC")
-
-    name = html.escape(str(project["name"]))
-    url = html.escape(str(project["url"]), quote=True)
-
-    subject = f"[DOWN] {project['name']} is unreachable"
-
-    body = f"""
-    <html><body style="font-family: Arial, sans-serif;">
-    <div style="background-color: #dc2626; color: white; padding: 16px; border-radius: 4px;">
-        <h2>🔴 Site Down</h2>
-    </div>
-    <div style="padding: 16px;">
-        <p><strong>Project:</strong> {name}</p>
-        <p><strong>URL:</strong> <a href="{url}">{url}</a></p>
-        <p><strong>First failure detected:</strong> {first_failure_str}</p>
-        <p><strong>Consecutive failures:</strong> {int(project['failure_threshold'])}</p>
-    </div>
-    <div style="padding: 16px; color: #666; font-size: 12px;">
-        You are receiving this because you monitor this project on SLA Monitor.
-    </div>
-    </body></html>
-    """
-    return subject, body
-
-
-def build_up_email(project: dict) -> tuple[str, str]:
-    recovered_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
-    name = html.escape(str(project["name"]))
-    url = html.escape(str(project["url"]), quote=True)
-
-    subject = f"[UP] {project['name']} has recovered"
-
-    body = f"""
-    <html><body style="font-family: Arial, sans-serif;">
-    <div style="background-color: #16a34a; color: white; padding: 16px; border-radius: 4px;">
-        <h2>✅ Site Recovered</h2>
-    </div>
-    <div style="padding: 16px;">
-        <p><strong>Project:</strong> {name}</p>
-        <p><strong>URL:</strong> <a href="{url}">{url}</a></p>
-        <p><strong>Recovered at:</strong> {recovered_str}</p>
-    </div>
-    <div style="padding: 16px; color: #666; font-size: 12px;">
-        You are receiving this because you monitor this project on SLA Monitor.
-    </div>
-    </body></html>
-    """
-    return subject, body
-
-
-
-
 
 
 def perform_http_check(url: str) -> dict:
@@ -231,7 +173,7 @@ def check_project(project: dict) -> None:
 
     if transition == "down":
         first_failure_ts = get_first_failure_timestamp(recent_checks)
-        subject, html_body = build_down_email(project, first_failure_ts)
+        subject, html_body = build_down_email(project, first_failure_ts, check_result["http_status_code"])
         try:
             send_email(notification_email, subject, html_body)
             logger.info(f"DOWN alert sent for project {project_id}")

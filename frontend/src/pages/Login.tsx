@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
 import GoogleSignIn from '../components/GoogleSignIn'
 import { Alert, Spinner } from '../components/ui'
@@ -65,13 +65,12 @@ export default function Login() {
 
   return (
     <AuthLayout
-      kicker="Secure Access"
-      title="Sign in"
-      subtitle="Access your endpoints, uptime history, and SLA reports."
+      title="Sign in to SLA Monitor"
+      subtitle="Uptime monitoring, alerting, and weekly SLA reports."
       footer={
         <>
           New to SLA Monitor?{' '}
-          <Link to="/signup" className="font-medium text-accent hover:underline">
+          <Link to="/signup" className="link">
             Create an account
           </Link>
         </>
@@ -90,10 +89,8 @@ export default function Login() {
         )}
 
         <div>
-          <label className="field-label" htmlFor="email">
-            <span className="inline-flex items-center gap-1.5">
-              <Mail className="h-3 w-3" strokeWidth={1.75} /> Email
-            </span>
+          <label className="label" htmlFor="email">
+            Email
           </label>
           <input
             id="email"
@@ -101,17 +98,15 @@ export default function Login() {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="field"
+            className="input"
             placeholder="you@example.com"
             required
           />
         </div>
 
         <div>
-          <label className="field-label" htmlFor="password">
-            <span className="inline-flex items-center gap-1.5">
-              <Lock className="h-3 w-3" strokeWidth={1.75} /> Password
-            </span>
+          <label className="label" htmlFor="password">
+            Password
           </label>
           <div className="relative">
             <input
@@ -120,7 +115,7 @@ export default function Login() {
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="field pr-10"
+              className="input pr-10"
               placeholder="••••••••"
               required
             />
@@ -128,21 +123,15 @@ export default function Login() {
               type="button"
               onClick={() => setShowPw((v) => !v)}
               aria-label={showPw ? 'Hide password' : 'Show password'}
-              className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded text-txt-lo transition-colors hover:text-txt-hi"
+              className="absolute right-1.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded text-txt-lo transition-colors hover:text-txt-hi"
             >
               {showPw ? <EyeOff className="h-3.5 w-3.5" strokeWidth={1.75} /> : <Eye className="h-3.5 w-3.5" strokeWidth={1.75} />}
             </button>
           </div>
         </div>
 
-        <button type="submit" disabled={loading} className="btn-auth">
-          {loading ? (
-            <Spinner size={16} />
-          ) : (
-            <>
-              Sign in <ArrowRight className="h-4 w-4" strokeWidth={2} />
-            </>
-          )}
+        <button type="submit" disabled={loading} className="btn-primary h-10 w-full">
+          {loading ? <Spinner size={16} /> : 'Sign in'}
         </button>
       </form>
 

@@ -44,3 +44,8 @@ variable "google_client_secret" {
   type        = string
   sensitive   = true
 }
+variable "dashboard_url" {
+  type        = string
+  description = "Public URL of the dashboard frontend, used for CTA links in alert/report emails. Leave empty to omit the buttons."
+  default     = ""
+}

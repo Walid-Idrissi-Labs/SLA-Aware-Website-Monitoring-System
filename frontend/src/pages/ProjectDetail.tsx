@@ -1,24 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft,
+  Download,
+  ExternalLink,
+  FileText,
   RefreshCw,
   SquarePen,
   Trash2,
-  X,
   TriangleAlert,
-  ExternalLink,
-  ChevronRight,
-  CircleCheck,
-  CircleAlert,
-  Download,
-  Sheet,
-  Zap,
 } from 'lucide-react'
 import Shell from '../components/Shell'
-import TickerStat from '../components/TickerStat'
+import Modal from '../components/Modal'
+import StatCard from '../components/StatCard'
 import LatencyChart from '../components/LatencyChart'
-import UptimeGauge from '../components/UptimeGauge'
 import StatusStrip from '../components/StatusStrip'
 import {
   getProject,
@@ -29,9 +24,9 @@ import {
   generateReport,
   getReportDownloadUrl,
 } from '../lib/api'
-import { Alert, Spinner } from '../components/ui'
+import { Alert, Spinner, StatusDot } from '../components/ui'
 import type { ProjectStatus, ProjectReport, Project, UpdateProjectInput } from '../types'
-import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, bareUrl, fmtUtcTime } from '../lib/format'
+import { SEVERITY, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, bareUrl, fmtUtcTime } from '../lib/format'
 
 function formatDowntime(sec: number): string {
   if (!sec) return '0s'
@@ -64,66 +59,43 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !saving && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, saving])
-
-  async function handleSave() {
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault()
     setSaving(true)
     setError(null)
     try {
       const updated = await updateProject(project.project_id, form)
       onSaved(updated)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to update project')
-    } finally {
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to update project')
       setSaving(false)
     }
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in"
-      onClick={(e) => e.target === e.currentTarget && !saving && onClose()}
-    >
-      <div role="dialog" aria-modal="true" aria-label="Edit endpoint" className="panel frame-corners w-full max-w-lg animate-scale-in overflow-hidden">
-        <div className="panel-head">
-          <div className="flex items-center gap-2.5">
-            <span className="grid h-6 w-6 place-items-center rounded-md bg-accent/[0.12] text-accent">
-              <SquarePen className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </span>
-            <div className="leading-tight">
-              <p className="kicker">Configure</p>
-              <p className="font-display text-[13px] font-semibold text-txt-hi">Edit endpoint</p>
-            </div>
-          </div>
-          <button onClick={onClose} aria-label="Close" className="grid h-7 w-7 place-items-center rounded-md text-txt-lo transition-colors hover:bg-white/[0.05] hover:text-txt-hi">
-            <X className="h-4 w-4" strokeWidth={1.75} />
-          </button>
-        </div>
-
-        <div className="space-y-4 p-5">
+    <Modal title="Edit monitor" description="Changes apply from the next check." onClose={onClose} closeDisabled={saving}>
+      <form onSubmit={handleSave}>
+        <div className="space-y-4 px-5 pb-5">
+          {error && <Alert tone="error">{error}</Alert>}
           <div>
-            <label className="field-label" htmlFor="edit-name">Name</label>
-            <input id="edit-name" type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="field" />
+            <label className="label" htmlFor="edit-name">Name</label>
+            <input id="edit-name" type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input" />
           </div>
           <div>
-            <label className="field-label" htmlFor="edit-url">Target URL</label>
-            <input id="edit-url" type="url" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="field" />
+            <label className="label" htmlFor="edit-url">URL</label>
+            <input id="edit-url" type="url" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="input font-mono" />
           </div>
           <div>
-            <label className="field-label" htmlFor="edit-email">Notification email</label>
-            <input id="edit-email" type="email" value={form.notification_email} onChange={(e) => setForm({ ...form, notification_email: e.target.value })} className="field" />
+            <label className="label" htmlFor="edit-email">Notification email</label>
+            <input id="edit-email" type="email" value={form.notification_email} onChange={(e) => setForm({ ...form, notification_email: e.target.value })} className="input" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="field-label" htmlFor="edit-threshold">Failure threshold</label>
-              <input id="edit-threshold" type="number" min={1} max={10} value={form.failure_threshold} onChange={(e) => setForm({ ...form, failure_threshold: Number(e.target.value) })} className="field" />
+              <label className="label" htmlFor="edit-threshold">Failure threshold</label>
+              <input id="edit-threshold" type="number" min={1} max={10} value={form.failure_threshold} onChange={(e) => setForm({ ...form, failure_threshold: Number(e.target.value) })} className="input" />
             </div>
             <div>
-              <label className="field-label" htmlFor="edit-uptime">Min uptime %</label>
+              <label className="label" htmlFor="edit-uptime">Uptime target (%)</label>
               <input
                 id="edit-uptime"
                 type="number"
@@ -132,34 +104,32 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
                 step={0.1}
                 value={form.thresholds?.min_uptime_pct}
                 onChange={(e) => setForm({ ...form, thresholds: { ...form.thresholds!, min_uptime_pct: Number(e.target.value) } })}
-                className="field"
+                className="input"
               />
             </div>
           </div>
           <div>
-            <label className="field-label" htmlFor="edit-latency">Max latency (ms)</label>
+            <label className="label" htmlFor="edit-latency">Latency target (ms)</label>
             <input
               id="edit-latency"
               type="number"
               min={0}
               value={form.thresholds?.max_avg_latency_ms}
               onChange={(e) => setForm({ ...form, thresholds: { ...form.thresholds!, max_avg_latency_ms: Number(e.target.value) } })}
-              className="field"
+              className="input"
             />
           </div>
-
-          {error && <Alert tone="error">{error}</Alert>}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-white/[0.06] bg-white/[0.01] px-5 py-4">
-          <button onClick={onClose} className="btn-ghost">Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="btn-accent">
+        <div className="flex justify-end gap-2 border-t border-edge px-5 py-4">
+          <button type="button" onClick={onClose} disabled={saving} className="btn-secondary">Cancel</button>
+          <button type="submit" disabled={saving} className="btn-primary">
             {saving && <Spinner />}
             {saving ? 'Saving…' : 'Save changes'}
           </button>
         </div>
-      </div>
-    </div>
+      </form>
+    </Modal>
   )
 }
 
@@ -173,50 +143,23 @@ interface DeleteModalProps {
 }
 
 function DeleteModal({ projectName, onClose, onConfirm, deleting, error }: DeleteModalProps) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !deleting && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, deleting])
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in"
-      onClick={(e) => e.target === e.currentTarget && !deleting && onClose()}
-    >
-      <div role="dialog" aria-modal="true" aria-label="Confirm delete" className="panel w-full max-w-sm animate-scale-in overflow-hidden border-crit/25">
-        <div className="flex items-center gap-2.5 border-b border-crit/20 bg-crit/[0.05] px-5 h-11">
-          <TriangleAlert className="h-4 w-4 text-crit" strokeWidth={1.75} />
-          <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-crit">Confirm delete</span>
-        </div>
-        <div className="space-y-2 p-5">
-          <p className="text-[13px] leading-relaxed text-txt-mid">
-            This stops monitoring <span className="font-semibold text-accent">{projectName}</span>.
-            Its check history and reports are kept.
-          </p>
-          {error && <Alert tone="error">{error}</Alert>}
-        </div>
-        <div className="flex justify-end gap-2 border-t border-white/[0.06] px-5 py-4">
-          <button onClick={onClose} disabled={deleting} className="btn-ghost">Cancel</button>
-          <button onClick={onConfirm} disabled={deleting} className="btn-danger">
-            {deleting && <Spinner />}
-            {deleting ? 'Deleting…' : 'Delete endpoint'}
-          </button>
-        </div>
+    <Modal title="Delete monitor" onClose={onClose} closeDisabled={deleting} maxWidth="sm">
+      <div className="space-y-3 px-5 pb-5">
+        <p className="text-[13px] leading-relaxed text-txt-mid">
+          This stops monitoring <span className="font-medium text-txt-hi">{projectName}</span>. Its check history and
+          reports are kept.
+        </p>
+        {error && <Alert tone="error">{error}</Alert>}
       </div>
-    </div>
-  )
-}
-
-// ─── Vitals metric row ──────────────────────────────────────────────────────
-function Metric({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) {
-  return (
-    <div className="flex items-center justify-between border-b border-white/[0.05] py-2.5 last:border-0">
-      <span className="micro">{label}</span>
-      <span className="data text-[14px] font-semibold" style={{ color: color ?? '#eceef0' }}>
-        {value}
-      </span>
-    </div>
+      <div className="flex justify-end gap-2 border-t border-edge px-5 py-4">
+        <button onClick={onClose} disabled={deleting} className="btn-secondary">Cancel</button>
+        <button onClick={onConfirm} disabled={deleting} className="btn-danger">
+          {deleting && <Spinner />}
+          {deleting ? 'Deleting…' : 'Delete monitor'}
+        </button>
+      </div>
+    </Modal>
   )
 }
 
@@ -264,7 +207,7 @@ export default function ProjectDetail() {
         setLoadError(null)
       } catch (e) {
         if (seq !== requestSeq.current) return
-        setLoadError(e instanceof Error ? e.message : 'Failed to load endpoint')
+        setLoadError(e instanceof Error ? e.message : 'Failed to load monitor')
       } finally {
         if (seq === requestSeq.current) {
           if (options?.silent) setRefreshing(false)
@@ -293,15 +236,27 @@ export default function ProjectDetail() {
       navigate('/dashboard')
     } catch (e) {
       setDeleting(false)
-      setDeleteError(e instanceof Error ? e.message : 'Failed to delete endpoint')
+      setDeleteError(e instanceof Error ? e.message : 'Failed to delete monitor')
     }
   }
 
-  const checks = status?.checks || []
+  const checks = useMemo(() => status?.checks || [], [status])
   const latestCheck = checks[checks.length - 1]
   const isUp = status?.current_status === 'success'
+  const hasChecks = checks.length > 0
   const uptime = uptimeFromChecks(checks)
   const sortedReports = [...reports].sort((a, b) => b.generated_at.localeCompare(a.generated_at))
+
+  const windowStats = useMemo(() => {
+    const okLatencies = checks
+      .filter((c) => c.status === 'success')
+      .map((c) => c.latency_ms)
+      .sort((a, b) => a - b)
+    if (okLatencies.length === 0) return { avg: null as number | null, p95: null as number | null }
+    const avg = Math.round(okLatencies.reduce((s, v) => s + v, 0) / okLatencies.length)
+    const p95 = okLatencies[Math.min(Math.floor(okLatencies.length * 0.95), okLatencies.length - 1)]
+    return { avg, p95 }
+  }, [checks])
 
   async function handleGenerate() {
     if (!id) return
@@ -360,32 +315,20 @@ export default function ProjectDetail() {
     URL.revokeObjectURL(url)
   }
 
-  const ticker = (
-    <>
-      <TickerStat
-        label="Status"
-        value={status ? (isUp ? 'UP' : 'DOWN') : '—'}
-        color={status ? (isUp ? STATUS.ok : STATUS.crit) : undefined}
-      />
-      <TickerStat label="Latency" value={latestCheck ? `${latestCheck.latency_ms}ms` : '—'} />
-      <TickerStat label="Reports" value={String(reports.length)} />
-    </>
-  )
-
   // Initial load failed and there is nothing to show — a clean error state
   // beats an eternal "Loading…" header.
   if (!project && !loading && loadError) {
     return (
-      <Shell ticker={ticker}>
-        <div className="panel mx-auto mt-16 flex max-w-md flex-col items-center gap-4 p-8 text-center">
+      <Shell>
+        <div className="card mx-auto mt-16 flex max-w-md flex-col items-center gap-4 p-8 text-center">
           <TriangleAlert className="h-6 w-6 text-crit" strokeWidth={1.75} />
           <div>
-            <p className="font-display text-[15px] font-semibold text-txt-hi">Couldn't load this endpoint</p>
-            <p className="mt-1 text-[12px] text-txt-lo">{loadError}</p>
+            <p className="text-[14px] font-semibold text-txt-hi">Couldn't load this monitor</p>
+            <p className="mt-1 text-[13px] text-txt-mid">{loadError}</p>
           </div>
           <div className="flex gap-2">
-            <Link to="/dashboard" className="btn-ghost">Back to overview</Link>
-            <button onClick={() => loadData()} className="btn-accent">Retry</button>
+            <Link to="/dashboard" className="btn-secondary">Back to monitors</Link>
+            <button onClick={() => loadData()} className="btn-primary">Retry</button>
           </div>
         </div>
       </Shell>
@@ -393,7 +336,7 @@ export default function ProjectDetail() {
   }
 
   return (
-    <Shell ticker={ticker}>
+    <Shell>
       {showEdit && project && <EditModal project={project} onClose={() => setShowEdit(false)} onSaved={(u) => { setProject(u); setShowEdit(false) }} />}
       {showDelete && project && (
         <DeleteModal
@@ -405,32 +348,27 @@ export default function ProjectDetail() {
         />
       )}
 
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 font-mono text-[11px] text-txt-lo animate-fade-up">
-        <Link to="/dashboard" className="flex items-center gap-1.5 transition-colors hover:text-accent">
-          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.75} />
-          Overview
-        </Link>
-        <ChevronRight className="h-3 w-3 text-txt-dim" strokeWidth={1.75} />
-        <span className="truncate text-txt-mid">{project?.name || '…'}</span>
-      </nav>
+      {/* Back link */}
+      <Link
+        to="/dashboard"
+        className="inline-flex items-center gap-1.5 text-[13px] font-medium text-txt-mid transition-colors hover:text-txt-hi animate-fade-up"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.75} />
+        Monitors
+      </Link>
 
       {/* Header */}
-      <div className="mt-4 flex flex-wrap items-start justify-between gap-4 border-b border-white/[0.06] pb-5 animate-fade-up" style={{ animationDelay: '60ms' }}>
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-4 animate-fade-up" style={{ animationDelay: '30ms' }}>
         <div className="min-w-0">
-          <div className="flex items-center gap-3">
-            <h1 className="font-display text-[24px] font-bold tracking-tight text-txt-hi">{project?.name || 'Loading…'}</h1>
-            {project && (
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-txt-hi">{project?.name || 'Loading…'}</h1>
+            {project && status && (
               <span
-                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider ${
-                  isUp ? 'border-ok/25 bg-ok/[0.08] text-ok' : 'border-crit/25 bg-crit/[0.08] text-crit'
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-medium ${
+                  isUp ? 'border-ok/25 bg-ok/10 text-ok' : 'border-crit/25 bg-crit/10 text-crit'
                 }`}
               >
-                {isUp ? (
-                  <CircleCheck className="h-3.5 w-3.5" strokeWidth={1.75} />
-                ) : (
-                  <CircleAlert className="h-3.5 w-3.5" strokeWidth={1.75} />
-                )}
+                <StatusDot tone={isUp ? 'ok' : 'crit'} pulse={!isUp} />
                 {isUp ? 'Operational' : 'Down'}
               </span>
             )}
@@ -440,7 +378,7 @@ export default function ProjectDetail() {
               href={project.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-2 inline-flex items-center gap-1.5 font-mono text-[12px] text-txt-lo transition-colors hover:text-accent"
+              className="mt-1.5 inline-flex items-center gap-1.5 font-mono text-[12px] text-txt-lo transition-colors hover:text-txt-hi"
             >
               {bareUrl(project.url)}
               <ExternalLink className="h-3 w-3" strokeWidth={1.75} />
@@ -450,11 +388,16 @@ export default function ProjectDetail() {
 
         {project && (
           <div className="flex items-center gap-2">
-            <button onClick={() => loadData({ silent: true })} disabled={loading || refreshing} className="btn-ghost">
-              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin-slow' : ''}`} strokeWidth={1.75} />
-              {refreshing ? 'Refreshing' : 'Refresh'}
+            <button
+              onClick={() => loadData({ silent: true })}
+              disabled={loading || refreshing}
+              title="Refresh"
+              aria-label="Refresh"
+              className="btn-secondary h-9 w-9 !px-0"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} strokeWidth={1.75} />
             </button>
-            <button onClick={() => setShowEdit(true)} className="btn-ghost">
+            <button onClick={() => setShowEdit(true)} className="btn-secondary">
               <SquarePen className="h-3.5 w-3.5" strokeWidth={1.75} />
               Edit
             </button>
@@ -466,113 +409,103 @@ export default function ProjectDetail() {
         )}
       </div>
 
-      {/* Chart + Vitals */}
-      <div className="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-3">
-        {/* Chart */}
-        <div className="panel-flush lg:col-span-2 animate-fade-up" style={{ animationDelay: '120ms' }}>
-          <div className="panel-head">
-            <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Latency Analytics</span>
-            <div className="flex gap-1">
-              {[1, 24, 72].map((h) => (
-                <button
-                  key={h}
-                  onClick={() => setHours(h)}
-                  className={`rounded px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors ${
-                    hours === h
-                      ? 'border border-accent/40 bg-accent/[0.1] text-accent'
-                      : 'border border-white/[0.07] text-txt-lo hover:text-txt-mid'
-                  }`}
-                >
-                  {h}h
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="grid-overlay p-2">
-            {loading ? (
-              <div className="grid h-[260px] place-items-center text-accent">
-                <Spinner size={24} />
-              </div>
-            ) : (
-              <LatencyChart checks={checks} />
-            )}
+      {/* Window stats */}
+      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4 animate-fade-up" style={{ animationDelay: '60ms' }}>
+        <StatCard
+          label={`Uptime · ${hours}h`}
+          value={uptime !== null ? uptime.toFixed(2) : null}
+          unit="%"
+          tone={uptime !== null && uptime < 100 ? 'warn' : 'default'}
+          sub={hasChecks ? `${checks.length} checks in window` : 'no checks yet'}
+        />
+        <StatCard label={`Avg response · ${hours}h`} value={windowStats.avg} unit="ms" sub="successful checks" />
+        <StatCard label={`P95 response · ${hours}h`} value={windowStats.p95} unit="ms" sub="95th percentile" />
+        <StatCard
+          label="Latest check"
+          value={latestCheck ? latestCheck.latency_ms : null}
+          unit="ms"
+          sub={
+            latestCheck
+              ? `HTTP ${latestCheck.http_status_code || 'error'} · ${fmtUtcTime(latestCheck.timestamp)}`
+              : 'awaiting first check'
+          }
+        />
+      </div>
+
+      {/* Response time chart */}
+      <div className="card mt-3 overflow-hidden animate-fade-up" style={{ animationDelay: '90ms' }}>
+        <div className="flex items-center justify-between gap-3 border-b border-edge px-5 py-3.5">
+          <h2 className="text-[13.5px] font-semibold text-txt-hi">Response time</h2>
+          <div className="seg">
+            {[1, 24, 72].map((h) => (
+              <button
+                key={h}
+                onClick={() => setHours(h)}
+                className={`seg-item ${hours === h ? 'seg-item-active' : ''}`}
+              >
+                {h}h
+              </button>
+            ))}
           </div>
         </div>
-
-        {/* Vitals */}
-        <div className="panel animate-fade-up p-5" style={{ animationDelay: '180ms' }}>
-          <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Vitals</span>
-          <div className="hr-accent mt-3" />
-
-          <div className="mt-4 flex justify-center">
-            <UptimeGauge value={uptime} label={`Uptime · ${hours}h`} />
-          </div>
-
-          <div className="mt-4">
-            <Metric label="Current Latency" value={latestCheck ? `${latestCheck.latency_ms}ms` : '—'} />
-            <Metric label="Status" value={status ? (isUp ? 'UP' : 'DOWN') : '—'} color={status ? (isUp ? STATUS.ok : STATUS.crit) : undefined} />
-            <Metric label="HTTP Code" value={latestCheck ? latestCheck.http_status_code || 'ERR' : '—'} />
-            <Metric label="Checks · window" value={checks.length} />
-            <Metric label="Last Check" value={latestCheck ? fmtUtcTime(latestCheck.timestamp) : '—'} />
-          </div>
-
-          <div className="mt-4">
-            <span className="micro">Recent probes</span>
-            <div className="mt-2">
-              <StatusStrip checks={checks} bars={48} />
+        <div className="px-2 pt-3">
+          {loading ? (
+            <div className="grid h-[260px] place-items-center text-txt-lo">
+              <Spinner size={22} />
             </div>
-          </div>
+          ) : (
+            <LatencyChart checks={checks} />
+          )}
         </div>
+        {hasChecks && (
+          <div className="border-t border-edge px-5 py-3.5">
+            <StatusStrip checks={checks} bars={60} />
+            <p className="mt-2 text-[11.5px] text-txt-lo">Check results, oldest to newest — green passed, red failed.</p>
+          </div>
+        )}
       </div>
 
       {/* Reports */}
-      <div className="panel-flush mt-3 animate-fade-up" style={{ animationDelay: '240ms' }}>
-        <div className="panel-head">
-          <div className="flex items-center gap-2.5">
-            <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">SLA Reports</span>
-            <span className="font-mono text-[11px] text-txt-dim">[{reports.length}]</span>
+      <div className="card mt-3 overflow-hidden animate-fade-up" style={{ animationDelay: '120ms' }}>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-edge px-5 py-3.5">
+          <div>
+            <h2 className="text-[13.5px] font-semibold text-txt-hi">SLA reports</h2>
+            <p className="mt-0.5 text-[12px] text-txt-lo">Generated every Monday at 08:00 UTC, or on demand.</p>
           </div>
-        </div>
-
-        {/* Generate toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <span className="micro text-txt-lo">Period</span>
-            <div className="flex overflow-hidden rounded-md border border-white/[0.08]">
+          <div className="flex flex-wrap items-center gap-2">
+            {reports.length > 0 && (
+              <button onClick={exportCsv} disabled={generating} className="btn-secondary btn-compact">
+                <FileText className="h-3.5 w-3.5" strokeWidth={1.75} />
+                Export CSV
+              </button>
+            )}
+            <div className="seg">
               {([1, 7, 30] as const).map((d) => (
                 <button
                   key={d}
                   onClick={() => setGenDays(d)}
                   disabled={generating}
-                  className={`px-2.5 py-1 font-mono text-[10px] font-bold uppercase transition-colors disabled:opacity-50 ${
-                    genDays === d ? 'bg-accent/[0.12] text-accent' : 'text-txt-lo hover:text-txt-mid'
-                  }`}
+                  className={`seg-item ${genDays === d ? 'seg-item-active' : ''}`}
                 >
                   {d}d
                 </button>
               ))}
             </div>
-            <button onClick={handleGenerate} disabled={generating} className="btn-accent">
-              {generating ? <Spinner /> : <Zap className="h-3.5 w-3.5" strokeWidth={1.75} />}
-              {generating ? 'Generating' : 'Generate'}
+            <button onClick={handleGenerate} disabled={generating} className="btn-primary btn-compact">
+              {generating && <Spinner size={12} />}
+              {generating ? 'Generating…' : 'Generate report'}
             </button>
           </div>
-          {reports.length > 0 && (
-            <button onClick={exportCsv} disabled={generating} className="btn-ghost">
-              <Sheet className="h-3.5 w-3.5" strokeWidth={1.75} />
-              Export CSV
-            </button>
-          )}
         </div>
 
         {genMsg && (
-          <Alert tone={genMsg.type} className="mx-4 mt-3">
+          <Alert tone={genMsg.type} className="mx-5 mt-4">
             {genMsg.text}
           </Alert>
         )}
 
         {reports.length === 0 && !loading && (
-          <div className="px-4 py-12 text-center font-mono text-[12px] text-txt-dim">
+          <div className="px-5 py-14 text-center text-[13px] text-txt-lo">
             No reports yet — generate one above, or the weekly report lands Monday 08:00 UTC.
           </div>
         )}
@@ -581,42 +514,41 @@ export default function ProjectDetail() {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
-                <tr className="border-b border-white/[0.06]">
-                  {['Report', 'Uptime', 'Avg', 'P95', 'Incidents', 'Downtime', 'Severity', 'Result', 'Files'].map((h, i) => (
-                    <th
-                      key={h}
-                      className={`px-4 py-2.5 font-mono text-[9px] font-bold uppercase tracking-wider text-txt-dim ${
-                        i === 0 ? 'text-left' : 'text-right'
-                      } ${h === 'Severity' ? '!text-left' : ''}`}
-                    >
-                      {h}
-                    </th>
-                  ))}
+                <tr className="border-b border-edge">
+                  <th className="th text-left">Report</th>
+                  <th className="th text-right">Uptime</th>
+                  <th className="th text-right">Avg</th>
+                  <th className="th text-right">P95</th>
+                  <th className="th text-right">Incidents</th>
+                  <th className="th text-right">Downtime</th>
+                  <th className="th text-left">Severity</th>
+                  <th className="th text-right">SLA</th>
+                  <th className="th text-right">Download</th>
                 </tr>
               </thead>
               <tbody>
                 {sortedReports.map((r) => {
                   const sev = SEVERITY[r.severity] ?? SEVERITY.healthy
                   return (
-                    <tr key={r.report_id} className="border-b border-white/[0.04] transition-colors last:border-0 hover:bg-white/[0.02]">
-                      <td className="px-4 py-3 text-left font-mono text-[12px] font-semibold text-txt-hi">{r.report_id}</td>
-                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{r.uptime_pct.toFixed(2)}%</td>
-                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{r.avg_latency_ms}ms</td>
-                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{r.p95_latency_ms}ms</td>
-                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{r.incident_count}</td>
-                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{formatDowntime(r.total_downtime_sec)}</td>
+                    <tr key={r.report_id} className="border-b border-edge/60 transition-colors last:border-0 hover:bg-soft/40">
+                      <td className="px-4 py-3 text-left font-mono text-[12.5px] font-medium text-txt-hi">{r.report_id}</td>
+                      <td className="tnum px-4 py-3 text-right text-[13px] text-txt-mid">{r.uptime_pct.toFixed(2)}%</td>
+                      <td className="tnum px-4 py-3 text-right text-[13px] text-txt-mid">{r.avg_latency_ms}ms</td>
+                      <td className="tnum px-4 py-3 text-right text-[13px] text-txt-mid">{r.p95_latency_ms}ms</td>
+                      <td className="tnum px-4 py-3 text-right text-[13px] text-txt-mid">{r.incident_count}</td>
+                      <td className="tnum px-4 py-3 text-right text-[13px] text-txt-mid">{formatDowntime(r.total_downtime_sec)}</td>
                       <td className="px-4 py-3 text-left">
                         <span
-                          className="inline-flex items-center gap-1.5 rounded border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider"
+                          className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11.5px] font-medium"
                           style={{ color: sev.color, borderColor: `${sev.color}40`, background: sev.dim }}
                         >
-                          <span className="w-[3px] rounded-full" style={{ height: '0.6rem', background: sev.color }} />
+                          <span className="h-1.5 w-1.5 rounded-full" style={{ background: sev.color }} />
                           {sev.label}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className={`font-mono text-[11px] font-bold ${r.sla_pass ? 'text-ok' : 'text-crit'}`}>
-                          {r.sla_pass ? 'PASS' : 'FAIL'}
+                        <span className={`text-[12.5px] font-medium ${r.sla_pass ? 'text-ok' : 'text-crit'}`}>
+                          {r.sla_pass ? 'Pass' : 'Fail'}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -629,12 +561,12 @@ export default function ProjectDetail() {
                                 onClick={() => downloadReport(r.report_id, fmt)}
                                 disabled={busy}
                                 title={`Download ${fmt.toUpperCase()}`}
-                                className="inline-flex items-center gap-1 rounded border border-white/[0.08] px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-txt-lo transition-colors hover:border-accent/40 hover:text-accent disabled:opacity-50"
+                                className="inline-flex items-center gap-1 rounded-md border border-edge px-2 py-1 text-[11px] font-medium uppercase text-txt-lo transition-colors hover:border-edge-strong hover:bg-soft hover:text-txt-hi disabled:opacity-50"
                               >
                                 {busy ? (
-                                  <div className="h-2.5 w-2.5 animate-spin rounded-full border border-current border-t-transparent" />
+                                  <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" />
                                 ) : (
-                                  <Download className="h-2.5 w-2.5" strokeWidth={2} />
+                                  <Download className="h-3 w-3" strokeWidth={1.75} />
                                 )}
                                 {fmt}
                               </button>

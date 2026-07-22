@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { User as UserIcon, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
 import GoogleSignIn from '../components/GoogleSignIn'
 import { Alert, Spinner } from '../components/ui'
@@ -40,13 +40,12 @@ export default function Signup() {
 
   return (
     <AuthLayout
-      kicker="Get Started"
       title="Create your account"
       subtitle="Monitor uptime and latency, and get weekly SLA reports by email."
       footer={
         <>
           Already have an account?{' '}
-          <Link to="/login" className="font-medium text-accent hover:underline">
+          <Link to="/login" className="link">
             Sign in
           </Link>
         </>
@@ -60,11 +59,8 @@ export default function Signup() {
         )}
 
         <div>
-          <label className="field-label" htmlFor="name">
-            <span className="inline-flex items-center gap-1.5">
-              <UserIcon className="h-3 w-3" strokeWidth={1.75} /> Name{' '}
-              <span className="normal-case text-txt-dim">(optional)</span>
-            </span>
+          <label className="label" htmlFor="name">
+            Name <span className="font-normal text-txt-lo">(optional)</span>
           </label>
           <input
             id="name"
@@ -72,16 +68,14 @@ export default function Signup() {
             autoComplete="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="field"
+            className="input"
             placeholder="Jane Doe"
           />
         </div>
 
         <div>
-          <label className="field-label" htmlFor="email">
-            <span className="inline-flex items-center gap-1.5">
-              <Mail className="h-3 w-3" strokeWidth={1.75} /> Email
-            </span>
+          <label className="label" htmlFor="email">
+            Email
           </label>
           <input
             id="email"
@@ -89,17 +83,15 @@ export default function Signup() {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="field"
+            className="input"
             placeholder="you@example.com"
             required
           />
         </div>
 
         <div>
-          <label className="field-label" htmlFor="password">
-            <span className="inline-flex items-center gap-1.5">
-              <Lock className="h-3 w-3" strokeWidth={1.75} /> Password
-            </span>
+          <label className="label" htmlFor="password">
+            Password
           </label>
           <div className="relative">
             <input
@@ -108,7 +100,7 @@ export default function Signup() {
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="field pr-10"
+              className="input pr-10"
               placeholder="••••••••"
               required
             />
@@ -116,21 +108,17 @@ export default function Signup() {
               type="button"
               onClick={() => setShowPw((v) => !v)}
               aria-label={showPw ? 'Hide password' : 'Show password'}
-              className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded text-txt-lo transition-colors hover:text-txt-hi"
+              className="absolute right-1.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded text-txt-lo transition-colors hover:text-txt-hi"
             >
               {showPw ? <EyeOff className="h-3.5 w-3.5" strokeWidth={1.75} /> : <Eye className="h-3.5 w-3.5" strokeWidth={1.75} />}
             </button>
           </div>
-          <p className="mt-1.5 text-[10px] text-txt-dim">
-            Min 8 characters, with an uppercase letter, a number, and a symbol.
-          </p>
+          <p className="help">At least 8 characters, with an uppercase letter, a number, and a symbol.</p>
         </div>
 
         <div>
-          <label className="field-label" htmlFor="confirm">
-            <span className="inline-flex items-center gap-1.5">
-              <Lock className="h-3 w-3" strokeWidth={1.75} /> Confirm password
-            </span>
+          <label className="label" htmlFor="confirm">
+            Confirm password
           </label>
           <input
             id="confirm"
@@ -138,20 +126,14 @@ export default function Signup() {
             autoComplete="new-password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
-            className="field"
+            className="input"
             placeholder="••••••••"
             required
           />
         </div>
 
-        <button type="submit" disabled={loading} className="btn-auth">
-          {loading ? (
-            <Spinner size={16} />
-          ) : (
-            <>
-              Create account <ArrowRight className="h-4 w-4" strokeWidth={2} />
-            </>
-          )}
+        <button type="submit" disabled={loading} className="btn-primary h-10 w-full">
+          {loading ? <Spinner size={16} /> : 'Create account'}
         </button>
       </form>
 

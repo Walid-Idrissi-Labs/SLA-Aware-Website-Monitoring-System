@@ -42,8 +42,8 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
 
   const sorted = useMemo(() => [...checks].sort((a, b) => a.timestamp - b.timestamp), [checks])
 
-  const padT = 18
-  const padB = 26
+  const padT = 16
+  const padB = 24
   const padL = 44
   const padR = 12
   const chartW = Math.max(width - padL - padR, 10)
@@ -64,7 +64,7 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
   if (sorted.length === 0 || !model) {
     return (
       <div ref={wrapRef} className="grid place-items-center" style={{ height }}>
-        <p className="font-mono text-[11px] uppercase tracking-widest text-txt-dim">No data available</p>
+        <p className="text-[13px] text-txt-lo">No checks in this window yet</p>
       </div>
     )
   }
@@ -85,7 +85,7 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
   const hoverCheck = hover !== null ? sorted[hover] : null
   const hoverX = hover !== null ? x(hover) : 0
   const hoverY = hoverCheck ? y(hoverCheck.latency_ms) : 0
-  const tipLeft = Math.min(Math.max(hoverX, 60), width - 60)
+  const tipLeft = Math.min(Math.max(hoverX, 70), width - 70)
 
   return (
     <div
@@ -98,8 +98,8 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
       <svg width={width} height={height} className="block">
         <defs>
           <linearGradient id="lat-area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={STATUS.accent} stopOpacity="0.28" />
-            <stop offset="70%" stopColor={STATUS.accent} stopOpacity="0.04" />
+            <stop offset="0%" stopColor={STATUS.accent} stopOpacity="0.16" />
+            <stop offset="70%" stopColor={STATUS.accent} stopOpacity="0.03" />
             <stop offset="100%" stopColor={STATUS.accent} stopOpacity="0" />
           </linearGradient>
         </defs>
@@ -109,8 +109,8 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
           const gy = y(val)
           return (
             <g key={i}>
-              <line x1={padL} y1={gy} x2={width - padR} y2={gy} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
-              <text x={padL - 8} y={gy + 3} textAnchor="end" className="fill-txt-dim font-mono" fontSize="9">
+              <line x1={padL} y1={gy} x2={width - padR} y2={gy} stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
+              <text x={padL - 8} y={gy + 3} textAnchor="end" fill="#667080" className="font-mono" fontSize="10">
                 {val}
               </text>
             </g>
@@ -119,58 +119,48 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
 
         {/* area + line */}
         <path d={area} fill="url(#lat-area)" />
-        <path
-          d={line}
-          fill="none"
-          stroke={STATUS.accent}
-          strokeWidth="1.75"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          style={{ strokeDasharray: 4000, strokeDashoffset: 4000, animation: 'chartdraw 1.2s cubic-bezier(0.22,1,0.36,1) forwards' }}
-        />
+        <path d={line} fill="none" stroke={STATUS.accent} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
 
         {/* failure markers */}
         {sorted.map((c, i) =>
           c.status === 'failure' ? (
-            <circle key={i} cx={x(i)} cy={y(c.latency_ms)} r="3" fill={STATUS.crit} stroke="#0e1115" strokeWidth="1.5" />
+            <circle key={i} cx={x(i)} cy={y(c.latency_ms)} r="2.75" fill={STATUS.crit} stroke="#12151B" strokeWidth="1.5" />
           ) : null
         )}
 
         {/* crosshair */}
         {hoverCheck && (
           <g>
-            <line x1={hoverX} y1={padT} x2={hoverX} y2={padT + chartH} stroke="rgba(250,92,41,0.4)" strokeWidth="1" strokeDasharray="3 3" />
-            <circle cx={hoverX} cy={hoverY} r="4.5" fill={STATUS.accent} stroke="#0e1115" strokeWidth="2" />
+            <line x1={hoverX} y1={padT} x2={hoverX} y2={padT + chartH} stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
+            <circle cx={hoverX} cy={hoverY} r="3.5" fill={STATUS.accent} stroke="#12151B" strokeWidth="2" />
           </g>
         )}
-
-        <style>{`@keyframes chartdraw { to { stroke-dashoffset: 0; } }`}</style>
       </svg>
 
       {/* x-axis time labels */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-between px-2 font-mono text-[9px] uppercase text-txt-dim" style={{ paddingLeft: padL, paddingRight: padR }}>
-        <span>
-          {fmtUtcTime(sorted[0].timestamp).slice(0, 5)} UTC
-        </span>
-        <span className="text-accent">Now</span>
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-between font-mono text-[10px] text-txt-lo"
+        style={{ paddingLeft: padL, paddingRight: padR }}
+      >
+        <span>{fmtUtcTime(sorted[0].timestamp).slice(0, 5)} UTC</span>
+        <span>{fmtUtcTime(sorted[sorted.length - 1].timestamp).slice(0, 5)} UTC</span>
       </div>
 
       {/* tooltip */}
       {hoverCheck && (
         <div
-          className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-md border border-white/10 bg-ink-750/95 px-2.5 py-1.5 shadow-xl backdrop-blur"
-          style={{ left: tipLeft, top: 6 }}
+          className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-lg border border-edge bg-panel px-3 py-2 shadow-overlay"
+          style={{ left: tipLeft, top: 4 }}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
             <span
-              className="w-[3px] rounded-full"
-              style={{ height: '0.75rem', background: hoverCheck.status === 'success' ? STATUS.ok : STATUS.crit }}
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: hoverCheck.status === 'success' ? STATUS.ok : STATUS.crit }}
             />
-            <span className="data text-[13px] font-bold text-txt-hi">{hoverCheck.latency_ms}ms</span>
+            <span className="tnum text-[13px] font-semibold text-txt-hi">{hoverCheck.latency_ms} ms</span>
+            <span className="text-[11px] text-txt-lo">· {hoverCheck.http_status_code || 'ERR'}</span>
           </div>
-          <div className="mt-0.5 font-mono text-[9px] text-txt-lo">
-            {fmtUtcTime(hoverCheck.timestamp)} · {hoverCheck.http_status_code || 'ERR'}
-          </div>
+          <div className="mt-0.5 whitespace-nowrap font-mono text-[10px] text-txt-lo">{fmtUtcTime(hoverCheck.timestamp)}</div>
         </div>
       )}
     </div>

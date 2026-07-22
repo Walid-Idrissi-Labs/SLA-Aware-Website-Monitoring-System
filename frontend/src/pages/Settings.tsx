@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Hash, Mail, User as UserIcon, Bell, Check } from 'lucide-react'
 import Shell from '../components/Shell'
 import { Alert, Spinner } from '../components/ui'
 import { hydrateProfile, putMe } from '../lib/api'
@@ -39,7 +38,7 @@ export default function Settings() {
     try {
       const updated = await putMe({ display_name: displayName, notification_email: notificationEmail })
       setUser(updated)
-      // Keep the cached copy in sync so the sidebar initials update immediately.
+      // Keep the cached copy in sync so the navbar initials update immediately.
       storeUser(updated)
       setMessage({ type: 'success', text: 'Profile updated' })
     } catch (err) {
@@ -52,15 +51,14 @@ export default function Settings() {
   return (
     <Shell>
       {loading ? (
-        <div className="grid h-[60vh] place-items-center text-accent">
-          <Spinner size={24} />
+        <div className="grid h-[60vh] place-items-center text-txt-lo">
+          <Spinner size={22} />
         </div>
       ) : (
-        <div className="mx-auto w-full max-w-2xl">
+        <div className="mx-auto w-full max-w-xl">
           <div className="animate-fade-up">
-            <p className="kicker mb-1.5">Account</p>
-            <h1 className="text-sheen font-display text-[26px] font-bold tracking-tight">Settings</h1>
-            <p className="mt-1 text-[12px] text-txt-lo">Manage your identity and where alerts are delivered.</p>
+            <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-txt-hi">Settings</h1>
+            <p className="mt-1 text-[13px] text-txt-mid">Manage your profile and where alerts are delivered.</p>
           </div>
 
           {message && (
@@ -69,56 +67,65 @@ export default function Settings() {
             </Alert>
           )}
 
-          {/* Identity (read-only) */}
-          <div className="panel mt-5 animate-fade-up p-5" style={{ animationDelay: '80ms' }}>
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Identity</span>
-              <span className="rounded border border-white/[0.08] px-1.5 py-0.5 font-mono text-[9px] text-txt-lo">Cognito</span>
+          {/* Account (read-only) */}
+          <div className="card mt-6 animate-fade-up" style={{ animationDelay: '40ms' }}>
+            <div className="border-b border-edge px-5 py-3.5">
+              <h2 className="text-[13.5px] font-semibold text-txt-hi">Account</h2>
+              <p className="mt-0.5 text-[12px] text-txt-lo">Managed by Amazon Cognito — sign-in details can't be changed here.</p>
             </div>
-            <div className="hr-accent mt-3" />
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-md border border-white/[0.06] bg-ink-950/60 p-3">
-                <div className="flex items-center gap-1.5 text-txt-lo">
-                  <Hash className="h-3.5 w-3.5" strokeWidth={1.75} />
-                  <span className="micro">User ID</span>
-                </div>
-                <p className="mt-1.5 truncate font-mono text-[12px] text-txt-mid">{user?.user_id}</p>
+            <dl className="divide-y divide-edge/60 px-5">
+              <div className="flex items-center justify-between gap-4 py-3.5">
+                <dt className="text-[13px] text-txt-mid">Email</dt>
+                <dd className="truncate text-[13px] text-txt-hi">{user?.email}</dd>
               </div>
-              <div className="rounded-md border border-white/[0.06] bg-ink-950/60 p-3">
-                <div className="flex items-center gap-1.5 text-txt-lo">
-                  <Mail className="h-3.5 w-3.5" strokeWidth={1.75} />
-                  <span className="micro">Login email</span>
-                </div>
-                <p className="mt-1.5 truncate font-mono text-[12px] text-txt-mid">{user?.email}</p>
+              <div className="flex items-center justify-between gap-4 py-3.5">
+                <dt className="shrink-0 text-[13px] text-txt-mid">User ID</dt>
+                <dd className="truncate font-mono text-[12px] text-txt-lo" title={user?.user_id}>
+                  {user?.user_id}
+                </dd>
               </div>
-            </div>
+            </dl>
           </div>
 
           {/* Editable profile */}
-          <form onSubmit={handleSubmit} className="panel mt-3 animate-fade-up p-5" style={{ animationDelay: '140ms' }}>
-            <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Profile & Notifications</span>
-            <div className="hr-accent mt-3" />
+          <form onSubmit={handleSubmit} className="card mt-3 animate-fade-up" style={{ animationDelay: '80ms' }}>
+            <div className="border-b border-edge px-5 py-3.5">
+              <h2 className="text-[13.5px] font-semibold text-txt-hi">Profile and notifications</h2>
+            </div>
 
-            <div className="mt-4 space-y-4">
+            <div className="space-y-4 px-5 py-5">
               <div>
-                <label className="field-label" htmlFor="displayName">
-                  <span className="inline-flex items-center gap-1.5"><UserIcon className="h-3 w-3" strokeWidth={1.75} /> Display name</span>
+                <label className="label" htmlFor="displayName">
+                  Display name
                 </label>
-                <input id="displayName" type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="field" placeholder="Your display name" />
+                <input
+                  id="displayName"
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="input"
+                  placeholder="Your display name"
+                />
               </div>
               <div>
-                <label className="field-label" htmlFor="notificationEmail">
-                  <span className="inline-flex items-center gap-1.5"><Bell className="h-3 w-3" strokeWidth={1.75} /> Notification email</span>
+                <label className="label" htmlFor="notificationEmail">
+                  Notification email
                 </label>
-                <input id="notificationEmail" type="email" value={notificationEmail} onChange={(e) => setNotificationEmail(e.target.value)} className="field" placeholder="alerts@example.com" />
-                <p className="mt-1.5 text-[10px] text-txt-dim">Destination for downtime alerts and weekly SLA reports.</p>
+                <input
+                  id="notificationEmail"
+                  type="email"
+                  value={notificationEmail}
+                  onChange={(e) => setNotificationEmail(e.target.value)}
+                  className="input"
+                  placeholder="alerts@example.com"
+                />
+                <p className="help">Default destination for downtime alerts and weekly SLA reports.</p>
               </div>
             </div>
 
-            <div className="mt-5 flex justify-end border-t border-white/[0.06] pt-4">
-              <button type="submit" disabled={saving} className="btn-accent">
-                {saving ? <Spinner /> : <Check className="h-3.5 w-3.5" strokeWidth={1.75} />}
+            <div className="flex justify-end border-t border-edge px-5 py-4">
+              <button type="submit" disabled={saving} className="btn-primary">
+                {saving && <Spinner />}
                 {saving ? 'Saving…' : 'Save changes'}
               </button>
             </div>
