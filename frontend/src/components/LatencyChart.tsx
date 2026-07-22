@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Check } from '../types'
 import { STATUS, fmtUtcTime } from '../lib/format'
 
@@ -26,12 +26,18 @@ function smoothPath(pts: readonly (readonly [number, number])[]): string {
 
 export default function LatencyChart({ checks, height = 260 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
-  const [width, setWidth] = useState(800)
+  const pathRef = useRef<SVGPathElement>(null)
+  // null until the container has been measured — we never paint the SVG at a
+  // guessed width, which is what caused the mid-draw "snap".
+  const [width, setWidth] = useState<number | null>(null)
   const [hover, setHover] = useState<number | null>(null)
+  const hasDrawn = useRef(false)
 
-  useEffect(() => {
+  // Measure synchronously before the first paint, then track resizes.
+  useLayoutEffect(() => {
     const el = wrapRef.current
     if (!el) return
+    setWidth(el.getBoundingClientRect().width)
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width
       if (w) setWidth(w)
@@ -46,11 +52,11 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
   const padB = 26
   const padL = 44
   const padR = 12
-  const chartW = Math.max(width - padL - padR, 10)
+  const chartW = Math.max((width ?? 0) - padL - padR, 10)
   const chartH = height - padT - padB
 
   const model = useMemo(() => {
-    if (sorted.length === 0) return null
+    if (sorted.length === 0 || width == null) return null
     const maxRaw = Math.max(...sorted.map((c) => c.latency_ms), 50)
     // round the top gridline to a friendly number
     const magnitude = Math.pow(10, Math.floor(Math.log10(maxRaw)))
@@ -59,9 +65,34 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
     const y = (v: number) => padT + (1 - v / top) * chartH
     const pts = sorted.map((c, i) => [x(i), y(c.latency_ms)] as const)
     return { top, x, y, pts }
-  }, [sorted, chartW, chartH])
+  }, [sorted, chartW, chartH, width])
 
-  if (sorted.length === 0 || !model) {
+  const line = model ? smoothPath(model.pts) : ''
+
+  // Stroke-draw animation driven by the *real* path length. Using getTotalLength
+  // (instead of a hardcoded dash) guarantees the whole line reveals smoothly
+  // left→right and never clips its tail. Runs once per mount; later data updates
+  // just refresh the dash length so nothing gets cut, without redrawing.
+  useLayoutEffect(() => {
+    const path = pathRef.current
+    if (!path || !line) return
+    const len = path.getTotalLength()
+    if (hasDrawn.current) {
+      path.style.transition = 'none'
+      path.style.strokeDasharray = `${len}`
+      path.style.strokeDashoffset = '0'
+      return
+    }
+    hasDrawn.current = true
+    path.style.transition = 'none'
+    path.style.strokeDasharray = `${len}`
+    path.style.strokeDashoffset = `${len}`
+    path.getBoundingClientRect() // force reflow so the transition has a start value
+    path.style.transition = 'stroke-dashoffset 1.15s cubic-bezier(0.22,1,0.36,1)'
+    path.style.strokeDashoffset = '0'
+  }, [line])
+
+  if (sorted.length === 0) {
     return (
       <div ref={wrapRef} className="grid place-items-center" style={{ height }}>
         <p className="font-mono text-[11px] uppercase tracking-widest text-txt-dim">No data available</p>
@@ -69,9 +100,14 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
     )
   }
 
-  const { top, x, y, pts } = model
-  const line = smoothPath(pts)
-  const area = `${line} L ${x(sorted.length - 1).toFixed(2)} ${padT + chartH} L ${padL} ${padT + chartH} Z`
+  // Measured on the first layout pass; the placeholder is never actually painted.
+  if (width == null || !model) {
+    return <div ref={wrapRef} style={{ height }} />
+  }
+
+  const { top, x, y } = model
+  const baseline = padT + chartH
+  const area = `${line} L ${x(sorted.length - 1).toFixed(2)} ${baseline} L ${padL} ${baseline} Z`
   const gridVals = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(top * f))
 
   const handleMove = (e: React.MouseEvent) => {
@@ -102,6 +138,11 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
             <stop offset="70%" stopColor={STATUS.accent} stopOpacity="0.04" />
             <stop offset="100%" stopColor={STATUS.accent} stopOpacity="0" />
           </linearGradient>
+          {/* Keep the smoothed curve inside the plot box so latency spikes can't
+              overshoot the smoothing above the top gridline. */}
+          <clipPath id="lat-clip">
+            <rect x={padL - 2} y={padT - 4} width={chartW + 4} height={chartH + 6} />
+          </clipPath>
         </defs>
 
         {/* grid + y labels */}
@@ -117,17 +158,19 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
           )
         })}
 
-        {/* area + line */}
-        <path d={area} fill="url(#lat-area)" />
-        <path
-          d={line}
-          fill="none"
-          stroke={STATUS.accent}
-          strokeWidth="1.75"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          style={{ strokeDasharray: 4000, strokeDashoffset: 4000, animation: 'chartdraw 1.2s cubic-bezier(0.22,1,0.36,1) forwards' }}
-        />
+        {/* area + line (clipped to the plot box) */}
+        <g clipPath="url(#lat-clip)">
+          <path d={area} fill="url(#lat-area)" />
+          <path
+            ref={pathRef}
+            d={line}
+            fill="none"
+            stroke={STATUS.accent}
+            strokeWidth="1.75"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        </g>
 
         {/* failure markers */}
         {sorted.map((c, i) =>
@@ -143,8 +186,6 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
             <circle cx={hoverX} cy={hoverY} r="4.5" fill={STATUS.accent} stroke="#0e1115" strokeWidth="2" />
           </g>
         )}
-
-        <style>{`@keyframes chartdraw { to { stroke-dashoffset: 0; } }`}</style>
       </svg>
 
       {/* x-axis time labels */}

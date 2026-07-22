@@ -487,9 +487,9 @@ export default function ProjectDetail() {
       </div>
 
       {/* Chart + Vitals */}
-      <div className="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <div className="mt-5 grid grid-cols-1 items-start gap-3 lg:grid-cols-3">
         {/* Chart */}
-        <div className="panel-flush lg:col-span-2 animate-fade-up" style={{ animationDelay: '120ms' }}>
+        <div className="panel-flush self-start lg:col-span-2 animate-fade-up" style={{ animationDelay: '120ms' }}>
           <div className="panel-head">
             <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Latency Analytics</span>
             <div className="flex gap-1">
