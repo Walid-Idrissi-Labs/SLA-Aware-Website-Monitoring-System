@@ -1,11 +1,11 @@
 data "aws_region" "current" {}
 
 output "user_pool_id" {
-  value       = aws_cognito_user_pool.main.id
+  value = aws_cognito_user_pool.main.id
 }
 
 output "user_pool_arn" {
-  value       = aws_cognito_user_pool.main.arn
+  value = aws_cognito_user_pool.main.arn
 }
 
 output "app_client_id" {

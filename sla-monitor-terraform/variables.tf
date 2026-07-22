@@ -1,11 +1,11 @@
 variable "aws_region" {
-  type        = string
-  default     = "us-east-1"
+  type    = string
+  default = "us-east-1"
 }
 
 variable "environment" {
-  type        = string
-  default     = "prod"
+  type    = string
+  default = "prod"
 
 }
 
@@ -22,14 +22,14 @@ variable "project_slug" {
 
 
 variable "ses_sender_email" {
-  type = string
+  type        = string
   description = "User-verified SES sender email"
-  default = ""
+  default     = ""
 }
 
 
 variable "requests_layer_arn" {
-  type = string
+  type        = string
   description = "ARN of the Lambda Layer containing the 'requests' library"
 }
 
@@ -42,4 +42,5 @@ variable "google_client_id" {
 variable "google_client_secret" {
   description = "Google OAuth Client Secret"
   type        = string
+  sensitive   = true
 }

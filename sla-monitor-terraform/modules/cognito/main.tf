@@ -9,13 +9,13 @@ resource "aws_cognito_user_pool" "main" {
 
   password_policy {
     minimum_length    = 8
-    require_lowercase = false 
-    require_numbers    = true
-    require_symbols    = true
-    require_uppercase  = true
+    require_lowercase = false
+    require_numbers   = true
+    require_symbols   = true
+    require_uppercase = true
   }
 
-#users can register themselves without admin.
+  #users can register themselves without admin.
   admin_create_user_config {
     allow_admin_create_user_only = false
   }
@@ -54,10 +54,10 @@ resource "aws_cognito_user_pool" "main" {
   }
 
   tags = {
-    Name        = "${var.name_prefix}-user-pool"
+    Name = "${var.name_prefix}-user-pool"
   }
 
-  lifecycle{
+  lifecycle {
     ignore_changes = [schema]
   }
 
@@ -74,27 +74,27 @@ resource "aws_cognito_user_pool_domain" "main" {
 
 
 resource "aws_cognito_identity_provider" "google" {
-  user_pool_id = aws_cognito_user_pool.main.id
-  provider_name ="Google"
+  user_pool_id  = aws_cognito_user_pool.main.id
+  provider_name = "Google"
   provider_type = "Google"
 
   provider_details = {
-    client_id                       = var.google_client_id
-    client_secret                   = var.google_client_secret
-    authorize_scopes                = "openid email profile"
-    attributes_url                  = "https://people.googleapis.com/v1/people/me?personFields="
-    attributes_url_add_attributes   = "true"
-    authorize_url                   = "https://accounts.google.com/o/oauth2/v2/auth"
-    oidc_issuer                     = "https://accounts.google.com"
-    token_request_method              = "POST"
-    token_url                       = "https://oauth2.googleapis.com/token"
-    
+    client_id                     = var.google_client_id
+    client_secret                 = var.google_client_secret
+    authorize_scopes              = "openid email profile"
+    attributes_url                = "https://people.googleapis.com/v1/people/me?personFields="
+    attributes_url_add_attributes = "true"
+    authorize_url                 = "https://accounts.google.com/o/oauth2/v2/auth"
+    oidc_issuer                   = "https://accounts.google.com"
+    token_request_method          = "POST"
+    token_url                     = "https://oauth2.googleapis.com/token"
+
   }
 
 
   attribute_mapping = {
-    email = "email"
-    name = "name"
+    email    = "email"
+    name     = "name"
     username = "sub"
   }
 
@@ -125,11 +125,11 @@ resource "aws_cognito_user_pool_client" "app_client" {
   callback_urls = var.callback_urls
   logout_urls   = var.logout_urls
 
-  supported_identity_providers = ["COGNITO" , "Google"]
+  supported_identity_providers = ["COGNITO", "Google"]
 
-  access_token_validity  = 1   # hours
-  id_token_validity      = 1   # hours
-  refresh_token_validity = 30  # days
+  access_token_validity  = 1  # hours
+  id_token_validity      = 1  # hours
+  refresh_token_validity = 30 # days
 
   #token recoked on logour
   enable_token_revocation = true
@@ -142,6 +142,4 @@ resource "aws_cognito_user_pool_ui_customization" "this" {
   user_pool_id = aws_cognito_user_pool.main.id
   client_id    = aws_cognito_user_pool_client.app_client.id
   css          = file("${path.module}/hosted-ui.css")
-  # image_file   = filebase64("${path.module}/logo.png")
-  # image_file   = filebase64("${path.module}/111212-200x200.png")
 }

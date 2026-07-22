@@ -46,20 +46,19 @@ data "aws_iam_policy_document" "monitor_lambda_policy" {
     effect = "Allow"
     actions = [
       "dynamodb:PutItem",
-      "dynamodb:Query",   
+      "dynamodb:Query",
     ]
     resources = [
       var.checks_table_arn,
     ]
   }
 
-  
+
   statement {
     sid    = "SendAlertEmails"
     effect = "Allow"
     actions = [
       "ses:SendEmail",
-      "ses:SendRawMessage",
     ]
     resources = ["*"]
   }
@@ -70,7 +69,6 @@ data "aws_iam_policy_document" "monitor_lambda_policy" {
     effect = "Allow"
     actions = [
       "ssm:GetParameter",
-      "ssm:GetParameters", 
     ]
     resources = [
       "arn:aws:ssm:${var.region}:${var.account_id}:parameter${var.ssm_parameter_prefix}"
@@ -82,11 +80,11 @@ data "aws_iam_policy_document" "monitor_lambda_policy" {
 
 
 resource "aws_iam_policy" "monitor_lambda" {
-  name        = "${var.name_prefix}-monitor-lambda-policy"
-  policy      = data.aws_iam_policy_document.monitor_lambda_policy.json
+  name   = "${var.name_prefix}-monitor-lambda-policy"
+  policy = data.aws_iam_policy_document.monitor_lambda_policy.json
 
   tags = {
-    Name     = "${var.name_prefix}-monitor-lambda-policy"
+    Name = "${var.name_prefix}-monitor-lambda-policy"
   }
 }
 
@@ -159,8 +157,8 @@ data "aws_iam_policy_document" "sla_processor_lambda_policy" {
 }
 
 resource "aws_iam_policy" "sla_processor_lambda" {
-  name        = "${var.name_prefix}-processor-lambda-policy"
-  policy      = data.aws_iam_policy_document.sla_processor_lambda_policy.json
+  name   = "${var.name_prefix}-processor-lambda-policy"
+  policy = data.aws_iam_policy_document.sla_processor_lambda_policy.json
 
   tags = {
     Name     = "${var.name_prefix}-processor-lambda-policy"
@@ -261,7 +259,7 @@ data "aws_iam_policy_document" "report_generator_lambda_policy" {
       "s3:PutObject",
     ]
     resources = [
-      "${var.reports_bucket_arn}/reports/*", 
+      "${var.reports_bucket_arn}/reports/*",
     ]
   }
 
@@ -271,7 +269,6 @@ data "aws_iam_policy_document" "report_generator_lambda_policy" {
     effect = "Allow"
     actions = [
       "ses:SendEmail",
-      "ses:SendRawMessage",
     ]
     resources = ["*"]
   }
@@ -282,7 +279,6 @@ data "aws_iam_policy_document" "report_generator_lambda_policy" {
     effect = "Allow"
     actions = [
       "ssm:GetParameter",
-      "ssm:GetParameters",
     ]
     resources = [
       "arn:aws:ssm:${var.region}:${var.account_id}:parameter${var.ssm_parameter_prefix}"
@@ -291,8 +287,8 @@ data "aws_iam_policy_document" "report_generator_lambda_policy" {
 }
 
 resource "aws_iam_policy" "report_generator_lambda" {
-  name        = "${var.name_prefix}-reporter-lambda-policy"
-  policy      = data.aws_iam_policy_document.report_generator_lambda_policy.json
+  name   = "${var.name_prefix}-reporter-lambda-policy"
+  policy = data.aws_iam_policy_document.report_generator_lambda_policy.json
 
   tags = {
     Name     = "${var.name_prefix}-reporter-lambda-policy"
@@ -390,6 +386,24 @@ data "aws_iam_policy_document" "api_lambda_policy" {
     ]
   }
 
+  # Without ListBucket, HeadObject on a missing key returns 403 instead of 404,
+  # which breaks the existence probe behind the self-healing download path.
+  statement {
+    sid    = "ProbeReportFiles"
+    effect = "Allow"
+    actions = [
+      "s3:ListBucket",
+    ]
+    resources = [
+      var.reports_bucket_arn,
+    ]
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["reports/*"]
+    }
+  }
+
   # Self-heal missing report artifacts on download by asking the report generator
   # to rebuild them from the stored row.
   statement {
@@ -407,8 +421,8 @@ data "aws_iam_policy_document" "api_lambda_policy" {
 
 
 resource "aws_iam_policy" "api_lambda" {
-  name        = "${var.name_prefix}-api-lambda-policy"
-  policy      = data.aws_iam_policy_document.api_lambda_policy.json
+  name   = "${var.name_prefix}-api-lambda-policy"
+  policy = data.aws_iam_policy_document.api_lambda_policy.json
 
   tags = {
     Name     = "${var.name_prefix}-api-lambda-policy"
@@ -452,7 +466,7 @@ resource "aws_iam_role" "project_manager_lambda" {
 
 
 data "aws_iam_policy_document" "project_manager_lambda_policy" {
-  
+
   statement {
     sid    = "ManageUserProfiles"
     effect = "Allow"
@@ -494,8 +508,8 @@ data "aws_iam_policy_document" "project_manager_lambda_policy" {
 }
 
 resource "aws_iam_policy" "project_manager_lambda" {
-  name        = "${var.name_prefix}-project-manager-lambda-policy"
-  policy      = data.aws_iam_policy_document.project_manager_lambda_policy.json
+  name   = "${var.name_prefix}-project-manager-lambda-policy"
+  policy = data.aws_iam_policy_document.project_manager_lambda_policy.json
 
   tags = {
     Name     = "${var.name_prefix}-project-manager-lambda-policy"

@@ -1,23 +1,19 @@
 variable "name_prefix" {
-  type        = string
+  type = string
 }
 
 
 
 
 
-#TODO
 variable "callback_urls" {
-  description = "Allowed OAuth callback URLs (Vercel frontend domain + /callback). Update after Vercel deployment."
+  description = "Allowed OAuth callback URLs (frontend domain + /callback)"
   type        = list(string)
-  default     = ["https://sla-aware-website-monitoring-system.vercel.app/callback"]
 }
 
-#TODO
 variable "logout_urls" {
-  description = "Allowed OAuth logout URLs (Vercel frontend domain + /login). Update after Vercel deployment."
+  description = "Allowed OAuth logout URLs (frontend domain + /login)"
   type        = list(string)
-  default     = ["https://sla-aware-website-monitoring-system.vercel.app/login"]
 }
 
 variable "allowed_oauth_scopes" {
@@ -35,4 +31,5 @@ variable "google_client_id" {
 variable "google_client_secret" {
   description = "Google OAuth Client Secret"
   type        = string
+  sensitive   = true
 }

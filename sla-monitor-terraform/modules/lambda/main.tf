@@ -70,7 +70,7 @@ resource "aws_lambda_function" "this" {
 
 
   memory_size = var.memory_mb
-  timeout = var.timeout_seconds
+  timeout     = var.timeout_seconds
 
   # injected into the Lambda runtime
   dynamic "environment" {
@@ -91,8 +91,8 @@ resource "aws_lambda_function" "this" {
 
 
   depends_on = [
-    aws_s3_object.lambda_zip,         
-    aws_cloudwatch_log_group.lambda_logs, 
+    aws_s3_object.lambda_zip,
+    aws_cloudwatch_log_group.lambda_logs,
   ]
 
   tags = {
@@ -127,7 +127,7 @@ resource "aws_lambda_permission" "eventbridge" {
 
 resource "aws_lambda_permission" "api_gateway" {
 
- count = var.enable_api_gateway_permission ? 1 : 0
+  count = var.enable_api_gateway_permission ? 1 : 0
 
   action = "lambda:InvokeFunction"
 

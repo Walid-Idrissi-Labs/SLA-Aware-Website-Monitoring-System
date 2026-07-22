@@ -13,7 +13,7 @@ resource "aws_dynamodb_table" "users" {
     enabled = true
   }
 
-  deletion_protection_enabled = false
+  deletion_protection_enabled = true
 
   tags = {
     Name        = "${var.name_prefix}-users-table"
@@ -44,10 +44,10 @@ resource "aws_dynamodb_table" "projects" {
   }
 
   global_secondary_index {
-    name            = "UserProjectsIndex"
+    name = "UserProjectsIndex"
 
-    hash_key        = "user_id"
-    range_key      = "created_at"
+    hash_key  = "user_id"
+    range_key = "created_at"
 
     projection_type = "ALL"
   }
@@ -56,7 +56,7 @@ resource "aws_dynamodb_table" "projects" {
     enabled = true
   }
 
-  deletion_protection_enabled = false
+  deletion_protection_enabled = true
 
   tags = {
     Name        = "${var.name_prefix}-projects-table"
@@ -70,8 +70,8 @@ resource "aws_dynamodb_table" "checks" {
   name         = "${var.name_prefix}-checks-table"
   billing_mode = "PAY_PER_REQUEST"
 
-  hash_key  = "project_id" 
-  range_key = "timestamp"  
+  hash_key  = "project_id"
+  range_key = "timestamp"
 
   attribute {
     name = "project_id"
@@ -80,7 +80,7 @@ resource "aws_dynamodb_table" "checks" {
 
   attribute {
     name = "timestamp"
-    type = "N" 
+    type = "N"
   }
 
   #ttl = 90days, defined in sla-monitor-lambda
@@ -89,13 +89,13 @@ resource "aws_dynamodb_table" "checks" {
     enabled        = true
   }
 
-  
+
   point_in_time_recovery {
     enabled = false
   }
 
-  
-  deletion_protection_enabled = false
+
+  deletion_protection_enabled = true
 
   tags = {
     Name        = "${var.name_prefix}-checks-table"
@@ -121,17 +121,17 @@ resource "aws_dynamodb_table" "incidents" {
 
   attribute {
     name = "start_time"
-    type = "N" 
+    type = "N"
   }
 
   point_in_time_recovery {
     enabled = true
   }
 
-  deletion_protection_enabled = false
+  deletion_protection_enabled = true
 
   tags = {
-    Name        = "${var.name_prefix}-incidents-table"
+    Name = "${var.name_prefix}-incidents-table"
   }
 }
 
@@ -158,9 +158,9 @@ resource "aws_dynamodb_table" "reports" {
     enabled = true
   }
 
-  deletion_protection_enabled = false
+  deletion_protection_enabled = true
 
   tags = {
-    Name        = "${var.name_prefix}-reports-table"
+    Name = "${var.name_prefix}-reports-table"
   }
 }

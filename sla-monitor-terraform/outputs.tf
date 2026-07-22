@@ -57,8 +57,8 @@ output "api_gateway_endpoint" {
 }
 
 output "cognito_hosted_ui_url" {
-  description = "Cognito Hosted UI base URL — append /login?client_id=<client_id>&redirect_uri=<frontend_url>/callback&response_type=token&scope=openid+email+profile"
-  value       = "https://${module.cognito.user_pool_domain_name}.auth.${var.aws_region}.amazoncognito.com"
+  description = "Cognito Hosted UI base URL. Use this as VITE_COGNITO_HOSTED_UI_URL in the frontend."
+  value       = module.cognito.user_pool_domain_url
 }
 
 output "cognito_user_pool_domain" {
@@ -66,7 +66,12 @@ output "cognito_user_pool_domain" {
   value       = module.cognito.user_pool_domain_name
 }
 
+output "cognito_user_pool_id" {
+  description = "Cognito User Pool ID. Use this as VITE_COGNITO_USER_POOL_ID in the frontend."
+  value       = module.cognito.user_pool_id
+}
+
 output "cognito_app_client_id" {
-  description = "Cognito App Client ID for frontend config"
+  description = "Cognito App Client ID. Use this as VITE_COGNITO_CLIENT_ID in the frontend."
   value       = module.cognito.app_client_id
 }

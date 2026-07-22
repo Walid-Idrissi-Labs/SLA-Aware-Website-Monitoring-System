@@ -1,7 +1,7 @@
 data "aws_region" "current" {}
 
 output "api_id" {
-  value       = aws_apigatewayv2_api.main.id
+  value = aws_apigatewayv2_api.main.id
 }
 
 output "api_execution_arn" {
@@ -10,7 +10,7 @@ output "api_execution_arn" {
 }
 
 output "api_arn" {
-  value       = aws_apigatewayv2_api.main.arn
+  value = aws_apigatewayv2_api.main.arn
 }
 
 output "api_endpoint" {
@@ -24,5 +24,5 @@ output "stage_name" {
 }
 
 output "authorizer_id" {
-  value       = aws_apigatewayv2_authorizer.jwt.id
+  value = aws_apigatewayv2_authorizer.jwt.id
 }

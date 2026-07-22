@@ -42,8 +42,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "reports" {
     filter {}
 
     transition {
-      days          = 60
-      storage_class = "GLACIER_IR"
+      days          = 365
+      storage_class = "GLACIER"
     }
   }
 
@@ -52,11 +52,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "reports" {
     status = "Enabled"
 
     filter {}
-
-    noncurrent_version_transition {
-      noncurrent_days = 3
-      storage_class   = "GLACIER_IR"
-    }
 
     noncurrent_version_expiration {
       noncurrent_days = 90

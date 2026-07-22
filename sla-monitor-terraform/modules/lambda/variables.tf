@@ -1,9 +1,9 @@
 variable "function_name" {
-  type        = string
+  type = string
 }
 
 variable "description" {
-  type        = string
+  type = string
 }
 
 variable "handler" {
@@ -79,14 +79,14 @@ variable "api_gateway_execution_arn" {
 
 
 variable "enable_api_gateway_permission" {
-  type = bool
-  default = false
+  type        = bool
+  default     = false
   description = "Whether to create the API Gateway invoke permission for this lambda"
 }
 
 
 variable "layer_arns" {
   description = "list of Lambda Layer ARNs to attach to the function"
-  type       = list(string)
-  default    = []
+  type        = list(string)
+  default     = []
 }
