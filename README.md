@@ -16,11 +16,11 @@ The system is event-driven and serverless. No persistent compute runs outside of
 
 - **Incident Detection** : EventBridge triggers the [SLA Processor Lambda](sla-monitor-terraform/lambda_src/sla_processor/handler.py) every hour. It reads recent checks and counts consecutive failures per project. When the count hits the project's configured threshold, it creates an incident record. On recovery, it closes the incident and records the duration.
 
-- **Report Generation** : EventBridge triggers the [Report Generator Lambda](sla-monitor-terraform/lambda_src/report_generator/handler.py) every Monday at 08:00 UTC. It aggregates checks and incidents from the past week, computes the full SLA metric suite (uptime %, avg/p50/p95/p99 latency, error rate, incident count, total downtime, longest incident, MTTR, MTBF), evaluates against per-project thresholds, assigns severity, stores the report in DynamoDB, uploads JSON and HTML to S3, and emails the result via SES.
+- **Report Generation** : EventBridge triggers the [Report Generator Lambda](sla-monitor-terraform/lambda_src/report_generator/handler.py) every Monday at 08:00 UTC. It aggregates checks and incidents from the past week, computes the SLA metrics (uptime %, average and p95 latency, incident count, total downtime), evaluates them against per-project thresholds, assigns a severity, stores the report in DynamoDB, uploads JSON and HTML artifacts to S3, and emails the result via SES. The same Lambda also serves on-demand report generation (1/7/30-day windows) triggered from the dashboard, and rebuilds missing S3 artifacts when a download requests them.
 
 - **API & Dashboard** : API Gateway (HTTP API v2) fronts two Lambda functions. The [API Lambda](sla-monitor-terraform/lambda_src/api/handler.py) handles all read-only routes. The [Project Manager Lambda](sla-monitor-terraform/lambda_src/project_manager/handler.py) handles writes (users, projects). The frontend React SPA calls both through the same gateway.
 
-- **Authentication** : Cognito User Pool with native email/password and Google OAuth 2.0. API Gateway validates JWTs via its built-in authorizer before forwarding requests to either Lambda.
+- **Authentication** : Cognito User Pool with native email/password and Google OAuth 2.0. The login UI is a custom React page that talks to Cognito directly over SRP; Google sign-in goes through the Cognito OAuth endpoint with PKCE. API Gateway validates JWTs via its built-in authorizer before forwarding requests to either Lambda.
 
 ---
 
@@ -91,21 +91,23 @@ Each Lambda has a dedicated IAM role scoped to the exact tables and actions it n
 
 - **API Gateway** : JWT authorizer validates tokens against Cognito's JWKS before any request reaches a Lambda. The Lambda receives the authenticated user's identity in the request context.
 
+- **Input handling** : The write path validates every field (URL scheme, email syntax, threshold ranges and types) and all user-controlled values are HTML-escaped before they are rendered into alert emails or the S3 HTML reports.
+
 ---
 
 ## Frontend
 
 React 18 SPA built with Vite and Tailwind CSS. Deployed separately (Vercel).
 
-The app routes through five views:
+Views:
 
-- **Login** : redirects to Cognito Hosted UI
-- **Callback** : exchanges OAuth code for tokens
-- **Dashboard** : project card grid with add-project flow
-- **Project Detail** : latency charts, incident timeline, report history
-- **Settings** : profile editing
+- **Login / Signup / Confirm** : custom auth pages backed by Cognito SRP, plus "Continue with Google" via the Cognito OAuth endpoint (PKCE)
+- **Callback** : exchanges the OAuth authorization code for tokens
+- **Dashboard** : KPI tiles and a project card grid (status, latency sparkline, uptime strip), auto-refreshing every minute
+- **Project Detail** : latency chart with crosshair tooltip, uptime gauge, recent-probe strip, and the SLA report table with on-demand generation, HTML/JSON downloads, and CSV export
+- **Settings** : profile and notification email
 
-The project detail page shows a time-series latency chart (p50/p95/p99), an incident list with durations, and weekly SLA report cards with pass/fail verdicts. All API calls include the Cognito access token in the Authorization header. Token refresh is handled silently; on failure, the user is redirected to login.
+All charts are hand-rolled SVG — no chart library. API calls carry the Cognito ID token in the Authorization header; a 401 clears the session and returns the user to login.
 
 ---
 
@@ -116,7 +118,7 @@ Terraform code is under [`sla-monitor-terraform/`](sla-monitor-terraform/). Stat
 ### Modules
 
 - [`modules/dynamodb/`](sla-monitor-terraform/modules/dynamodb/) : Five tables with per-table TTL, GSI, and PITR configuration.
-- [`modules/s3/`](sla-monitor-terraform/modules/s3/) : Reports bucket (lifecycle: Glacier IR after 60 days, version expiry after 90 days) and artifacts bucket (Lambda deployment packages, version expiry after 7 days).
+- [`modules/s3/`](sla-monitor-terraform/modules/s3/) : Reports bucket (lifecycle: Glacier after 365 days, noncurrent-version expiry after 90 days) and artifacts bucket (Lambda deployment packages, version expiry after 7 days).
 - [`modules/iam/`](sla-monitor-terraform/modules/iam/) : Five roles with custom policy documents scoped to exact resource ARNs.
 - [`modules/lambda/`](sla-monitor-terraform/modules/lambda/) : Reusable factory: archive source, upload to S3 keyed by content hash, create function and log group, attach invoke permissions. Immutable deployments — code changes produce new S3 objects and trigger updates.
 - [`modules/apigateway/`](sla-monitor-terraform/modules/apigateway/) : HTTP API v2, JWT authorizer, routes, integrations, structured access logs.
@@ -134,10 +136,6 @@ The root [`main.tf`](sla-monitor-terraform/main.tf) wires modules together and d
 
 #### Project Details
 ![Project](./assets/screenshot-project.png)
-
-#### Cognito HostedUI
-Supports normal Email+Password Login and Google OAuth 2.0
-![Cognito Hosted UI](./assets/screenshot-cognito.png)
 
 ---
 
