@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react'
 import AnimatedNumber from './AnimatedNumber'
+import { STATUS } from '../lib/format'
 
 interface Props {
   label: string
-  value: number
+  /** null renders an em dash — used when there is no data to summarize yet. */
+  value: number | null
   decimals?: number
   unit?: string
   icon?: ReactNode
@@ -19,7 +21,7 @@ export default function StatCard({
   decimals = 0,
   unit,
   icon,
-  accent = '#fa5c29',
+  accent = STATUS.accent,
   sub,
   index = 0,
 }: Props) {
@@ -44,12 +46,16 @@ export default function StatCard({
       </div>
 
       <div className="mt-3 flex items-baseline gap-1.5">
-        <AnimatedNumber
-          value={value}
-          decimals={decimals}
-          className="font-display data text-[32px] font-bold leading-none text-txt-hi"
-        />
-        {unit && <span className="data text-[13px] font-medium text-txt-lo">{unit}</span>}
+        {value === null ? (
+          <span className="font-display data text-[32px] font-bold leading-none text-txt-dim">—</span>
+        ) : (
+          <AnimatedNumber
+            value={value}
+            decimals={decimals}
+            className="font-display data text-[32px] font-bold leading-none text-txt-hi"
+          />
+        )}
+        {unit && value !== null && <span className="data text-[13px] font-medium text-txt-lo">{unit}</span>}
       </div>
 
       {sub && <div className="mt-2.5 text-[11px] text-txt-lo">{sub}</div>}

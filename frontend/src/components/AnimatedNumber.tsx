@@ -10,6 +10,7 @@ interface Props {
 /** Smoothly counts from the previous value to the next whenever `value` changes. */
 export default function AnimatedNumber({ value, decimals = 0, duration = 900, className }: Props) {
   const [display, setDisplay] = useState(value)
+  const displayRef = useRef(value)
   const fromRef = useRef(value)
   const rafRef = useRef<number>()
 
@@ -19,6 +20,7 @@ export default function AnimatedNumber({ value, decimals = 0, duration = 900, cl
     const to = value
     if (reduce || from === to) {
       setDisplay(to)
+      displayRef.current = to
       fromRef.current = to
       return
     }
@@ -28,7 +30,9 @@ export default function AnimatedNumber({ value, decimals = 0, duration = 900, cl
       const t = Math.min((now - start) / duration, 1)
       // easeOutExpo
       const eased = t === 1 ? 1 : 1 - Math.pow(2, -10 * t)
-      setDisplay(from + (to - from) * eased)
+      const next = from + (to - from) * eased
+      displayRef.current = next
+      setDisplay(next)
       if (t < 1) {
         rafRef.current = requestAnimationFrame(tick)
       } else {
@@ -38,7 +42,9 @@ export default function AnimatedNumber({ value, decimals = 0, duration = 900, cl
     rafRef.current = requestAnimationFrame(tick)
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
-      fromRef.current = to
+      // Resume from what's actually on screen, not the old target — otherwise
+      // an interrupted animation visibly snaps on the next value change.
+      fromRef.current = displayRef.current
     }
   }, [value, duration])
 

@@ -7,7 +7,7 @@ interface Props {
   children: ReactNode
 }
 
-/** App frame: sidebar · command-bar header · scrolling content · status footer. */
+/** App frame: sidebar · command-bar header · scrolling content. */
 export default function Shell({ ticker, children }: Props) {
   return (
     <div className="flex min-h-screen text-txt-hi">
@@ -16,14 +16,9 @@ export default function Shell({ ticker, children }: Props) {
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Command bar */}
         <header className="sticky top-0 z-30 flex h-12 items-center gap-4 border-b border-white/[0.06] bg-ink-900/70 px-4 backdrop-blur-xl">
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="font-display text-[13px] font-bold tracking-tight text-txt-hi">
-              SLA<span className="text-accent">://</span>MONITOR
-            </span>
-            <span className="hidden rounded border border-white/[0.07] px-1.5 py-0.5 font-mono text-[9px] font-semibold text-txt-lo md:inline">
-              v2.4.1
-            </span>
-          </div>
+          <span className="shrink-0 font-display text-[13px] font-bold tracking-tight text-txt-hi">
+            SLA<span className="text-accent">://</span>MONITOR
+          </span>
 
           <div className="hidden h-4 w-px bg-white/[0.08] md:block" />
 
@@ -36,16 +31,6 @@ export default function Shell({ ticker, children }: Props) {
         <main className="flex-1 px-4 py-5 sm:px-6 lg:px-8">
           <div className="mx-auto w-full max-w-[1440px]">{children}</div>
         </main>
-
-        {/* Status footer */}
-        <footer className="sticky bottom-0 z-20 flex h-7 items-center gap-4 border-t border-white/[0.06] bg-ink-900/70 px-4 font-mono text-[9px] uppercase tracking-wider text-txt-lo backdrop-blur-xl">
-          <span className="text-txt-lo">Connection OK</span>
-          <span className="hidden text-txt-dim sm:inline">Runtime · Lambda</span>
-          <span className="flex-1" />
-          <span className="bg-gradient-to-r from-accent-300 to-accent-600 bg-clip-text font-semibold text-transparent">
-            Live · us-east-1
-          </span>
-        </footer>
       </div>
     </div>
   )

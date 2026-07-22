@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Check } from '../types'
+import { STATUS, fmtUtcTime } from '../lib/format'
 
 interface Props {
   checks: Check[]
@@ -97,9 +98,9 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
       <svg width={width} height={height} className="block">
         <defs>
           <linearGradient id="lat-area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#fa5c29" stopOpacity="0.28" />
-            <stop offset="70%" stopColor="#fa5c29" stopOpacity="0.04" />
-            <stop offset="100%" stopColor="#fa5c29" stopOpacity="0" />
+            <stop offset="0%" stopColor={STATUS.accent} stopOpacity="0.28" />
+            <stop offset="70%" stopColor={STATUS.accent} stopOpacity="0.04" />
+            <stop offset="100%" stopColor={STATUS.accent} stopOpacity="0" />
           </linearGradient>
         </defs>
 
@@ -121,7 +122,7 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
         <path
           d={line}
           fill="none"
-          stroke="#fa5c29"
+          stroke={STATUS.accent}
           strokeWidth="1.75"
           strokeLinejoin="round"
           strokeLinecap="round"
@@ -131,7 +132,7 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
         {/* failure markers */}
         {sorted.map((c, i) =>
           c.status === 'failure' ? (
-            <circle key={i} cx={x(i)} cy={y(c.latency_ms)} r="3" fill="#f87171" stroke="#0e1115" strokeWidth="1.5" />
+            <circle key={i} cx={x(i)} cy={y(c.latency_ms)} r="3" fill={STATUS.crit} stroke="#0e1115" strokeWidth="1.5" />
           ) : null
         )}
 
@@ -139,7 +140,7 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
         {hoverCheck && (
           <g>
             <line x1={hoverX} y1={padT} x2={hoverX} y2={padT + chartH} stroke="rgba(250,92,41,0.4)" strokeWidth="1" strokeDasharray="3 3" />
-            <circle cx={hoverX} cy={hoverY} r="4.5" fill="#fa5c29" stroke="#0e1115" strokeWidth="2" />
+            <circle cx={hoverX} cy={hoverY} r="4.5" fill={STATUS.accent} stroke="#0e1115" strokeWidth="2" />
           </g>
         )}
 
@@ -149,7 +150,7 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
       {/* x-axis time labels */}
       <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-between px-2 font-mono text-[9px] uppercase text-txt-dim" style={{ paddingLeft: padL, paddingRight: padR }}>
         <span>
-          {new Date(sorted[0].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {fmtUtcTime(sorted[0].timestamp).slice(0, 5)} UTC
         </span>
         <span className="text-accent">Now</span>
       </div>
@@ -163,12 +164,12 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
           <div className="flex items-center gap-2">
             <span
               className="w-[3px] rounded-full"
-              style={{ height: '0.75rem', background: hoverCheck.status === 'success' ? '#34d399' : '#f87171' }}
+              style={{ height: '0.75rem', background: hoverCheck.status === 'success' ? STATUS.ok : STATUS.crit }}
             />
             <span className="data text-[13px] font-bold text-txt-hi">{hoverCheck.latency_ms}ms</span>
           </div>
           <div className="mt-0.5 font-mono text-[9px] text-txt-lo">
-            {new Date(hoverCheck.timestamp).toLocaleTimeString()} · {hoverCheck.http_status_code || 'ERR'}
+            {fmtUtcTime(hoverCheck.timestamp)} · {hoverCheck.http_status_code || 'ERR'}
           </div>
         </div>
       )}

@@ -29,7 +29,7 @@ export function clearToken(): void {
   localStorage.removeItem(USER_KEY);
 }
 
-export function decodeToken(token: string): CognitoUser | null {
+function decodeToken(token: string): CognitoUser | null {
   try {
     const base64Url = token.split('.')[1];
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
@@ -45,7 +45,7 @@ export function decodeToken(token: string): CognitoUser | null {
   }
 }
 
-export function isTokenExpired(token: string): boolean {
+function isTokenExpired(token: string): boolean {
   const decoded = decodeToken(token);
   if (!decoded || !decoded.exp) return true;
   return Date.now() >= decoded.exp * 1000;
@@ -60,45 +60,6 @@ export function isAuthenticated(): boolean {
   }
   return true;
 }
-
-export function getCognitoUserId(): string | null {
-  const token = getToken();
-  if (!token) return null;
-  const decoded = decodeToken(token);
-  return decoded?.sub ?? null;
-}
-
-// export function buildLoginUrl(): string {
-//   const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID;
-//   const redirectUri = `${window.location.origin}/callback`;
-//   const cognitoUrl = import.meta.env.VITE_COGNITO_HOSTED_UI_URL;
-//   return `${cognitoUrl}/login?client_id=${clientId}&response_type=token&scope=openid+email+profile&redirect_uri=${encodeURIComponent(redirectUri)}`;
-// }
-export async function buildLoginUrl(): Promise<string> {
-  const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID;
-  const redirectUri = `${window.location.origin}/callback`;
-  const cognitoUrl = import.meta.env.VITE_COGNITO_HOSTED_UI_URL;
-
-  const codeVerifier = generateRandomString(64);
-  const codeChallenge = await generateCodeChallenge(codeVerifier);
-
-  // Persist verifier so Callback.tsx can use it after redirect
-  sessionStorage.setItem('pkce_verifier', codeVerifier);
-
-  const params = new URLSearchParams({
-    client_id: clientId,
-    response_type: 'code',
-    scope: 'openid email profile',
-    redirect_uri: redirectUri,
-    code_challenge: codeChallenge,
-    code_challenge_method: 'S256',
-  });
-
-  return `${cognitoUrl}/login?${params.toString()}`;
-}
-
-
-
 
 /**
  * Direct Google sign-in: jumps straight to Google's consent screen (skips the

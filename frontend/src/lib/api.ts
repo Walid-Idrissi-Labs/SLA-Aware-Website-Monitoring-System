@@ -1,4 +1,4 @@
-import { getToken, storeUser, decodeToken } from './auth';
+import { getToken, clearToken, storeUser } from './auth';
 import type {
   User,
   Project,
@@ -15,6 +15,9 @@ async function request<T>(
   path: string,
   body?: unknown
 ): Promise<T> {
+  if (!API_BASE) {
+    throw new Error('VITE_API_GATEWAY_URL is not configured');
+  }
   const token = getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -29,13 +32,21 @@ async function request<T>(
     body: body ? JSON.stringify(body) : undefined,
   });
 
+  // Expired or revoked session: stop polling with a dead token and
+  // send the user back to sign in.
+  if (res.status === 401) {
+    clearToken();
+    window.location.assign('/login');
+    throw new Error('Session expired');
+  }
+
   if (res.status === 204) {
     return undefined as T;
   }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || err.message || `Request failed (${res.status})`);
   }
 
   return res.json();
@@ -55,36 +66,19 @@ export function postMe(): Promise<User> {
 
 /**
  * Load the app profile for the just-authenticated user, creating it server-side
- * on first login (POST /me is idempotent). Falls back to a token-derived profile
- * only if the API is unreachable, so the app still renders either way.
- * Persists to localStorage and returns the resulting profile.
+ * on first login (POST /me is idempotent). Persists to localStorage and returns
+ * the profile. Throws if the API is unreachable — callers decide how to degrade.
  */
 export async function hydrateProfile(): Promise<User> {
+  let user: User;
   try {
-    const user = await getMe();
-    storeUser(user);
-    return user;
+    user = await getMe();
   } catch {
     // No profile yet (first login) or a transient read error — bootstrap it.
-    try {
-      const created = await postMe();
-      storeUser(created);
-      return created;
-    } catch {
-      const token = getToken();
-      const decoded = token ? decodeToken(token) : null;
-      const email = decoded?.email || '';
-      const fallback: User = {
-        user_id: decoded?.sub || '',
-        email,
-        display_name: decoded?.name || email.split('@')[0] || 'User',
-        notification_email: email,
-        created_at: new Date().toISOString(),
-      };
-      storeUser(fallback);
-      return fallback;
-    }
+    user = await postMe();
   }
+  storeUser(user);
+  return user;
 }
 
 export function getProject(projectId: string): Promise<Project> {

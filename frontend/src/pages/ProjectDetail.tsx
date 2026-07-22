@@ -29,8 +29,9 @@ import {
   generateReport,
   getReportDownloadUrl,
 } from '../lib/api'
+import { Alert, Spinner } from '../components/ui'
 import type { ProjectStatus, ProjectReport, Project, UpdateProjectInput } from '../types'
-import { SEVERITY, uptimeFromChecks, bareUrl } from '../lib/format'
+import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, bareUrl, fmtUtcTime } from '../lib/format'
 
 function formatDowntime(sec: number): string {
   if (!sec) return '0s'
@@ -53,11 +54,11 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
   const [form, setForm] = useState<UpdateProjectInput>({
     name: project.name,
     url: project.url,
-    failure_threshold: project.failure_threshold ?? 3,
+    failure_threshold: project.failure_threshold ?? PROJECT_DEFAULTS.failure_threshold,
     notification_email: project.notification_email ?? '',
     thresholds: {
-      min_uptime_pct: project.thresholds?.min_uptime_pct ?? 99.9,
-      max_avg_latency_ms: project.thresholds?.max_avg_latency_ms ?? 300,
+      min_uptime_pct: project.thresholds?.min_uptime_pct ?? PROJECT_DEFAULTS.min_uptime_pct,
+      max_avg_latency_ms: project.thresholds?.max_avg_latency_ms ?? PROJECT_DEFAULTS.max_avg_latency_ms,
     },
   })
   const [saving, setSaving] = useState(false)
@@ -87,7 +88,7 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in"
       onClick={(e) => e.target === e.currentTarget && !saving && onClose()}
     >
-      <div className="panel frame-corners w-full max-w-lg animate-scale-in overflow-hidden">
+      <div role="dialog" aria-modal="true" aria-label="Edit endpoint" className="panel frame-corners w-full max-w-lg animate-scale-in overflow-hidden">
         <div className="panel-head">
           <div className="flex items-center gap-2.5">
             <span className="grid h-6 w-6 place-items-center rounded-md bg-accent/[0.12] text-accent">
@@ -98,32 +99,33 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
               <p className="font-display text-[13px] font-semibold text-txt-hi">Edit endpoint</p>
             </div>
           </div>
-          <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-txt-lo transition-colors hover:bg-white/[0.05] hover:text-txt-hi">
+          <button onClick={onClose} aria-label="Close" className="grid h-7 w-7 place-items-center rounded-md text-txt-lo transition-colors hover:bg-white/[0.05] hover:text-txt-hi">
             <X className="h-4 w-4" strokeWidth={1.75} />
           </button>
         </div>
 
         <div className="space-y-4 p-5">
           <div>
-            <label className="field-label">Project Name</label>
-            <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="field" />
+            <label className="field-label" htmlFor="edit-name">Name</label>
+            <input id="edit-name" type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="field" />
           </div>
           <div>
-            <label className="field-label">Target URL</label>
-            <input type="url" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="field" />
+            <label className="field-label" htmlFor="edit-url">Target URL</label>
+            <input id="edit-url" type="url" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="field" />
           </div>
           <div>
-            <label className="field-label">Notification Email</label>
-            <input type="email" value={form.notification_email} onChange={(e) => setForm({ ...form, notification_email: e.target.value })} className="field" />
+            <label className="field-label" htmlFor="edit-email">Notification email</label>
+            <input id="edit-email" type="email" value={form.notification_email} onChange={(e) => setForm({ ...form, notification_email: e.target.value })} className="field" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="field-label">Failure Threshold</label>
-              <input type="number" min={1} max={10} value={form.failure_threshold} onChange={(e) => setForm({ ...form, failure_threshold: Number(e.target.value) })} className="field" />
+              <label className="field-label" htmlFor="edit-threshold">Failure threshold</label>
+              <input id="edit-threshold" type="number" min={1} max={10} value={form.failure_threshold} onChange={(e) => setForm({ ...form, failure_threshold: Number(e.target.value) })} className="field" />
             </div>
             <div>
-              <label className="field-label">Min Uptime %</label>
+              <label className="field-label" htmlFor="edit-uptime">Min uptime %</label>
               <input
+                id="edit-uptime"
                 type="number"
                 min={0}
                 max={100}
@@ -135,8 +137,9 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
             </div>
           </div>
           <div>
-            <label className="field-label">Max Latency (ms)</label>
+            <label className="field-label" htmlFor="edit-latency">Max latency (ms)</label>
             <input
+              id="edit-latency"
               type="number"
               min={0}
               value={form.thresholds?.max_avg_latency_ms}
@@ -145,19 +148,14 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
             />
           </div>
 
-          {error && (
-            <div className="flex items-center gap-2 rounded-md border border-crit/25 bg-crit/[0.06] px-3 py-2 text-[12px] text-crit">
-              <TriangleAlert className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
-              {error}
-            </div>
-          )}
+          {error && <Alert tone="error">{error}</Alert>}
         </div>
 
         <div className="flex justify-end gap-2 border-t border-white/[0.06] bg-white/[0.01] px-5 py-4">
           <button onClick={onClose} className="btn-ghost">Cancel</button>
           <button onClick={handleSave} disabled={saving} className="btn-accent">
-            {saving && <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
-            {saving ? 'Saving…' : 'Save Changes'}
+            {saving && <Spinner />}
+            {saving ? 'Saving…' : 'Save changes'}
           </button>
         </div>
       </div>
@@ -171,32 +169,38 @@ interface DeleteModalProps {
   onClose: () => void
   onConfirm: () => void
   deleting: boolean
+  error: string | null
 }
 
-function DeleteModal({ projectName, onClose, onConfirm, deleting }: DeleteModalProps) {
+function DeleteModal({ projectName, onClose, onConfirm, deleting, error }: DeleteModalProps) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !deleting && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose, deleting])
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in"
       onClick={(e) => e.target === e.currentTarget && !deleting && onClose()}
     >
-      <div className="panel w-full max-w-sm animate-scale-in overflow-hidden border-crit/25">
+      <div role="dialog" aria-modal="true" aria-label="Confirm delete" className="panel w-full max-w-sm animate-scale-in overflow-hidden border-crit/25">
         <div className="flex items-center gap-2.5 border-b border-crit/20 bg-crit/[0.05] px-5 h-11">
           <TriangleAlert className="h-4 w-4 text-crit" strokeWidth={1.75} />
-          <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-crit">Confirm Delete</span>
+          <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-crit">Confirm delete</span>
         </div>
         <div className="space-y-2 p-5">
           <p className="text-[13px] leading-relaxed text-txt-mid">
-            This stops monitoring <span className="font-semibold text-accent">{projectName}</span>. Historical data is retained.
+            This stops monitoring <span className="font-semibold text-accent">{projectName}</span>.
+            Its check history and reports are kept.
           </p>
-          <p className="border-l-2 border-crit/40 pl-3 text-[11px] text-txt-lo">
-            The endpoint is deactivated (soft-delete) and can be restored via the API.
-          </p>
+          {error && <Alert tone="error">{error}</Alert>}
         </div>
         <div className="flex justify-end gap-2 border-t border-white/[0.06] px-5 py-4">
           <button onClick={onClose} disabled={deleting} className="btn-ghost">Cancel</button>
           <button onClick={onConfirm} disabled={deleting} className="btn-danger">
-            {deleting && <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-crit/40 border-t-crit" />}
-            {deleting ? 'Deleting…' : 'Confirm Delete'}
+            {deleting && <Spinner />}
+            {deleting ? 'Deleting…' : 'Delete endpoint'}
           </button>
         </div>
       </div>
@@ -225,12 +229,14 @@ export default function ProjectDetail() {
   const [reports, setReports] = useState<ProjectReport[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [hours, setHours] = useState(24)
-  const loadingRef = useRef(false)
+  const requestSeq = useRef(0)
 
   const [showEdit, setShowEdit] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const [genDays, setGenDays] = useState<1 | 7 | 30>(7)
   const [generating, setGenerating] = useState(false)
@@ -239,8 +245,10 @@ export default function ProjectDetail() {
 
   const loadData = useCallback(
     async (options?: { silent?: boolean }) => {
-      if (!id || loadingRef.current) return
-      loadingRef.current = true
+      if (!id) return
+      // Sequence counter: switching the time window mid-flight starts a new
+      // request, and only the latest one is allowed to land.
+      const seq = ++requestSeq.current
       if (options?.silent) setRefreshing(true)
       else setLoading(true)
       try {
@@ -249,13 +257,19 @@ export default function ProjectDetail() {
           getProjectStatus(id, hours),
           getProjectReports(id),
         ])
+        if (seq !== requestSeq.current) return
         setProject(projectData)
         setStatus(statusData)
         setReports(reportsData)
+        setLoadError(null)
+      } catch (e) {
+        if (seq !== requestSeq.current) return
+        setLoadError(e instanceof Error ? e.message : 'Failed to load endpoint')
       } finally {
-        if (options?.silent) setRefreshing(false)
-        else setLoading(false)
-        loadingRef.current = false
+        if (seq === requestSeq.current) {
+          if (options?.silent) setRefreshing(false)
+          else setLoading(false)
+        }
       }
     },
     [hours, id]
@@ -266,19 +280,20 @@ export default function ProjectDetail() {
   }, [loadData])
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => loadData({ silent: true }), 60000)
+    const intervalId = window.setInterval(() => loadData({ silent: true }), POLL_INTERVAL_MS)
     return () => window.clearInterval(intervalId)
   }, [loadData])
 
   async function handleDelete() {
     if (!id) return
     setDeleting(true)
+    setDeleteError(null)
     try {
       await deleteProject(id)
       navigate('/dashboard')
-    } catch {
+    } catch (e) {
       setDeleting(false)
-      setShowDelete(false)
+      setDeleteError(e instanceof Error ? e.message : 'Failed to delete endpoint')
     }
   }
 
@@ -347,17 +362,47 @@ export default function ProjectDetail() {
 
   const ticker = (
     <>
-      <TickerStat label="Status" value={isUp ? 'UP' : 'DOWN'} color={isUp ? '#34d399' : '#f87171'} />
+      <TickerStat
+        label="Status"
+        value={status ? (isUp ? 'UP' : 'DOWN') : '—'}
+        color={status ? (isUp ? STATUS.ok : STATUS.crit) : undefined}
+      />
       <TickerStat label="Latency" value={latestCheck ? `${latestCheck.latency_ms}ms` : '—'} />
       <TickerStat label="Reports" value={String(reports.length)} />
     </>
   )
 
+  // Initial load failed and there is nothing to show — a clean error state
+  // beats an eternal "Loading…" header.
+  if (!project && !loading && loadError) {
+    return (
+      <Shell ticker={ticker}>
+        <div className="panel mx-auto mt-16 flex max-w-md flex-col items-center gap-4 p-8 text-center">
+          <TriangleAlert className="h-6 w-6 text-crit" strokeWidth={1.75} />
+          <div>
+            <p className="font-display text-[15px] font-semibold text-txt-hi">Couldn't load this endpoint</p>
+            <p className="mt-1 text-[12px] text-txt-lo">{loadError}</p>
+          </div>
+          <div className="flex gap-2">
+            <Link to="/dashboard" className="btn-ghost">Back to overview</Link>
+            <button onClick={() => loadData()} className="btn-accent">Retry</button>
+          </div>
+        </div>
+      </Shell>
+    )
+  }
+
   return (
     <Shell ticker={ticker}>
       {showEdit && project && <EditModal project={project} onClose={() => setShowEdit(false)} onSaved={(u) => { setProject(u); setShowEdit(false) }} />}
       {showDelete && project && (
-        <DeleteModal projectName={project.name} onClose={() => setShowDelete(false)} onConfirm={handleDelete} deleting={deleting} />
+        <DeleteModal
+          projectName={project.name}
+          onClose={() => { setShowDelete(false); setDeleteError(null) }}
+          onConfirm={handleDelete}
+          deleting={deleting}
+          error={deleteError}
+        />
       )}
 
       {/* Breadcrumb */}
@@ -407,7 +452,7 @@ export default function ProjectDetail() {
           <div className="flex items-center gap-2">
             <button onClick={() => loadData({ silent: true })} disabled={loading || refreshing} className="btn-ghost">
               <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin-slow' : ''}`} strokeWidth={1.75} />
-              {refreshing ? 'Syncing' : 'Refresh'}
+              {refreshing ? 'Refreshing' : 'Refresh'}
             </button>
             <button onClick={() => setShowEdit(true)} className="btn-ghost">
               <SquarePen className="h-3.5 w-3.5" strokeWidth={1.75} />
@@ -445,8 +490,8 @@ export default function ProjectDetail() {
           </div>
           <div className="grid-overlay p-2">
             {loading ? (
-              <div className="grid h-[260px] place-items-center">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+              <div className="grid h-[260px] place-items-center text-accent">
+                <Spinner size={24} />
               </div>
             ) : (
               <LatencyChart checks={checks} />
@@ -465,10 +510,10 @@ export default function ProjectDetail() {
 
           <div className="mt-4">
             <Metric label="Current Latency" value={latestCheck ? `${latestCheck.latency_ms}ms` : '—'} />
-            <Metric label="Status" value={isUp ? 'UP' : 'DOWN'} color={isUp ? '#34d399' : '#f87171'} />
+            <Metric label="Status" value={status ? (isUp ? 'UP' : 'DOWN') : '—'} color={status ? (isUp ? STATUS.ok : STATUS.crit) : undefined} />
             <Metric label="HTTP Code" value={latestCheck ? latestCheck.http_status_code || 'ERR' : '—'} />
             <Metric label="Checks · window" value={checks.length} />
-            <Metric label="Last Check" value={latestCheck ? new Date(latestCheck.timestamp).toLocaleTimeString() : '—'} />
+            <Metric label="Last Check" value={latestCheck ? fmtUtcTime(latestCheck.timestamp) : '—'} />
           </div>
 
           <div className="mt-4">
@@ -508,11 +553,7 @@ export default function ProjectDetail() {
               ))}
             </div>
             <button onClick={handleGenerate} disabled={generating} className="btn-accent">
-              {generating ? (
-                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-              ) : (
-                <Zap className="h-3.5 w-3.5" strokeWidth={1.75} />
-              )}
+              {generating ? <Spinner /> : <Zap className="h-3.5 w-3.5" strokeWidth={1.75} />}
               {generating ? 'Generating' : 'Generate'}
             </button>
           </div>
@@ -525,20 +566,9 @@ export default function ProjectDetail() {
         </div>
 
         {genMsg && (
-          <div
-            className={`mx-4 mt-3 flex items-center gap-2 rounded-md border px-3 py-2 text-[12px] ${
-              genMsg.type === 'success'
-                ? 'border-ok/25 bg-ok/[0.06] text-ok'
-                : genMsg.type === 'error'
-                ? 'border-crit/25 bg-crit/[0.06] text-crit'
-                : 'border-white/[0.1] bg-white/[0.03] text-txt-mid'
-            }`}
-          >
-            {genMsg.type === 'info' && (
-              <div className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            )}
+          <Alert tone={genMsg.type} className="mx-4 mt-3">
             {genMsg.text}
-          </div>
+          </Alert>
         )}
 
         {reports.length === 0 && !loading && (

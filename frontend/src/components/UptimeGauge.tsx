@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { clamp } from '../lib/format'
+import { clamp, STATUS } from '../lib/format'
 
 interface Props {
   /** 0–100 */
@@ -9,11 +9,12 @@ interface Props {
   label?: string
 }
 
+// Bands mirror the backend severity ladder (healthy / degraded / major / critical).
 function colorFor(pct: number): string {
-  if (pct >= 99.9) return '#34d399'
-  if (pct >= 99) return '#fbbf24'
+  if (pct >= 99.9) return STATUS.ok
+  if (pct >= 99) return STATUS.warn
   if (pct >= 95) return '#fb923c'
-  return '#f87171'
+  return STATUS.crit
 }
 
 /** Radial gauge that sweeps to the target value on mount. */
@@ -27,8 +28,16 @@ export default function UptimeGauge({ value, size = 132, stroke = 9, label = 'UP
       setProgress(target)
       return
     }
-    const id = requestAnimationFrame(() => setProgress(target))
-    return () => cancelAnimationFrame(id)
+    // Double rAF: the first frame paints the 0 state, the second starts the
+    // CSS transition — a single rAF can skip the sweep entirely.
+    let id2 = 0
+    const id1 = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => setProgress(target))
+    })
+    return () => {
+      cancelAnimationFrame(id1)
+      if (id2) cancelAnimationFrame(id2)
+    }
   }, [target])
 
   const r = (size - stroke) / 2

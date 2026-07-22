@@ -5,39 +5,44 @@ import TickerStat from '../components/TickerStat'
 import StatCard from '../components/StatCard'
 import ProjectCard from '../components/ProjectCard'
 import AddProjectModal from '../components/AddProjectModal'
+import { Alert } from '../components/ui'
 import { getProjects, getProjectStatus } from '../lib/api'
+import { POLL_INTERVAL_MS, STATUS } from '../lib/format'
 import type { Project, ProjectStatus } from '../types'
 
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
   const [statuses, setStatuses] = useState<Record<string, ProjectStatus>>({})
   const [loading, setLoading] = useState(true)
+  const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
-  const loadingRef = useRef(false)
+  const requestSeq = useRef(0)
 
   const loadProjects = useCallback(async () => {
-    if (loadingRef.current) return
-    loadingRef.current = true
+    const seq = ++requestSeq.current
     setLoading(true)
-    setError(null)
     try {
       const data = await getProjects()
-      setProjects(data)
-
       const results = await Promise.allSettled(data.map((p) => getProjectStatus(p.project_id, 1)))
+      if (seq !== requestSeq.current) return // a newer request superseded this one
       const statusMap: Record<string, ProjectStatus> = {}
       results.forEach((res, i) => {
         if (res.status === 'fulfilled') {
           statusMap[data[i].project_id] = res.value
         }
       })
+      setProjects(data)
       setStatuses(statusMap)
+      setError(null)
+      setLoaded(true)
     } catch (e) {
+      if (seq !== requestSeq.current) return
+      // Keep whatever is already on screen — a failed background poll
+      // shouldn't wipe a working dashboard.
       setError(e instanceof Error ? e.message : 'Failed to load projects')
     } finally {
-      setLoading(false)
-      loadingRef.current = false
+      if (seq === requestSeq.current) setLoading(false)
     }
   }, [])
 
@@ -46,7 +51,7 @@ export default function Dashboard() {
   }, [loadProjects])
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => loadProjects(), 60000)
+    const intervalId = window.setInterval(() => loadProjects(), POLL_INTERVAL_MS)
     return () => window.clearInterval(intervalId)
   }, [loadProjects])
 
@@ -60,20 +65,26 @@ export default function Dashboard() {
 
   const activeProjects = projects.filter((p) => p.active)
   const total = activeProjects.length
-  const healthy = activeProjects.filter((p) => p.current_status === 'success').length
-  const withLatency = activeProjects.filter((p) => p.last_latency_ms !== undefined)
+  // A project with no checks yet is "pending", not down.
+  const checked = activeProjects.filter((p) => p.current_status === 'success' || p.current_status === 'failure')
+  const healthy = checked.filter((p) => p.current_status === 'success').length
+  const withLatency = activeProjects.filter((p) => p.last_latency_ms != null)
   const avgLatency =
     withLatency.length > 0
       ? Math.round(withLatency.reduce((sum, p) => sum + (p.last_latency_ms || 0), 0) / withLatency.length)
-      : 0
-  const incidents = activeProjects.filter((p) => p.current_status !== 'success').length
-  const healthPct = total > 0 ? (healthy / total) * 100 : 0
+      : null
+  const incidents = checked.filter((p) => p.current_status === 'failure').length
+  const healthPct = checked.length > 0 ? (healthy / checked.length) * 100 : null
 
   const ticker = (
     <>
-      <TickerStat label="Health" value={`${healthPct.toFixed(1)}%`} color={healthPct >= 99 ? '#34d399' : '#fbbf24'} />
-      <TickerStat label="Avg Lat" value={`${avgLatency}ms`} />
-      <TickerStat label="Incidents" value={String(incidents)} color={incidents > 0 ? '#f87171' : '#34d399'} />
+      <TickerStat
+        label="Health"
+        value={healthPct !== null ? `${healthPct.toFixed(1)}%` : '—'}
+        color={healthPct === null ? undefined : healthPct >= 99 ? STATUS.ok : STATUS.warn}
+      />
+      <TickerStat label="Avg Lat" value={avgLatency !== null ? `${avgLatency}ms` : '—'} />
+      <TickerStat label="Incidents" value={String(incidents)} color={incidents > 0 ? STATUS.crit : STATUS.ok} />
       <TickerStat label="Endpoints" value={String(total)} />
     </>
   )
@@ -83,18 +94,18 @@ export default function Dashboard() {
       {/* Page header */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="animate-fade-up">
-          <p className="kicker mb-1.5">Operations Overview</p>
-          <h1 className="text-sheen font-display text-[26px] font-bold tracking-tight">Mission Control</h1>
-          <p className="mt-1 text-[12px] text-txt-lo">Real-time uptime, latency, and SLA posture across every endpoint.</p>
+          <p className="kicker mb-1.5">Operations</p>
+          <h1 className="text-sheen font-display text-[26px] font-bold tracking-tight">Overview</h1>
+          <p className="mt-1 text-[12px] text-txt-lo">Uptime, latency, and SLA posture across every endpoint.</p>
         </div>
         <div className="flex items-center gap-2 animate-fade-up" style={{ animationDelay: '80ms' }}>
           <button onClick={loadProjects} disabled={loading} className="btn-ghost">
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin-slow' : ''}`} strokeWidth={1.75} />
-            {loading ? 'Syncing' : 'Refresh'}
+            {loading ? 'Refreshing' : 'Refresh'}
           </button>
           <button onClick={() => setShowAddModal(true)} className="btn-accent">
             <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
-            New Endpoint
+            New endpoint
           </button>
         </div>
       </div>
@@ -107,8 +118,8 @@ export default function Dashboard() {
           decimals={1}
           unit="%"
           icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.75} />}
-          accent={healthPct >= 99 ? '#34d399' : '#fbbf24'}
-          sub={<span>{healthy} of {total || 0} operational</span>}
+          accent={healthPct === null || healthPct >= 99 ? STATUS.ok : STATUS.warn}
+          sub={<span>{checked.length > 0 ? `${healthy} of ${checked.length} responding` : 'no checks yet'}</span>}
           index={0}
         />
         <StatCard
@@ -123,15 +134,15 @@ export default function Dashboard() {
           label="Active Incidents"
           value={incidents}
           icon={<TriangleAlert className="h-4 w-4" strokeWidth={1.75} />}
-          accent={incidents > 0 ? '#f87171' : '#34d399'}
-          sub={<span>{incidents > 0 ? 'requires attention' : 'all systems nominal'}</span>}
+          accent={incidents > 0 ? STATUS.crit : STATUS.ok}
+          sub={<span>{incidents > 0 ? 'endpoints failing checks' : 'no failing endpoints'}</span>}
           index={2}
         />
         <StatCard
           label="Endpoints"
           value={total}
           icon={<Radar className="h-4 w-4" strokeWidth={1.75} />}
-          sub={<span>monitored every 60s</span>}
+          sub={<span>checked every minute</span>}
           index={3}
         />
       </div>
@@ -147,7 +158,22 @@ export default function Dashboard() {
 
       {/* Content */}
       <div className="mt-4">
-        {loading && projects.length === 0 && (
+        {error && (
+          <Alert
+            tone="error"
+            className="mb-4"
+            action={
+              <button onClick={loadProjects} className="btn-ghost">
+                Retry
+              </button>
+            }
+          >
+            {error}
+            {loaded && ' — showing the last loaded data.'}
+          </Alert>
+        )}
+
+        {loading && !loaded && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="panel h-[248px] p-4">
@@ -162,35 +188,23 @@ export default function Dashboard() {
           </div>
         )}
 
-        {error && (
-          <div className="panel flex items-center justify-between gap-4 border-crit/25 bg-crit/[0.04] p-4">
-            <div className="flex items-center gap-3">
-              <TriangleAlert className="h-4 w-4 shrink-0 text-crit" strokeWidth={1.75} />
-              <span className="text-[12px] text-crit">{error}</span>
-            </div>
-            <button onClick={loadProjects} className="btn-ghost">
-              Retry
-            </button>
-          </div>
-        )}
-
-        {!error && !loading && activeProjects.length === 0 && (
-          <div className="panel frame-corners flex flex-col items-center justify-center gap-4 py-20 text-center">
+        {loaded && activeProjects.length === 0 && (
+          <div className="panel flex flex-col items-center justify-center gap-4 py-20 text-center">
             <span className="grid h-14 w-14 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.02] text-txt-lo">
               <Radar className="h-6 w-6" strokeWidth={1.75} />
             </span>
             <div>
-              <p className="font-display text-[15px] font-semibold text-txt-hi">No endpoints configured</p>
-              <p className="mt-1 text-[12px] text-txt-lo">Add your first website to begin continuous monitoring.</p>
+              <p className="font-display text-[15px] font-semibold text-txt-hi">No endpoints yet</p>
+              <p className="mt-1 text-[12px] text-txt-lo">Add a website to start checking it every minute.</p>
             </div>
             <button onClick={() => setShowAddModal(true)} className="btn-accent">
               <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
-              Add First Endpoint
+              Add endpoint
             </button>
           </div>
         )}
 
-        {!error && activeProjects.length > 0 && (
+        {activeProjects.length > 0 && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {activeProjects.map((project, i) => (
               <ProjectCard

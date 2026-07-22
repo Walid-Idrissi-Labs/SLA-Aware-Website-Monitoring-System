@@ -18,9 +18,11 @@ export interface Project {
   };
   notification_email: string;
   created_at: string;
-  current_status?: 'success' | 'failure';
-  last_latency_ms?: number;
-  last_checked_at?: string;
+  /** 'unknown' (or absent) until the first check lands. */
+  current_status?: 'success' | 'failure' | 'unknown';
+  last_latency_ms?: number | null;
+  /** Epoch milliseconds of the most recent check. */
+  last_checked_at?: number | null;
 }
 
 export interface Check {
@@ -32,7 +34,7 @@ export interface Check {
 
 export interface ProjectStatus {
   project_id: string;
-  current_status: 'success' | 'failure';
+  current_status: 'success' | 'failure' | 'unknown';
   checks: Check[];
 }
 

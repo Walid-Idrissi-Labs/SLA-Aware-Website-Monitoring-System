@@ -1,5 +1,29 @@
 import type { Check } from '../types'
 
+/** Status palette — the single source for status hexes used in inline SVG/styles.
+ *  Mirrors the `ok`/`warn`/`crit`/`accent` tokens in tailwind.config.js. */
+export const STATUS = {
+  ok: '#34d399',
+  warn: '#fbbf24',
+  crit: '#f87171',
+  accent: '#fa5c29',
+} as const
+
+/** How often live views re-poll the API (matches the 1-minute check cadence). */
+export const POLL_INTERVAL_MS = 60_000
+
+/** Defaults applied by the backend when a project omits them. */
+export const PROJECT_DEFAULTS = {
+  failure_threshold: 3,
+  min_uptime_pct: 99.9,
+  max_avg_latency_ms: 300,
+} as const
+
+/** Epoch ms → "HH:MM:SS UTC". All SLA windows are UTC; display follows. */
+export function fmtUtcTime(tsMs: number): string {
+  return new Date(tsMs).toISOString().slice(11, 19) + ' UTC'
+}
+
 /** Compact "time since" label, e.g. now / 4m / 2h / 3d. */
 export function timeAgo(ts: string | number | undefined): string {
   if (ts === undefined || ts === null) return '—'
@@ -23,10 +47,10 @@ export function uptimeFromChecks(checks: Check[]): number | null {
 
 /** Severity → display metadata (label + tailwind-friendly hex). */
 export const SEVERITY = {
-  healthy: { label: 'HEALTHY', color: '#34d399', dim: 'rgba(52,211,153,0.14)' },
-  degraded: { label: 'DEGRADED', color: '#fbbf24', dim: 'rgba(251,191,36,0.14)' },
+  healthy: { label: 'HEALTHY', color: STATUS.ok, dim: 'rgba(52,211,153,0.14)' },
+  degraded: { label: 'DEGRADED', color: STATUS.warn, dim: 'rgba(251,191,36,0.14)' },
   major: { label: 'MAJOR', color: '#fb923c', dim: 'rgba(251,146,60,0.14)' },
-  critical: { label: 'CRITICAL', color: '#f87171', dim: 'rgba(248,113,113,0.14)' },
+  critical: { label: 'CRITICAL', color: STATUS.crit, dim: 'rgba(248,113,113,0.14)' },
 } as const
 
 export type Severity = keyof typeof SEVERITY

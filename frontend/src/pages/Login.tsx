@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Mail, Lock, Eye, EyeOff, ArrowRight, TriangleAlert, Check } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
-import GoogleIcon from '../components/GoogleIcon'
-import { isAuthenticated, setToken, buildGoogleLoginUrl } from '../lib/auth'
+import GoogleSignIn from '../components/GoogleSignIn'
+import { Alert, Spinner } from '../components/ui'
+import { isAuthenticated, setToken } from '../lib/auth'
 import { signIn, friendlyAuthMessage } from '../lib/cognito'
 import { hydrateProfile } from '../lib/api'
 
@@ -21,7 +22,6 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(
     state?.justConfirmed ? 'Email verified — you can sign in now.' : null
@@ -34,7 +34,8 @@ export default function Login() {
   // Persist the token, hydrate (creating on first login) the app profile, then enter.
   async function completeLogin(idToken: string) {
     setToken(idToken)
-    await hydrateProfile()
+    // Best-effort: the dashboard works without a hydrated profile.
+    await hydrateProfile().catch(() => {})
     navigate('/dashboard')
   }
 
@@ -62,19 +63,6 @@ export default function Login() {
     }
   }
 
-  function handleGoogle() {
-    setGoogleLoading(true)
-    setError(null)
-    buildGoogleLoginUrl()
-      .then((url) => {
-        window.location.href = url
-      })
-      .catch(() => {
-        setGoogleLoading(false)
-        setError('Could not start Google sign-in. Please try again.')
-      })
-  }
-
   return (
     <AuthLayout
       kicker="Secure Access"
@@ -91,16 +79,14 @@ export default function Login() {
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {notice && (
-          <div className="flex items-center gap-2 rounded-md border border-ok/25 bg-ok/[0.06] px-3 py-2 text-[12px] text-ok animate-fade-in">
-            <Check className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
+          <Alert tone="success" className="animate-fade-in">
             {notice}
-          </div>
+          </Alert>
         )}
         {error && (
-          <div className="flex items-center gap-2 rounded-md border border-crit/25 bg-crit/[0.06] px-3 py-2 text-[12px] text-crit animate-fade-in">
-            <TriangleAlert className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
+          <Alert tone="error" className="animate-fade-in">
             {error}
-          </div>
+          </Alert>
         )}
 
         <div>
@@ -140,7 +126,6 @@ export default function Login() {
             />
             <button
               type="button"
-              tabIndex={-1}
               onClick={() => setShowPw((v) => !v)}
               aria-label={showPw ? 'Hide password' : 'Show password'}
               className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded text-txt-lo transition-colors hover:text-txt-hi"
@@ -150,13 +135,9 @@ export default function Login() {
           </div>
         </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-accent-sheen font-mono text-[12px] font-bold uppercase tracking-wider text-white shadow-glow-accent transition-all duration-150 hover:brightness-110 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60"
-        >
+        <button type="submit" disabled={loading} className="btn-auth">
           {loading ? (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+            <Spinner size={16} />
           ) : (
             <>
               Sign in <ArrowRight className="h-4 w-4" strokeWidth={2} />
@@ -165,26 +146,7 @@ export default function Login() {
         </button>
       </form>
 
-      <div className="my-5 flex items-center gap-3">
-        <div className="h-px flex-1 bg-white/[0.08]" />
-        <span className="font-mono text-[10px] uppercase tracking-micro text-txt-dim">or</span>
-        <div className="h-px flex-1 bg-white/[0.08]" />
-      </div>
-
-      <button
-        type="button"
-        onClick={handleGoogle}
-        disabled={googleLoading}
-        className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-md border border-white/[0.1] bg-white/[0.02] font-mono text-[12px] font-semibold text-txt-mid transition-all duration-150 hover:border-white/20 hover:bg-white/[0.04] hover:text-txt-hi active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60"
-      >
-        {googleLoading ? (
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-txt-hi" />
-        ) : (
-          <>
-            <GoogleIcon className="h-4 w-4" /> Continue with Google
-          </>
-        )}
-      </button>
+      <GoogleSignIn onError={setError} />
     </AuthLayout>
   )
 }

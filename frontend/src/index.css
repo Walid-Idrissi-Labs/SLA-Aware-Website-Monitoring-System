@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+/* Fonts are loaded from index.html (an @import after @tailwind is invalid CSS). */
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Base
@@ -88,10 +88,6 @@ body {
     letter-spacing: -0.01em;
   }
 
-  .tnum {
-    font-variant-numeric: tabular-nums;
-  }
-
   /* Signature gradient hairline — the accent rule for section headers */
   .hr-accent {
     height: 1px;
@@ -164,6 +160,14 @@ body {
            active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
   }
 
+  /* Full-width primary CTA for the auth pages (taller than .btn-accent) */
+  .btn-auth {
+    @apply inline-flex h-11 w-full items-center justify-center gap-2 rounded-md
+           bg-accent-sheen font-mono text-[12px] font-bold uppercase tracking-wider
+           text-white shadow-glow-accent transition-all duration-150
+           hover:brightness-110 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60;
+  }
+
   /* Form field */
   .field {
     @apply w-full rounded-md bg-ink-950/80 border border-white/[0.08] text-txt-hi
@@ -185,10 +189,6 @@ body {
     content: '';
     @apply absolute inset-0 -translate-x-full animate-shimmer;
     background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
-  }
-
-  .text-glow-accent {
-    text-shadow: 0 0 18px rgba(250, 92, 41, 0.55);
   }
 }
 

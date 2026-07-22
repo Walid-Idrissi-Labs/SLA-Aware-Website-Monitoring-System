@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Mail, KeyRound, ShieldCheck, TriangleAlert, Check } from 'lucide-react'
+import { Mail, KeyRound, ShieldCheck } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
+import { Alert, Spinner } from '../components/ui'
 import { confirmSignUp, resendConfirmationCode, friendlyAuthMessage } from '../lib/cognito'
 
 interface ConfirmState {
@@ -72,16 +73,14 @@ export default function ConfirmSignup() {
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {notice && (
-          <div className="flex items-center gap-2 rounded-md border border-ok/25 bg-ok/[0.06] px-3 py-2 text-[12px] text-ok animate-fade-in">
-            <Check className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
+          <Alert tone="success" className="animate-fade-in">
             {notice}
-          </div>
+          </Alert>
         )}
         {error && (
-          <div className="flex items-center gap-2 rounded-md border border-crit/25 bg-crit/[0.06] px-3 py-2 text-[12px] text-crit animate-fade-in">
-            <TriangleAlert className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
+          <Alert tone="error" className="animate-fade-in">
             {error}
-          </div>
+          </Alert>
         )}
 
         <div>
@@ -122,13 +121,9 @@ export default function ConfirmSignup() {
           />
         </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-accent-sheen font-mono text-[12px] font-bold uppercase tracking-wider text-white shadow-glow-accent transition-all duration-150 hover:brightness-110 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60"
-        >
+        <button type="submit" disabled={loading} className="btn-auth">
           {loading ? (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+            <Spinner size={16} />
           ) : (
             <>
               <ShieldCheck className="h-4 w-4" strokeWidth={2} /> Verify &amp; continue

@@ -1,4 +1,5 @@
 import type { Check } from '../types'
+import { fmtUtcTime } from '../lib/format'
 
 interface Props {
   checks: Check[]
@@ -24,7 +25,7 @@ export default function StatusStrip({ checks, bars = 40, className }: Props) {
         return (
           <div
             key={c.timestamp ?? i}
-            title={`${up ? 'UP' : 'DOWN'} · ${c.latency_ms}ms · ${new Date(c.timestamp).toLocaleTimeString()}`}
+            title={`${up ? 'UP' : 'DOWN'} · ${c.latency_ms}ms · ${fmtUtcTime(c.timestamp)}`}
             className={`flex-1 h-full rounded-[1px] transition-colors ${
               up ? 'bg-ok/70 hover:bg-ok' : 'bg-crit/80 hover:bg-crit'
             }`}

@@ -92,6 +92,7 @@ export default function TopNav() {
         <button
           onClick={logout}
           title="Sign out"
+          aria-label="Sign out"
           className="group grid h-9 w-9 place-items-center rounded-lg text-txt-lo transition-colors hover:bg-crit/10 hover:text-crit"
         >
           <LogOut className="h-[16px] w-[16px]" strokeWidth={1.75} />

@@ -1,4 +1,5 @@
 import { useId } from 'react'
+import { STATUS } from '../lib/format'
 
 interface Props {
   values: number[]
@@ -15,7 +16,7 @@ interface Props {
 /** Compact smoothed line chart for inline trends. */
 export default function Sparkline({
   values,
-  color = '#fa5c29',
+  color = STATUS.accent,
   fill = true,
   width = 120,
   height = 32,
@@ -77,6 +78,7 @@ export default function Sparkline({
         d={d}
         stroke={color}
         strokeWidth={strokeWidth}
+        vectorEffect="non-scaling-stroke"
         strokeLinecap="round"
         strokeLinejoin="round"
         style={

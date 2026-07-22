@@ -38,7 +38,7 @@ export default function AuthLayout({ kicker, title, subtitle, children, footer }
           <div className="relative flex items-center justify-between mb-6 gap-3">
             <p className="kicker">{kicker}</p>
 
-            <span className="font-mono text-[10px] uppercase tracking-micro  text-txt-dim">
+            <span className="font-mono text-[10px] uppercase tracking-micro text-txt-dim">
               Secured by Amazon Cognito
             </span>
           </div>

@@ -1,13 +1,20 @@
-import { useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { setToken } from '../lib/auth'
 import { hydrateProfile } from '../lib/api'
 import BootSplash from '../components/BootSplash'
 
 export default function Callback() {
   const navigate = useNavigate()
+  const [error, setError] = useState<string | null>(null)
+  // The OAuth code and PKCE verifier are single-use — a second effect run
+  // (React StrictMode) must not consume them again.
+  const ranRef = useRef(false)
 
   useEffect(() => {
+    if (ranRef.current) return
+    ranRef.current = true
+
     async function handleCallback() {
       const params = new URLSearchParams(window.location.search)
       const code = params.get('code')
@@ -19,8 +26,7 @@ export default function Callback() {
 
       const codeVerifier = sessionStorage.getItem('pkce_verifier')
       if (!codeVerifier) {
-        console.error('Missing PKCE verifier')
-        navigate('/login')
+        setError('Your sign-in session expired. Please try again.')
         return
       }
       sessionStorage.removeItem('pkce_verifier')
@@ -29,37 +35,53 @@ export default function Callback() {
       const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID
       const redirectUri = `${window.location.origin}/callback`
 
-      const tokenRes = await fetch(`${cognitoUrl}/oauth2/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          client_id: clientId,
-          code,
-          redirect_uri: redirectUri,
-          code_verifier: codeVerifier,
-        }),
-      })
+      try {
+        const tokenRes = await fetch(`${cognitoUrl}/oauth2/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'authorization_code',
+            client_id: clientId,
+            code,
+            redirect_uri: redirectUri,
+            code_verifier: codeVerifier,
+          }),
+        })
 
-      if (!tokenRes.ok) {
-        console.error('Token exchange failed', await tokenRes.text())
-        navigate('/login')
+        if (!tokenRes.ok) {
+          setError('Sign-in could not be completed. Please try again.')
+          return
+        }
+
+        const { id_token } = await tokenRes.json()
+        setToken(id_token)
+      } catch {
+        setError('Could not reach the sign-in service. Check your connection and try again.')
         return
       }
 
-      const { id_token } = await tokenRes.json()
-      setToken(id_token)
-      await hydrateProfile()
+      // Best-effort: the dashboard works without a hydrated profile,
+      // and Settings retries on its own.
+      await hydrateProfile().catch(() => {})
       navigate('/dashboard')
     }
 
     handleCallback()
   }, [navigate])
 
-  return (
-    <BootSplash
-      title="Establishing secure session"
-      lines={['Exchanging authorization code', 'Verifying identity token', 'Loading your workspace']}
-    />
-  )
+  if (error) {
+    return (
+      <div className="grid min-h-screen place-items-center p-4">
+        <div className="panel flex w-full max-w-sm flex-col items-center gap-4 p-8 text-center">
+          <p className="font-display text-[15px] font-semibold text-txt-hi">Sign-in failed</p>
+          <p className="text-[12px] text-txt-lo">{error}</p>
+          <Link to="/login" className="btn-accent">
+            Back to sign in
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  return <BootSplash title="Signing you in" />
 }
