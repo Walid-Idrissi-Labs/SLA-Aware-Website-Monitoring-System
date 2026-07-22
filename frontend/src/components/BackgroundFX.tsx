@@ -3,8 +3,9 @@ import { useEffect, useRef, type CSSProperties } from 'react'
 /**
  * Ambient moving background. A few large, heavily-blurred colour blobs slowly
  * drift on their own (CSS keyframes) and gently lean toward the pointer, each
- * by a different depth so the parallax feels dimensional. Fixed behind all
- * content — the frosted `.panel` cards blur it live as it moves.
+ * by a different depth so the parallax feels dimensional. They sit over a fine
+ * engineering grid, and a frosted-glass pane on top blurs both into a soft
+ * wash. Fixed behind all content — the frosted `.panel` cards blur it live too.
  *
  * Mounted once at the app root, so every route (auth + dashboard) shares it.
  */
@@ -54,6 +55,8 @@ export default function BackgroundFX() {
 
   return (
     <div ref={ref} className="bg-fx" aria-hidden="true">
+      {/* base grid (bottom) */}
+      <div className="bg-fx__grid" />
       <div className="bg-fx__track" style={{ '--depth': '38px' } as CSSProperties}>
         <div className="bg-fx__blob bg-fx__blob--accent" />
       </div>
@@ -63,6 +66,8 @@ export default function BackgroundFX() {
       <div className="bg-fx__track" style={{ '--depth': '54px' } as CSSProperties}>
         <div className="bg-fx__blob bg-fx__blob--ember" />
       </div>
+      {/* frosted-glass pane (top) — softens the grid + halos beneath it */}
+      <div className="bg-fx__frost" />
     </div>
   )
 }
