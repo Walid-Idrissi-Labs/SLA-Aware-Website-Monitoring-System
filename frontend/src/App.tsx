@@ -8,6 +8,7 @@ import Callback from './pages/Callback'
 import Dashboard from './pages/Dashboard'
 import ProjectDetail from './pages/ProjectDetail'
 import Settings from './pages/Settings'
+import About from './pages/About'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (!isAuthenticated()) {
@@ -46,6 +47,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <Settings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/about"
+          element={
+            <ProtectedRoute>
+              <About />
             </ProtectedRoute>
           }
         />

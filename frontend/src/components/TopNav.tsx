@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Settings as SettingsIcon, LogOut } from 'lucide-react'
+import { LayoutDashboard, Settings as SettingsIcon, LogOut, Boxes } from 'lucide-react'
 import { logout, getStoredUser } from '../lib/auth'
 import Logo from './Logo'
 import type { User } from '../types'
@@ -74,6 +74,9 @@ export default function TopNav() {
       <nav className="flex w-full flex-1 flex-col items-center gap-1 pt-2">
         <NavItem to="/dashboard" label="Overview" active={dashActive}>
           <LayoutDashboard className="h-[18px] w-[18px]" strokeWidth={1.75} />
+        </NavItem>
+        <NavItem to="/about" label="About" active={pathname === '/about'}>
+          <Boxes className="h-[18px] w-[18px]" strokeWidth={1.75} />
         </NavItem>
         <NavItem to="/settings" label="Settings" active={pathname === '/settings'}>
           <SettingsIcon className="h-[18px] w-[18px]" strokeWidth={1.75} />

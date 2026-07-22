@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import TopNav from './TopNav'
 import TickerClock from './TickerClock'
+import RegionStatus from './RegionStatus'
 
 interface Props {
   ticker?: ReactNode
@@ -24,6 +25,7 @@ export default function Shell({ ticker, children }: Props) {
 
           <div className="flex min-w-0 flex-1 items-center gap-5 overflow-hidden">{ticker}</div>
 
+          <RegionStatus />
           <TickerClock />
         </header>
 
