@@ -1,7 +1,7 @@
+import html as html_lib
 import json
 import os
 import re
-import time
 import logging
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
@@ -53,7 +53,7 @@ def decimals_to_native(obj):
 
 
 def get_sender_email() -> str:
-    response = ssm.get_parameter(Name=SES_SENDER_PARAM_PATH)
+    response = ssm.get_parameter(Name=SES_SENDER_PARAM_PATH, WithDecryption=True)
     return response["Parameter"]["Value"]
 
 
@@ -76,12 +76,11 @@ def send_report_email(to_address: str, subject: str, html_body: str) -> None:
 def compute_availability_metrics(checks: list[dict]) -> dict[str, float]:
     total = len(checks)
     if total == 0:
-        return {"uptime_pct": 0.0, "error_rate_pct": 0.0}
+        return {"uptime_pct": 0.0}
 
     successful = sum(1 for c in checks if c["status"] == "success")
     uptime_pct = round((successful / total) * 100, 2)
-    error_rate_pct = round(100 - uptime_pct, 2)
-    return {"uptime_pct": uptime_pct, "error_rate_pct": error_rate_pct}
+    return {"uptime_pct": uptime_pct}
 
 
 def compute_performance_metrics(checks: list[dict]) -> dict[str, float]:
@@ -264,8 +263,10 @@ def build_html_report(
     latency_ok = float(avg) <= float(max_latency)
 
     period = f"{window_start.strftime('%b %d, %Y')} – {window_end.strftime('%b %d, %Y')}"
-    project_name = project.get("name", "Untitled")
-    project_url = project.get("url", "")
+    # User-controlled fields land in an HTML document served as text/html —
+    # escape them or a project name becomes stored XSS.
+    project_name = html_lib.escape(str(project.get("name", "Untitled")))
+    project_url = html_lib.escape(str(project.get("url", "")), quote=True)
 
     verdict_color = _OK if sla_pass else _BAD
     verdict_soft = "#ecfdf5" if sla_pass else "#fef2f2"
@@ -468,6 +469,7 @@ def build_report_email(
     severity_label = severity.upper()
 
     subject = f"[SLA Report] {project['name']} — {report['report_id']} — {emoji} {severity_label}"
+    safe_name = html_lib.escape(str(project["name"]))
 
     week_start_str = week_start.strftime("%Y-%m-%d")
     week_end_str = week_end.strftime("%Y-%m-%d")
@@ -497,7 +499,7 @@ def build_report_email(
     <html><body style="font-family: Arial, sans-serif; margin: 0; padding: 0;">
     <div style="background-color: {banner_color}; color: white; padding: 20px;">
         <h1 style="margin: 0;">{banner_label}</h1>
-        <p>{project['name']} — {report['report_id']}</p>
+        <p>{safe_name} — {report['report_id']}</p>
     </div>
     <div style="padding: 20px;">
         <table style="border-collapse: collapse; width: 100%; max-width: 500px;">
@@ -559,6 +561,21 @@ def query_checks_paginated(project_id: str, from_ms: int, to_ms: int) -> list[di
     return all_checks
 
 
+def query_incidents_paginated(project_id: str, from_sec: int, to_sec: int) -> list[dict]:
+    incidents = []
+    query_kwargs = {
+        "KeyConditionExpression": "project_id = :pid AND start_time BETWEEN :from_sec AND :to_sec",
+        "ExpressionAttributeValues": {":pid": project_id, ":from_sec": from_sec, ":to_sec": to_sec},
+    }
+    while True:
+        response = incidents_table.query(**query_kwargs)
+        incidents.extend(response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            return incidents
+        query_kwargs["ExclusiveStartKey"] = last_key
+
+
 
 
 
@@ -578,11 +595,15 @@ def generate_for_project(
     from_sec, to_sec = from_ms // 1000, to_ms // 1000
 
     checks = query_checks_paginated(project_id, from_ms, to_ms)
-    incidents = incidents_table.query(
-        KeyConditionExpression="project_id = :pid AND start_time BETWEEN :from_sec AND :to_sec",
-        ExpressionAttributeValues={":pid": project_id, ":from_sec": from_sec, ":to_sec": to_sec},
-    ).get("Items", [])
+    incidents = query_incidents_paginated(project_id, from_sec, to_sec)
     logger.info(f"  {project_id}: {len(checks)} checks, {len(incidents)} incidents ({report_kind})")
+
+    if not checks and report_kind == "Weekly Report":
+        # A project with no checks in the window (created after it, or paused the
+        # whole week) has nothing to report — a "critical 0% uptime" email for a
+        # week that never happened would just be wrong.
+        logger.info(f"  {project_id}: no checks in window — skipping weekly report")
+        return None
 
     report = build_report(project, checks, incidents, report_id)
     # report holds native floats/ints (JSON-safe for S3/email); convert floats ->
@@ -606,12 +627,24 @@ def generate_for_project(
     return report
 
 
+def load_active_projects() -> list[dict]:
+    projects = []
+    scan_kwargs = {
+        "FilterExpression": "active = :active",
+        "ExpressionAttributeValues": {":active": True},
+    }
+    while True:
+        response = projects_table.scan(**scan_kwargs)
+        projects.extend(response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            return projects
+        scan_kwargs["ExclusiveStartKey"] = last_key
+
+
 def _run_scheduled() -> dict:
     """Weekly path: every active project, the last completed Mon–Mon week."""
-    projects = projects_table.scan(
-        FilterExpression="active = :active",
-        ExpressionAttributeValues={":active": True},
-    ).get("Items", [])
+    projects = load_active_projects()
 
     if not projects:
         logger.info("No active projects — exiting")
@@ -717,10 +750,7 @@ def _run_rebuild(project_id: str, report_id: str) -> dict:
 
     from_sec = int(window_start.timestamp())
     to_sec = int(window_end.timestamp())
-    incidents = incidents_table.query(
-        KeyConditionExpression="project_id = :pid AND start_time BETWEEN :from_sec AND :to_sec",
-        ExpressionAttributeValues={":pid": project_id, ":from_sec": from_sec, ":to_sec": to_sec},
-    ).get("Items", [])
+    incidents = query_incidents_paginated(project_id, from_sec, to_sec)
 
     report = decimals_to_native(row)
     upload_report_files(report, project, incidents, window_start, window_end, report_kind)

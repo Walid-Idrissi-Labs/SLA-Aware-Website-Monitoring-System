@@ -1,11 +1,16 @@
 import json
+import logging
 import os
+import re
 import uuid
 from decimal import Decimal
 from datetime import datetime, timezone
 
 import boto3
 from botocore.exceptions import ClientError
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
 
@@ -86,6 +91,66 @@ def get_project_or_403(project_id: str, user_id: str) -> dict | None:
 
 
 
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+# These values flow into every downstream Lambda (monitor loop arithmetic,
+# incident detection, HTML emails), so bad types here become cross-tenant
+# crashes there — reject them at the door.
+def validate_project_fields(body: dict) -> tuple[dict, str | None]:
+    clean = {}
+
+    if "name" in body:
+        name = body["name"]
+        if not isinstance(name, str) or not name.strip():
+            return {}, "name must be a non-empty string"
+        if len(name) > 200:
+            return {}, "name must be 200 characters or fewer"
+        clean["name"] = name.strip()
+
+    if "url" in body:
+        url = body["url"]
+        if not isinstance(url, str) or not re.match(r"^https?://[^\s]+$", url, re.IGNORECASE):
+            return {}, "url must start with http:// or https://"
+        if len(url) > 2048:
+            return {}, "url must be 2048 characters or fewer"
+        clean["url"] = url.strip()
+
+    if "failure_threshold" in body:
+        threshold = body["failure_threshold"]
+        if isinstance(threshold, bool) or not isinstance(threshold, int) or not 1 <= threshold <= 10:
+            return {}, "failure_threshold must be an integer between 1 and 10"
+        clean["failure_threshold"] = threshold
+
+    if "active" in body:
+        if not isinstance(body["active"], bool):
+            return {}, "active must be a boolean"
+        clean["active"] = body["active"]
+
+    if "notification_email" in body:
+        email = body["notification_email"]
+        if not isinstance(email, str) or not EMAIL_RE.match(email) or len(email) > 254:
+            return {}, "notification_email must be a valid email address"
+        clean["notification_email"] = email.strip()
+
+    if "thresholds" in body:
+        thresholds = body["thresholds"]
+        if not isinstance(thresholds, dict):
+            return {}, "thresholds must be an object"
+        min_uptime = thresholds.get("min_uptime_pct")
+        max_latency = thresholds.get("max_avg_latency_ms")
+        if isinstance(min_uptime, bool) or not isinstance(min_uptime, (int, float)) or not 0 <= min_uptime <= 100:
+            return {}, "thresholds.min_uptime_pct must be a number between 0 and 100"
+        if isinstance(max_latency, bool) or not isinstance(max_latency, (int, float)) or max_latency <= 0:
+            return {}, "thresholds.max_avg_latency_ms must be a positive number"
+        clean["thresholds"] = floats_to_decimal(
+            {"min_uptime_pct": min_uptime, "max_avg_latency_ms": max_latency}
+        )
+
+    return clean, None
+
+
+
+
 def handle_post_me(event: dict) -> dict:
     # First-login profile bootstrap. Idempotent: creates the full user record from
     # the JWT claims, and never clobbers an existing one.
@@ -127,14 +192,20 @@ def handle_put_me(event: dict) -> dict:
     expression_names = {}
 
     if "display_name" in body:
+        display_name = body["display_name"]
+        if not isinstance(display_name, str) or not display_name.strip() or len(display_name) > 100:
+            return error_response(400, "display_name must be a non-empty string of 100 characters or fewer")
         update_parts.append("#dn = :dn")
         expression_names["#dn"] = "display_name"
-        expression_values[":dn"] = body["display_name"]
+        expression_values[":dn"] = display_name.strip()
 
     if "notification_email" in body:
+        email = body["notification_email"]
+        if not isinstance(email, str) or not EMAIL_RE.match(email) or len(email) > 254:
+            return error_response(400, "notification_email must be a valid email address")
         update_parts.append("#ne = :ne")
         expression_names["#ne"] = "notification_email"
-        expression_values[":ne"] = body["notification_email"]
+        expression_values[":ne"] = email.strip()
 
     if not update_parts:
         return error_response(400, "No valid fields provided")
@@ -167,32 +238,29 @@ def handle_post_projects(event: dict) -> dict:
     user_email = get_user_email(event)
     body = json.loads(event.get("body") or "{}")
 
-
-    name = body.get("name")
-    url = body.get("url")
-
-    if not name or not url:
+    if not body.get("name") or not body.get("url"):
         return error_response(400, "name and url are required")
 
+    # Apply defaults, then validate everything through one gate.
+    body.setdefault("failure_threshold", 3)
+    body.setdefault("thresholds", {"min_uptime_pct": 99.9, "max_avg_latency_ms": 300})
+    if not body.get("notification_email"):
+        body["notification_email"] = user_email
 
-    failure_threshold = body.get("failure_threshold", 3)
-    notification_email = body.get("notification_email", user_email)
-    thresholds = floats_to_decimal(body.get(
-        "thresholds",
-        {"min_uptime_pct": 99.9, "max_avg_latency_ms": 300},
-    ))
-    now = datetime.now(timezone.utc).isoformat()
+    clean, validation_error = validate_project_fields(body)
+    if validation_error:
+        return error_response(400, validation_error)
+    if not clean.get("notification_email"):
+        # No email in the body and none on the JWT — the project would silently
+        # never receive alerts or reports.
+        return error_response(400, "notification_email is required")
 
     project = {
         "project_id": str(uuid.uuid4()),
         "user_id": user_id,
-        "name": name,
-        "url": url,
         "active": True,
-        "failure_threshold": failure_threshold,
-        "thresholds": thresholds,
-        "notification_email": notification_email,
-        "created_at": now,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        **clean,
     }
 
     projects_table.put_item(Item=project)
@@ -210,27 +278,23 @@ def handle_put_projects_id(event: dict) -> dict:
         return error_response(403, "Forbidden")
 
     body = json.loads(event.get("body") or "{}")
-    body = floats_to_decimal(body)
 
     if not body:
         return error_response(400, "No fields provided")
 
-    # Map allowed fields
-    allowed_fields = [
-        "name", "url", "active", "failure_threshold", "thresholds", "notification_email"
-    ]
+    clean, validation_error = validate_project_fields(body)
+    if validation_error:
+        return error_response(400, validation_error)
 
     update_parts = []
     expression_values = {}
     expression_names = {}
 
-    for field in allowed_fields:
-        if field in body:
-            attr_name = "#" + field
-            attr_value = body[field]
-            update_parts.append(f"{attr_name} = :{field}")
-            expression_names[attr_name] = field
-            expression_values[f":{field}"] = attr_value
+    for field, attr_value in clean.items():
+        attr_name = "#" + field
+        update_parts.append(f"{attr_name} = :{field}")
+        expression_names[attr_name] = field
+        expression_values[f":{field}"] = attr_value
 
     if not update_parts:
         return error_response(400, "No valid fields provided")
@@ -347,22 +411,20 @@ def lambda_handler(event: dict, context) -> dict:
             return handle_generate_report(event)
 
         if method == "PUT" and path_params.get("project_id"):
-            project_id = path_params["project_id"]
-            event["pathParameters"]["project_id"] = project_id
             return handle_put_projects_id(event)
 
         if method == "DELETE" and path_params.get("project_id"):
-            project_id = path_params["project_id"]
-            event["pathParameters"]["project_id"] = project_id
             return handle_delete_projects_id(event)
 
         return error_response(404, "Not found")
 
-    except ClientError as e:
-        return error_response(500, f"Database error: {e.response['Error']['Message']}")
-
     except json.JSONDecodeError:
         return error_response(400, "Invalid JSON in request body")
 
-    except Exception as e:
-        return error_response(500, f"Internal error: {str(e)}")
+    except ClientError as e:
+        logger.error(f"AWS error on {method} {path}: {e}")
+        return error_response(500, "Internal error")
+
+    except Exception:
+        logger.exception(f"Unhandled error on {method} {path}")
+        return error_response(500, "Internal error")

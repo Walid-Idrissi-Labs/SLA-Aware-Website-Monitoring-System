@@ -1,10 +1,14 @@
 import json
+import logging
 import os
 import time
 import decimal
 
 import boto3
 from botocore.exceptions import ClientError
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
 _dynamodb = None
@@ -122,12 +126,19 @@ def handle_get_projects(event: dict) -> dict:
     _, projects_table, checks_table, _, PROJECT_GSI_NAME = _get_tables()
 
 
-    response = projects_table.query(
-        IndexName=PROJECT_GSI_NAME,
-        KeyConditionExpression="user_id = :uid",
-        ExpressionAttributeValues={":uid": user_id},
-    )
-    projects = response.get("Items", [])
+    projects = []
+    query_kwargs = {
+        "IndexName": PROJECT_GSI_NAME,
+        "KeyConditionExpression": "user_id = :uid",
+        "ExpressionAttributeValues": {":uid": user_id},
+    }
+    while True:
+        response = projects_table.query(**query_kwargs)
+        projects.extend(response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_kwargs["ExclusiveStartKey"] = last_key
 
 
     enriched = []
@@ -174,24 +185,35 @@ def handle_get_projects_status(event: dict) -> dict:
 
 
     query_params = event.get("queryStringParameters") or {}
-    hours = int(query_params.get("hours", 24))
+    try:
+        hours = int(query_params.get("hours", 24))
+    except (TypeError, ValueError):
+        return error_response(400, "hours must be an integer")
     hours = min(max(hours, 1), 72)
 
     now_ms = int(time.time() * 1000)
     from_ms = now_ms - (hours * 3600 * 1000)
 
 
-    response = checks_table.query(
-        KeyConditionExpression="project_id = :pid AND #ts BETWEEN :from_ts AND :now_ts",
-        ExpressionAttributeNames={"#ts": "timestamp"},
-        ExpressionAttributeValues={
+    checks = []
+    query_kwargs = {
+        "KeyConditionExpression": "project_id = :pid AND #ts BETWEEN :from_ts AND :now_ts",
+        "ExpressionAttributeNames": {"#ts": "timestamp"},
+        "ExpressionAttributeValues": {
             ":pid": project_id,
             ":from_ts": from_ms,
             ":now_ts": now_ms,
         },
-        ScanIndexForward=True,
-    )
-    checks = response.get("Items", [])
+        "ScanIndexForward": True,
+    }
+    # A 72h window is ~4,300 items — enough to cross the 1MB page limit.
+    while True:
+        response = checks_table.query(**query_kwargs)
+        checks.extend(response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_kwargs["ExclusiveStartKey"] = last_key
 
     current_status = checks[-1]["status"] if checks else "unknown"
 
@@ -224,11 +246,18 @@ def handle_get_projects_reports(event: dict) -> dict:
     if not project:
         return error_response(403, "Forbidden")
 
-    response = reports_table.query(
-        KeyConditionExpression="project_id = :pid",
-        ExpressionAttributeValues={":pid": project_id},
-    )
-    reports = response.get("Items", [])
+    reports = []
+    query_kwargs = {
+        "KeyConditionExpression": "project_id = :pid",
+        "ExpressionAttributeValues": {":pid": project_id},
+    }
+    while True:
+        response = reports_table.query(**query_kwargs)
+        reports.extend(response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_kwargs["ExclusiveStartKey"] = last_key
 
     return success(200, reports)
 
@@ -261,11 +290,21 @@ def handle_report_download(event: dict) -> dict:
             s3_client.head_object(Bucket=REPORTS_BUCKET_NAME, Key=key)
             return True
         except ClientError as e:
-            if e.response["Error"]["Code"] in ("404", "NoSuchKey", "NotFound"):
+            # "403": without s3:ListBucket, S3 reports a missing key as
+            # AccessDenied rather than 404 — treat it as absent either way.
+            if e.response["Error"]["Code"] in ("403", "404", "NoSuchKey", "NotFound", "AccessDenied"):
                 return False
             raise
 
     if not _exists():
+        # Only ask for a rebuild when the report row actually exists — otherwise
+        # a bogus report_id would trigger a pointless synchronous Lambda invoke.
+        _, _, _, reports_table, _ = _get_tables()
+        row = reports_table.get_item(
+            Key={"project_id": project_id, "report_id": report_id}
+        ).get("Item")
+        if not row:
+            return error_response(404, "Report not found")
         _rebuild_report_artifact(project_id, report_id)
         if not _exists():
             return error_response(404, "Report file not found")
@@ -284,18 +323,14 @@ def handle_report_download(event: dict) -> dict:
 
 
 def lambda_handler(event: dict, context) -> dict:
-    try:
-        #payload_format_version = "2.0" #(HTTP API)
-        method = event["requestContext"]["http"]["method"]
-        path = event["requestContext"]["http"]["path"]
-        #payload_format_version = "1.0" #(REST API)
-        # method = event.get("httpMethod", "")
-        # path = event.get("path", "")
-        path_params = event.get("pathParameters") or {}
+    method = event["requestContext"]["http"]["method"]
+    path = event["requestContext"]["http"]["path"]
+    path_params = event.get("pathParameters") or {}
 
-        if method == "GET" and path == "/health":  
+    try:
+        if method == "GET" and path == "/health":
             return handle_get_health()
-        
+
         if method == "GET" and path == "/me":
             return handle_get_me(event)
 
@@ -310,21 +345,20 @@ def lambda_handler(event: dict, context) -> dict:
             project_id = path_params["project_id"]
 
             if path == f"/projects/{project_id}":
-                event["pathParameters"]["project_id"] = project_id
                 return handle_get_project(event)
 
             if path == f"/projects/{project_id}/status":
-                event["pathParameters"]["project_id"] = project_id
                 return handle_get_projects_status(event)
 
             if path == f"/projects/{project_id}/reports":
-                event["pathParameters"]["project_id"] = project_id
                 return handle_get_projects_reports(event)
 
         return error_response(404, "Not found")
 
     except ClientError as e:
-        return error_response(500, f"Database error: {e.response['Error']['Message']}")
+        logger.error(f"AWS error on {method} {path}: {e}")
+        return error_response(500, "Internal error")
 
-    except Exception as e:
-        return error_response(500, f"Internal error: {str(e)}")
+    except Exception:
+        logger.exception(f"Unhandled error on {method} {path}")
+        return error_response(500, "Internal error")
