@@ -286,7 +286,7 @@ const SpecularButton = ({
       }
     >
       <span ref={fxRef} aria-hidden="true" className="pointer-events-none absolute -inset-5 z-[1] [&_canvas]:block [&_canvas]:h-full [&_canvas]:w-full" />
-      <span className="relative z-[2]">{children}</span>
+      <span className="relative z-[2] font-mono uppercase tracking-wider">{children}</span>
     </button>
   );
 };

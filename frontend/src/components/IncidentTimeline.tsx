@@ -28,7 +28,7 @@ export default function IncidentTimeline({ incidents }: { incidents: Incident[] 
                   <th
                     key={h}
                     className={`px-4 py-2.5 font-mono text-[9px] font-bold uppercase tracking-wider text-txt-dim ${
-                      i === 0 ? 'text-left' : i === 3 ? 'text-right' : 'text-left'
+                      i === 1 || i === 3 ? 'text-right' : 'text-left'
                     }`}
                   >
                     {h}
@@ -47,7 +47,7 @@ export default function IncidentTimeline({ incidents }: { incidents: Incident[] 
                     <td className="px-4 py-3 text-left font-mono text-[12px] font-semibold text-txt-hi">
                       {fmtUtcTime(inc.start_time * 1000)}
                     </td>
-                    <td className="px-4 py-3 text-left data text-[12px] text-txt-mid">
+                    <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">
                       {inc.resolved && inc.duration_seconds != null ? (
                         formatDowntime(inc.duration_seconds)
                       ) : (

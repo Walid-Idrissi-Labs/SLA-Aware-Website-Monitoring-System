@@ -439,7 +439,7 @@ export default function ProjectDetail() {
       <div className="mt-4 flex flex-wrap items-start justify-between gap-4 border-b border-white/[0.06] pb-5 animate-fade-up" style={{ animationDelay: '60ms' }}>
         <div className="min-w-0">
           <div className="flex items-center gap-3">
-            <h1 className="font-display text-[24px] font-bold tracking-tight text-txt-hi">{project?.name || 'Loading…'}</h1>
+            <h1 className="text-sheen font-display text-[26px] font-bold tracking-tight">{project?.name || 'Loading…'}</h1>
             {project && (
               <span
                 className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider ${
