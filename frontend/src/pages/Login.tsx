@@ -140,10 +140,12 @@ export default function Login() {
           type="submit"
           size="md"
           radius={10}
-          lineColor="#fa5c29"
+          tint="#fa5c29"
+          tintOpacity={1}
+          lineColor="#ffffff"
           baseColor="#fa5c29"
-          textColor="#ffffff"
-          className="w-full transition-colors duration-150 hover:text-accent"
+          textColor="#d8dbde"
+          className="w-full transition-colors duration-150 hover:bg-[#e04d1f] hover:text-white"
           disabled={loading}
         >
           {loading ? 'Signing in…' : 'Sign in'}
