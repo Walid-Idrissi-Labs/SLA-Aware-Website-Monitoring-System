@@ -46,6 +46,9 @@ __pycache__/
 *.pyc
 
 node_modules/
+dist/
+.env.local
+.env.*.local
 
 test-implementations/
 CLAUDE.md
