@@ -22,14 +22,79 @@ body {
   font-family: 'Inter', system-ui, sans-serif;
   color: #eceef0;
   background-color: #060708;
-  /* layered atmosphere: warm halo from the top + a whisper-fine engineering grid */
+  /* whisper-fine engineering grid; the warm/mint halos live in <BackgroundFX/> so they can move */
   background-image:
-    radial-gradient(ellipse 90% 55% at 50% -12%, rgba(250, 92, 41, 0.12), transparent 62%),
-    radial-gradient(ellipse 60% 45% at 100% 0%, rgba(52, 211, 153, 0.05), transparent 60%),
     linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
+  background-size: 44px 44px, 44px 44px;
   background-attachment: fixed;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Ambient moving background — large blurred colour blobs that slowly drift on
+   their own and gently lean toward the pointer (parallax by depth). Rendered
+   once behind everything by <BackgroundFX/>; the frosted panels blur it live.
+   ───────────────────────────────────────────────────────────────────────────── */
+.bg-fx {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  /* eased pointer offset in the range -1..1, written by BackgroundFX via rAF */
+}
+.bg-fx__track {
+  position: absolute;
+  inset: 0;
+  transform: translate3d(
+    calc(var(--mx, 0) * var(--depth, 0px)),
+    calc(var(--my, 0) * var(--depth, 0px)),
+    0
+  );
+  will-change: transform;
+}
+.bg-fx__blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  will-change: transform;
+}
+.bg-fx__blob--accent {
+  top: -24%;
+  left: 26%;
+  width: 46vw;
+  height: 46vw;
+  background: radial-gradient(circle, rgba(250, 92, 41, 0.22), transparent 66%);
+  animation: fx-drift-a 26s ease-in-out infinite alternate;
+}
+.bg-fx__blob--mint {
+  top: -16%;
+  right: -8%;
+  width: 40vw;
+  height: 40vw;
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.11), transparent 65%);
+  animation: fx-drift-b 34s ease-in-out infinite alternate;
+}
+.bg-fx__blob--ember {
+  bottom: -32%;
+  left: -10%;
+  width: 52vw;
+  height: 52vw;
+  background: radial-gradient(circle, rgba(250, 92, 41, 0.09), transparent 68%);
+  animation: fx-drift-c 45s ease-in-out infinite alternate;
+}
+
+@keyframes fx-drift-a {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(6vw, 5vh, 0) scale(1.12); }
+}
+@keyframes fx-drift-b {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(-7vw, 6vh, 0) scale(1.08); }
+}
+@keyframes fx-drift-c {
+  from { transform: translate3d(0, 0, 0) scale(1.05); }
+  to   { transform: translate3d(5vw, -6vh, 0) scale(0.94); }
 }
 
 ::selection {
