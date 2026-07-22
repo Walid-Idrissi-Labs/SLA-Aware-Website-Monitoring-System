@@ -13,35 +13,36 @@ import {
   CircleAlert,
   Download,
   Sheet,
+  Timer,
+  Activity,
+  Hourglass,
+  Gauge,
+  Radio,
 } from 'lucide-react'
 import Shell from '../components/Shell'
 import SpecularButton from '../components/SpecularButton'
 import TickerStat from '../components/TickerStat'
+import StatCard from '../components/StatCard'
 import LatencyChart from '../components/LatencyChart'
 import UptimeGauge from '../components/UptimeGauge'
 import StatusStrip from '../components/StatusStrip'
+import IncidentTimeline from '../components/IncidentTimeline'
 import {
   getProject,
   getProjectStatus,
   getProjectReports,
+  getProjectIncidents,
   updateProject,
   deleteProject,
   generateReport,
   getReportDownloadUrl,
 } from '../lib/api'
 import { Alert, Spinner } from '../components/ui'
-import type { ProjectStatus, ProjectReport, Project, UpdateProjectInput } from '../types'
-import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, bareUrl, fmtUtcTime } from '../lib/format'
+import type { ProjectStatus, ProjectReport, Project, UpdateProjectInput, Incident, ReliabilityMetrics } from '../types'
+import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, bareUrl, fmtUtcTime, formatDowntime } from '../lib/format'
 
-function formatDowntime(sec: number): string {
-  if (!sec) return '0s'
-  if (sec < 60) return `${sec}s`
-  const m = Math.floor(sec / 60)
-  const s = sec % 60
-  if (m < 60) return `${m}m ${s}s`
-  const h = Math.floor(m / 60)
-  return `${h}h ${m % 60}m`
-}
+/** Incident/reliability window is fixed (independent of the latency chart toggle). */
+const INCIDENT_WINDOW_DAYS = 30
 
 // ─── Edit Modal ─────────────────────────────────────────────────────────────
 interface EditModalProps {
@@ -227,6 +228,8 @@ export default function ProjectDetail() {
   const [project, setProject] = useState<Project | null>(null)
   const [status, setStatus] = useState<ProjectStatus | null>(null)
   const [reports, setReports] = useState<ProjectReport[]>([])
+  const [incidents, setIncidents] = useState<Incident[]>([])
+  const [reliability, setReliability] = useState<ReliabilityMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -252,15 +255,18 @@ export default function ProjectDetail() {
       if (options?.silent) setRefreshing(true)
       else setLoading(true)
       try {
-        const [projectData, statusData, reportsData] = await Promise.all([
+        const [projectData, statusData, reportsData, incidentsData] = await Promise.all([
           getProject(id),
           getProjectStatus(id, hours),
           getProjectReports(id),
+          getProjectIncidents(id, INCIDENT_WINDOW_DAYS),
         ])
         if (seq !== requestSeq.current) return
         setProject(projectData)
         setStatus(statusData)
         setReports(reportsData)
+        setIncidents(incidentsData.incidents)
+        setReliability(incidentsData.metrics)
         setLoadError(null)
       } catch (e) {
         if (seq !== requestSeq.current) return
@@ -534,6 +540,20 @@ export default function ProjectDetail() {
             <Metric label="HTTP Code" value={latestCheck ? latestCheck.http_status_code || 'ERR' : '—'} />
             <Metric label="Checks · window" value={checks.length} />
             <Metric label="Last Check" value={latestCheck ? fmtUtcTime(latestCheck.timestamp) : '—'} />
+            <Metric
+              label="Cert Expires"
+              value={project?.cert_expiry_days != null ? `${project.cert_expiry_days}d` : '—'}
+              color={
+                project?.cert_expiry_days == null
+                  ? undefined
+                  : project.cert_expiry_days < 7
+                    ? STATUS.crit
+                    : project.cert_expiry_days < 30
+                      ? STATUS.warn
+                      : undefined
+              }
+            />
+            <Metric label="Cert Issuer" value={project?.cert_issuer || '—'} />
           </div>
 
           <div className="mt-4">
@@ -543,6 +563,83 @@ export default function ProjectDetail() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Reliability */}
+      <div className="mt-8 flex items-center gap-3 animate-fade-up" style={{ animationDelay: '250ms' }}>
+        <h2 className="font-mono text-[12px] font-bold uppercase tracking-micro text-txt-hi">Reliability</h2>
+        <span className="rounded-md border border-white/[0.08] bg-white/[0.02] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-txt-mid">
+          {INCIDENT_WINDOW_DAYS}d
+        </span>
+        <span className="hr-accent flex-1" />
+      </div>
+
+      {reliability?.open_incident && (
+        <div className="mt-3 flex items-center gap-2.5 rounded-lg border border-crit/25 bg-crit/[0.05] px-4 py-3 animate-fade-up">
+          <Radio className="h-4 w-4 animate-pulse text-crit" strokeWidth={2} />
+          <span className="font-mono text-[12px] font-semibold text-crit">
+            Incident in progress — this endpoint is currently failing checks.
+          </span>
+        </div>
+      )}
+
+      <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard
+          label="MTTR"
+          value={reliability ? reliability.mttr_sec / 60 : null}
+          decimals={1}
+          unit="min"
+          icon={<Timer className="h-4 w-4" strokeWidth={1.75} />}
+          sub={<span>mean time to recovery</span>}
+          index={0}
+        />
+        <StatCard
+          label="MTBF"
+          value={reliability && reliability.mtbf_sec != null ? reliability.mtbf_sec / 3600 : null}
+          decimals={1}
+          unit="h"
+          icon={<Activity className="h-4 w-4" strokeWidth={1.75} />}
+          sub={<span>mean time between failures</span>}
+          index={1}
+        />
+        <StatCard
+          label="Longest Outage"
+          value={reliability ? reliability.longest_outage_sec / 60 : null}
+          decimals={1}
+          unit="min"
+          icon={<Hourglass className="h-4 w-4" strokeWidth={1.75} />}
+          sub={
+            <span>
+              {reliability
+                ? `${reliability.incident_count} incident${reliability.incident_count === 1 ? '' : 's'} · ${INCIDENT_WINDOW_DAYS}d`
+                : '—'}
+            </span>
+          }
+          index={2}
+        />
+        <StatCard
+          label="Error Budget"
+          value={reliability ? reliability.error_budget.burn_pct : null}
+          decimals={1}
+          unit="%"
+          icon={<Gauge className="h-4 w-4" strokeWidth={1.75} />}
+          accent={reliability ? (reliability.error_budget.ok ? STATUS.ok : STATUS.crit) : STATUS.accent}
+          sub={
+            <span>
+              {reliability
+                ? reliability.error_budget.ok
+                  ? `${formatDowntime(reliability.error_budget.remaining_sec)} left`
+                  : `${formatDowntime(Math.abs(reliability.error_budget.remaining_sec))} over`
+                : 'burned this window'}
+            </span>
+          }
+          index={3}
+        />
+      </div>
+
+      {/* Incident log */}
+      <div className="mt-3">
+        <IncidentTimeline incidents={incidents} />
       </div>
 
       {/* Reports */}

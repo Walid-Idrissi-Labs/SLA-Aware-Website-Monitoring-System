@@ -5,6 +5,7 @@ import TickerStat from '../components/TickerStat'
 import StatCard from '../components/StatCard'
 import ProjectCard from '../components/ProjectCard'
 import AddProjectModal from '../components/AddProjectModal'
+import SpecularButton from '../components/SpecularButton'
 import { Alert } from '../components/ui'
 import { getProjects, getProjectStatus } from '../lib/api'
 import { POLL_INTERVAL_MS, STATUS } from '../lib/format'
@@ -103,10 +104,22 @@ export default function Dashboard() {
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin-slow' : ''}`} strokeWidth={1.75} />
             {loading ? 'Refreshing' : 'Refresh'}
           </button>
-          <button onClick={() => setShowAddModal(true)} className="btn-accent">
-            <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
-            New endpoint
-          </button>
+          <SpecularButton
+            size="sm"
+            radius={8}
+            tint="#fa5c29"
+            tintOpacity={1}
+            lineColor="#ffffff"
+            baseColor="#fa5c29"
+            textColor="#ffffff"
+            className="transition-colors duration-150 hover:bg-[#e04d1f] hover:text-white"
+            onClick={() => setShowAddModal(true)}
+          >
+            <span className="flex items-center gap-2">
+              <Plus className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.75} />
+              Add New Endpoint to Monitor
+            </span>
+          </SpecularButton>
         </div>
       </div>
 
@@ -197,10 +210,22 @@ export default function Dashboard() {
               <p className="font-display text-[15px] font-semibold text-txt-hi">No endpoints yet</p>
               <p className="mt-1 text-[12px] text-txt-lo">Add a website to start checking it every minute.</p>
             </div>
-            <button onClick={() => setShowAddModal(true)} className="btn-accent">
-              <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
-              Add endpoint
-            </button>
+            <SpecularButton
+              size="md"
+              radius={10}
+              tint="#fa5c29"
+              tintOpacity={1}
+              lineColor="#ffffff"
+              baseColor="#fa5c29"
+              textColor="#ffffff"
+              className="transition-colors duration-150 hover:bg-[#e04d1f] hover:text-white"
+              onClick={() => setShowAddModal(true)}
+            >
+              <span className="flex items-center gap-2">
+                <Plus className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.75} />
+                Add New Endpoint to Monitor
+              </span>
+            </SpecularButton>
           </div>
         )}
 

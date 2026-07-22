@@ -64,3 +64,25 @@ export function bareUrl(url: string): string {
 export function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v))
 }
+
+/** Seconds → compact "1h 2m" / "3m 4s" / "5s". Shared by the reports table and
+ *  the incident timeline. Negative inputs are clamped to 0. */
+export function formatDowntime(sec: number): string {
+  const total = Math.max(0, Math.round(sec))
+  if (!total) return '0s'
+  if (total < 60) return `${total}s`
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  if (m < 60) return `${m}m ${s}s`
+  const h = Math.floor(m / 60)
+  return `${h}h ${m % 60}m`
+}
+
+/** Failure-cause → display metadata. Colors reuse the status/severity hues. */
+export const ERROR_TYPE = {
+  timeout: { label: 'TIMEOUT', color: STATUS.warn },
+  dns: { label: 'DNS', color: STATUS.accent },
+  conn: { label: 'CONN', color: STATUS.crit },
+  tls: { label: 'TLS', color: SEVERITY.major.color },
+  http: { label: 'HTTP', color: STATUS.warn },
+} as const

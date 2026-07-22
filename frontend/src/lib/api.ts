@@ -4,6 +4,7 @@ import type {
   Project,
   ProjectStatus,
   ProjectReport,
+  IncidentsResponse,
   CreateProjectInput,
   UpdateProjectInput,
 } from '../types';
@@ -107,6 +108,10 @@ export function getProjectStatus(projectId: string, hours = 24): Promise<Project
 
 export function getProjectReports(projectId: string): Promise<ProjectReport[]> {
   return request<ProjectReport[]>('GET', `/projects/${projectId}/reports`);
+}
+
+export function getProjectIncidents(projectId: string, days = 30): Promise<IncidentsResponse> {
+  return request<IncidentsResponse>('GET', `/projects/${projectId}/incidents?days=${days}`);
 }
 
 export function generateReport(
