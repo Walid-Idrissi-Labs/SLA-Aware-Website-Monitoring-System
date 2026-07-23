@@ -23,12 +23,12 @@ export default function AuthLayout({ kicker, title, subtitle, children, footer }
 
       <div className="relative w-full max-w-sm animate-fade-up">
         {/* Brand */}
-        <div className="flex flex-col items-center">
-          <span className="relative" style={{ filter: 'drop-shadow(0 0 22px rgba(250,92,41,0.45))' }}>
-            <Logo size={44} className="block" />
-            <span className="absolute -inset-2 rounded-2xl border border-accent/20" />
+        <div className="flex items-center justify-center gap-3">
+          <span className="block" style={{ filter: 'drop-shadow(0 0 22px rgba(250,92,41,0.45))' }}>
+            <Logo size={56} className="block" />
           </span>
-          <h1 className="mt-5 font-display text-[19px] font-bold tracking-tight text-txt-hi">
+          <div className="h-9 w-px bg-white/10" aria-hidden="true" />
+          <h1 className="font-display text-[20px] font-bold tracking-tight text-txt-hi">
             SLA<span className="text-accent">://</span>MONITOR
           </h1>
         </div>
