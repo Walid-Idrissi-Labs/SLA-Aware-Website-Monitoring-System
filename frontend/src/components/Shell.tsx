@@ -16,7 +16,7 @@ export default function Shell({ ticker, children }: Props) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Command bar */}
-        <header className="sticky top-0 z-30 flex h-12 items-center gap-4 border-b border-white/[0.06] bg-ink-900/70 px-4 backdrop-blur-xl">
+        <header className="sticky top-0 z-30 flex h-12 items-center gap-4 glass border-b border-white/[0.07] px-4">
           <span className="shrink-0 font-display text-[13px] font-bold tracking-tight text-txt-hi">
             SLA<span className="text-accent">://</span>MONITOR
           </span>

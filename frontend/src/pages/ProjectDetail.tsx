@@ -86,7 +86,7 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-md animate-fade-in"
       onClick={(e) => e.target === e.currentTarget && !saving && onClose()}
     >
       <div role="dialog" aria-modal="true" aria-label="Edit endpoint" className="panel frame-corners w-full max-w-lg animate-scale-in overflow-hidden">
@@ -182,7 +182,7 @@ function DeleteModal({ projectName, onClose, onConfirm, deleting, error }: Delet
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-md animate-fade-in"
       onClick={(e) => e.target === e.currentTarget && !deleting && onClose()}
     >
       <div role="dialog" aria-modal="true" aria-label="Confirm delete" className="panel w-full max-w-sm animate-scale-in overflow-hidden border-crit/25">

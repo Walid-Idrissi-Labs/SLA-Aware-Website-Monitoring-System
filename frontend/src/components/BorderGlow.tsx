@@ -85,8 +85,8 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
   className = '',
   edgeSensitivity = 30,
   glowColor = '40 80 80',
-  // HUD-tuned defaults: translucent frosted surface, soft radius, quiet shadow.
-  backgroundColor = 'rgba(14,17,21,0.72)',
+  // Surface comes from the shared `.glass` system unless a caller overrides it.
+  backgroundColor,
   // Opaque cover for the border mask's interior. Kept separate from the
   // translucent surface so the mesh only paints the 1px rim, never the middle.
   coverColor = '#0e1115',
@@ -181,12 +181,11 @@ const BorderGlow: React.FC<BorderGlowProps> = ({
       onPointerMove={handlePointerMove}
       onPointerEnter={() => setIsHovered(true)}
       onPointerLeave={() => setIsHovered(false)}
-      className={`relative grid isolate border border-white/[0.07] backdrop-blur-xl ${className}`}
+      className={`glass glass-bordered grid isolate ${className}`}
       style={{
-        background: backgroundColor,
+        ...(backgroundColor ? { background: backgroundColor } : null),
         borderRadius: `${borderRadius}px`,
         transform: 'translate3d(0, 0, 0.01px)',
-        boxShadow: '0 1px 0 rgba(255,255,255,0.04) inset, 0 18px 40px -30px rgba(0,0,0,0.9)',
       }}
     >
       {/* mesh gradient border */}

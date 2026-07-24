@@ -57,7 +57,7 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-md animate-fade-in"
       onClick={(e) => e.target === e.currentTarget && !loading && onClose()}
     >
       <div role="dialog" aria-modal="true" aria-label="Add endpoint" className="panel frame-corners w-full max-w-lg animate-scale-in overflow-hidden">

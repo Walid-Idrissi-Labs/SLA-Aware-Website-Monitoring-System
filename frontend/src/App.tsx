@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { isAuthenticated } from './lib/auth'
 import BackgroundFX from './components/BackgroundFX'
+import LiquidGlass from './components/LiquidGlass'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import ConfirmSignup from './pages/ConfirmSignup'
@@ -20,6 +21,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <BrowserRouter>
+      <LiquidGlass />
       <BackgroundFX />
       <Routes>
         <Route path="/login" element={<Login />} />

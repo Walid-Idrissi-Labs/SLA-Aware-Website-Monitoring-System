@@ -16,6 +16,29 @@ html {
   color-scheme: dark;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   Liquid glass — two dials, every surface
+
+   --glass-level      transparency: 0 = clear (thin, see-through), 1 = frosted.
+                      Apple's look lives low; blur past ~0.5 washes out the
+                      refraction that makes it glass rather than frosting.
+   --glass-distortion refraction strength, read by <LiquidGlass/> when it builds
+                      the per-element SVG filters. Negative bulges outward.
+
+   Override either on :root for the whole app, or --glass-level on a single
+   element for a local variant. From JS: lib/glass.ts, or in the dev console
+   `setGlass(0.15)` / `setGlassDistortion(-240)`.
+   ───────────────────────────────────────────────────────────────────────────── */
+:root {
+  --glass-level: 0.22;
+  --glass-distortion: -180;
+  /* Strength of the white specular edge — the rim glow and the hairline
+     border. 1 = the reference component's full brightness. */
+  --glass-edge: 0.4;
+  /* Surface tint (ink-800), as an unquoted rgb triple so alpha can vary. */
+  --glass-tint: 14 17 21;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -37,16 +60,8 @@ body {
   pointer-events: none;
   /* eased pointer offset in the range -1..1, written by BackgroundFX via rAF */
 }
-/* Engineering grid — moved off <body> into the FX layer so the frost pane
-   above it can blur the lines together with the moving halos. */
-.bg-fx__grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
-  background-size: 44px 44px, 44px 44px;
-}
+/* The engineering grid itself is the <GridPattern/> SVG rendered by
+   BackgroundFX — skew, mask and colour all live on that element. */
 .bg-fx__track {
   position: absolute;
   inset: 0;
@@ -88,17 +103,6 @@ body {
   animation: fx-drift-c 45s ease-in-out infinite alternate;
 }
 
-/* Frosted-glass pane — the top-most FX layer. Its backdrop-filter blurs the
-   grid lines into a soft, diffuse wash while a low-alpha tint keeps the glass
-   translucent, so the grid and the pointer-lit colour still read through it. */
-.bg-fx__frost {
-  position: absolute;
-  inset: 0;
-  background: rgba(9, 11, 14, 0.1);
-  backdrop-filter: blur(7px) saturate(1.12);
-  -webkit-backdrop-filter: blur(7px) saturate(1.12);
-}
-
 @keyframes fx-drift-a {
   from { transform: translate3d(0, 0, 0) scale(1); }
   to   { transform: translate3d(6vw, 5vh, 0) scale(1.12); }
@@ -121,17 +125,78 @@ body {
    Component utilities
    ───────────────────────────────────────────────────────────────────────────── */
 @layer components {
-  /* Frosted instrument panel */
-  .panel {
-    @apply relative rounded-lg border border-white/[0.07] bg-ink-800/70 backdrop-blur-xl;
+  /* ── Liquid glass surface ──────────────────────────────────────────────────
+     The refraction is not here — <LiquidGlass/> generates one SVG filter per
+     element and sets backdrop-filter inline, because the displacement map has
+     to match each element's exact size and corner radius. What lives here is
+     everything that dial-scales in CSS: the tint, the fallback blur, and the
+     specular. Keep the blur low — heavy blur washes the rim refraction out,
+     and that refraction is the whole effect. */
+  .glass,
+  .panel,
+  .panel-flush {
+    --glass-blur: calc(1px + var(--glass-level) * 15px);
+    --glass-fill: calc(0.02 + var(--glass-level) * 0.55);
+    --glass-sat: calc(1.15 + var(--glass-level) * 0.75);
+    --glass-rim: calc(0.13 + var(--glass-level) * 0.1);
+
+    position: relative;
+    background-color: rgb(var(--glass-tint) / var(--glass-fill));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    /* Two tight inner glows read as the lit thickness of the pane; the outer
+       stack is the soft, layered drop shadow Apple's panels sit on. Both glows
+       scale off --glass-edge, so the rim can be dialled without touching the
+       tint or the shadow. */
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.045),
-      0 24px 48px -30px rgba(0, 0, 0, 0.9);
+      inset 0 0 2px 1px rgb(255 255 255 / calc(var(--glass-rim) * var(--glass-edge) * 2.4)),
+      inset 0 0 10px 4px rgb(255 255 255 / calc(var(--glass-rim) * var(--glass-edge) * 0.9)),
+      0 4px 16px rgb(0 0 0 / 0.22),
+      0 8px 24px rgb(0 0 0 / 0.18),
+      0 16px 56px rgb(0 0 0 / 0.16);
+  }
+
+  /* Hairline border for panes that need a defined edge — also dial-scaled, so
+     it fades with the rim glow instead of staying a hard white line. */
+  .glass-bordered,
+  .panel,
+  .panel-flush {
+    border: 1px solid rgb(255 255 255 / calc(var(--glass-edge) * 0.11));
+  }
+
+  /* Thin glass for controls — same dial, shallower blur and a firmer fill so
+     small elements stay legible. Deliberately outside the refraction selector:
+     displacing something button-sized just reads as a smudge. Declared before
+     the controls that use it, so their own --glass-tint / --glass-fill
+     overrides win the cascade. */
+  .glass-thin,
+  .field,
+  .btn-ghost,
+  .btn-danger {
+    --glass-blur: calc(2px + var(--glass-level) * 10px);
+    --glass-fill: calc(0.1 + var(--glass-level) * 0.5);
+    --glass-sat: calc(1.05 + var(--glass-level) * 0.6);
+    --glass-rim: calc(0.07 + var(--glass-level) * 0.1);
+
+    background-color: rgb(var(--glass-tint) / var(--glass-fill));
+    background-image: linear-gradient(
+      180deg,
+      rgb(255 255 255 / calc(var(--glass-rim) * 0.35)),
+      rgb(255 255 255 / 0) 55%
+    );
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / calc(var(--glass-rim) * var(--glass-edge) * 1.2)),
+      inset 0 -1px 0 rgb(0 0 0 / 0.28);
+  }
+
+  .panel {
+    @apply rounded-lg;
   }
 
   .panel-flush {
-    @apply relative rounded-lg border border-white/[0.07] bg-ink-850/80 backdrop-blur-xl overflow-hidden;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    @apply rounded-lg overflow-hidden;
   }
 
   /* Section header strip inside panels — accent lives in the gradient underline */
@@ -226,18 +291,30 @@ body {
   .btn-ghost {
     @apply inline-flex items-center justify-center gap-2 rounded-md px-3 h-8
            font-mono text-[11px] font-bold uppercase tracking-wider
-           text-txt-mid border border-white/[0.08] bg-white/[0.015]
+           text-txt-mid border border-white/[0.08]
            transition-all duration-150
-           hover:text-accent hover:border-accent/40 hover:bg-accent/[0.06]
+           hover:text-accent hover:border-accent/40
            active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
+    /* lighter than the panel behind it, so it lifts off the surface */
+    --glass-tint: 90 100 112;
+    --glass-fill: calc(0.04 + var(--glass-level) * 0.06);
+  }
+  .btn-ghost:hover {
+    --glass-tint: 250 92 41;
+    --glass-fill: calc(0.06 + var(--glass-level) * 0.08);
   }
 
   .btn-danger {
     @apply inline-flex items-center justify-center gap-2 rounded-md px-3 h-8
            font-mono text-[11px] font-bold uppercase tracking-wider
-           text-crit border border-crit/25 bg-crit/[0.06]
-           transition-all duration-150 hover:bg-crit/[0.12]
+           text-crit border border-crit/25
+           transition-all duration-150
            active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
+    --glass-tint: 248 113 113;
+    --glass-fill: calc(0.06 + var(--glass-level) * 0.08);
+  }
+  .btn-danger:hover {
+    --glass-fill: calc(0.12 + var(--glass-level) * 0.1);
   }
 
   /* Full-width primary CTA for the auth pages (taller than .btn-accent) */
@@ -250,11 +327,16 @@ body {
 
   /* Form field */
   .field {
-    @apply w-full rounded-md bg-ink-950/80 border border-white/[0.08] text-txt-hi
+    @apply w-full rounded-md border border-white/[0.08] text-txt-hi
            px-3 h-10 text-[13px] font-mono placeholder:text-txt-dim
            transition-all duration-150
-           focus:outline-none focus:border-accent/70 focus:bg-ink-950
+           focus:outline-none focus:border-accent/70
            focus:ring-2 focus:ring-accent/20;
+    /* darker tint than the panels it sits on, so inputs read as recessed */
+    --glass-tint: 6 7 8;
+  }
+  .field:focus {
+    --glass-fill: calc(0.35 + var(--glass-level) * 0.45);
   }
 
   .field-label {

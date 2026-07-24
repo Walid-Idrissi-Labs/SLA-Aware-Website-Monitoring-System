@@ -57,7 +57,7 @@ export default function TopNav() {
   const dashActive = pathname === '/dashboard' || pathname.startsWith('/projects')
 
   return (
-    <aside className="sticky top-0 z-40 flex h-screen w-16 shrink-0 select-none flex-col items-center border-r border-white/[0.06] bg-ink-900/70 backdrop-blur-xl">
+    <aside className="sticky top-0 z-40 flex h-screen w-16 shrink-0 select-none flex-col items-center glass border-r border-white/[0.07]">
       {/* Brand */}
       <Link to="/dashboard" className="group flex h-16 w-full items-center justify-center">
         <span
