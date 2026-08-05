@@ -1,6 +1,10 @@
 resource "aws_s3_bucket" "reports" {
   bucket = "${var.name_prefix}-reports-${var.account_suffix}"
 
+  # Regenerated content (report JSON/HTML) - shouldn't block `terraform destroy`
+  # on the demo teardown/redeploy cycle.
+  force_destroy = true
+
   tags = {
     Name = "${var.name_prefix}-reports-${var.account_suffix}"
   }
@@ -72,6 +76,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "reports" {
 
 resource "aws_s3_bucket" "artifacts" {
   bucket = "${var.name_prefix}-lambda-artifacts-${var.account_suffix}"
+
+  # Regenerated content (Lambda deployment packages) - shouldn't block
+  # `terraform destroy` on the demo teardown/redeploy cycle.
+  force_destroy = true
 
   tags = {
     Name = "${var.name_prefix}-lambda-artifacts-${var.account_suffix}"
