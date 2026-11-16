@@ -1,0 +1,22 @@
+# Copy to `terraform.tfvars` and fill in. Never commit `terraform.tfvars`.
+# State lives in Terraform Cloud, so there is no backend block to configure here.
+
+aws_region       = "us-east-1"
+environment      = "prod"
+project_slug     = "sla-monitor"
+
+# Must be verified in SES in the same region, or alerts and report emails fail.
+ses_sender_email = "you@example.com"
+
+# ARN of a Lambda layer that provides the `requests` library.
+# Build or reuse one per region before applying.
+requests_layer_arn = "arn:aws:lambda:us-east-1:123456789012:layer:requests:1"
+
+# Google OAuth client used by the Cognito identity provider.
+# Create one at https://console.cloud.google.com/apis/credentials
+# Authorised redirect URI: https://<name_prefix>-auth.auth.<region>.amazoncognito.com/oauth2/idpresponse
+google_client_id     = "000000000000-changeme.apps.googleusercontent.com"
+google_client_secret = "changeme"
+
+# NOTE: the Cognito callback/logout URLs are hardcoded in main.tf
+# (module "cognito"). Update them there if the frontend origin moves.
