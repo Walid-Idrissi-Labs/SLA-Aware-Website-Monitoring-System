@@ -69,7 +69,7 @@ export default function Sidebar() {
   return (
     // Reserves the collapsed width in the flex row; the rail itself overlays.
     <div className="relative h-full w-14 shrink-0" aria-hidden={false}>
-      <aside className="rail absolute inset-y-0 left-0 z-30 flex flex-col overflow-hidden border-r border-white/[0.07] bg-[#0a0b0d]">
+      <aside className="rail absolute inset-y-3 left-0 z-30 flex flex-col overflow-hidden rounded-r-[20px] border border-l-0 border-white/[0.07] bg-[#0a0b0d]">
         <div className="flex h-full flex-col" style={{ width: EXPANDED_W }}>
           {/* Brand */}
           <Link to="/dashboard" className="flex h-14 flex-none items-center gap-3 px-2.5" title="SLA Monitor">
@@ -88,12 +88,18 @@ export default function Sidebar() {
             <Item to="/dashboard" label="Overview" active={dashActive}>
               <LayoutDashboard className="h-[18px] w-[18px]" strokeWidth={1.75} />
             </Item>
+            <div className="my-2 h-px w-full bg-white/[0.07]" />
             <Item to="/about" label="About" active={pathname === '/about'}>
               <Boxes className="h-[18px] w-[18px]" strokeWidth={1.75} />
             </Item>
             <Item to="/settings" label="Settings" active={pathname === '/settings'}>
               <SettingsIcon className="h-[18px] w-[18px]" strokeWidth={1.75} />
             </Item>
+          </nav>
+
+          {/* Destructive action, kept away from navigation */}
+          <div className="flex-none px-2 pb-2">
+            <div className="mb-2 h-px w-full bg-white/[0.07]" />
             <Item
               label="Log out"
               onClick={() => {
@@ -103,7 +109,7 @@ export default function Sidebar() {
             >
               <LogOut className="h-[18px] w-[18px]" strokeWidth={1.75} />
             </Item>
-          </nav>
+          </div>
 
           {/* Account */}
           <div className="flex flex-none items-center gap-3 px-2.5 pb-3">

@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import Logo from './Logo'
 
 interface Props {
-  kicker: string
+  /** Optional eyebrow above the title. */
+  kicker?: string
   title: string
   subtitle?: string
   children: ReactNode
@@ -12,39 +13,33 @@ interface Props {
 
 /**
  * Shared full-screen frame for the auth pages (Login / Signup / Confirm).
- * Mirrors the app's BootSplash aesthetic: ambient accent glow, brand mark,
- * and a frosted `.panel` card — so the login feels like part of the app.
+ * Uses the same plain page background as the app — no ambient blur, no wordmark
+ * — so signing in looks like the product rather than a landing page.
  */
 export default function AuthLayout({ kicker, title, subtitle, children, footer }: Props) {
   return (
-    <div className="relative grid h-full place-items-center overflow-y-auto overflow-x-hidden px-6 py-12">
-      {/* ambient glow */}
-      <div className="pointer-events-none absolute left-1/2 top-0 h-[440px] w-[560px] -translate-x-1/2 rounded-full bg-accent/10 blur-[120px]" />
-
-      <div className="relative w-full max-w-sm animate-fade-up">
+    <div className="grid h-full place-items-center overflow-y-auto overflow-x-hidden px-6 py-12">
+      <div className="w-full max-w-[380px]">
         {/* Brand */}
-        <div className="flex items-center justify-center gap-3">
-          <span className="block" style={{ filter: 'drop-shadow(0 0 22px rgba(250,92,41,0.45))' }}>
-            <Logo size={56} className="block" />
+        <div className="mb-6 flex flex-col items-center gap-3">
+          <span className="block" style={{ filter: 'drop-shadow(0 6px 20px rgba(250,92,41,0.35))' }}>
+            <Logo size={44} className="block" />
           </span>
-          <div className="h-9 w-px bg-white/10" aria-hidden="true" />
-          <h1 className="font-display text-[20px] font-bold tracking-tight text-txt-hi">
-            SLA<span className="text-accent">://</span>MONITOR
-          </h1>
+          <p className="text-[12.5px] text-txt-lo">SLA-aware website monitoring</p>
         </div>
 
         {/* Card */}
-        <div className="panel frame-corners mt-6 p-6">
-          <div className="relative flex items-center justify-between mb-6 gap-3">
-            <p className="kicker">{kicker}</p>
-
-            <span className="text-[11px] text-txt-dim">
-              Secured by Amazon Cognito
-            </span>
+        <div className="panel rounded-[18px] p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              {kicker && <p className="text-[12px] font-medium text-accent">{kicker}</p>}
+              <h2 className="mt-0.5 font-display text-[18px] font-semibold tracking-[-0.01em] text-txt-hi">
+                {title}
+              </h2>
+            </div>
+            <span className="flex-none text-[11px] text-txt-dim">Amazon Cognito</span>
           </div>
-          <h2 className="mt-1 font-display text-[18px] font-semibold text-txt-hi">{title}</h2>
-          {subtitle && <p className="mt-1 text-[12px] leading-relaxed text-txt-lo">{subtitle}</p>}
-          <div className="hr-accent mt-4" />
+          {subtitle && <p className="mt-1.5 text-[12.5px] leading-relaxed text-txt-lo">{subtitle}</p>}
           <div className="mt-5">{children}</div>
         </div>
 

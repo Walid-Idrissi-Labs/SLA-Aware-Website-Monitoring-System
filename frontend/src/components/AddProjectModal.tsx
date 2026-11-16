@@ -67,14 +67,17 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fade-in"
       onClick={(e) => e.target === e.currentTarget && !saving && onClose()}
     >
-      <div className="relative w-full max-w-[480px] animate-scale-in">
-        <button
-          onClick={onClose}
-          aria-label="Close"
-          className="absolute -top-2 -right-2 z-10 grid h-7 w-7 place-items-center rounded-md text-txt-lo transition-colors hover:bg-white/[0.06] hover:text-txt-hi"
-        >
-          <X className="h-4 w-4" strokeWidth={1.75} />
-        </button>
+      <div className="w-full max-w-[480px] animate-scale-in">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[12.5px] text-txt-lo">New endpoint</span>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="grid h-8 w-8 place-items-center rounded-[9px] border border-white/[0.08] bg-white/[0.03] text-txt-mid transition-colors hover:bg-white/[0.07] hover:text-txt-hi"
+          >
+            <X className="h-4 w-4" strokeWidth={2} />
+          </button>
+        </div>
 
         {error && (
           <Alert tone="error" className="mb-2">

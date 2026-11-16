@@ -8,6 +8,7 @@ import AddProjectModal from '../components/AddProjectModal'
 import MagicBento, { type MagicBentoItem } from '../components/MagicBento'
 import Counter from '../components/Counter'
 import { BentoFigure, BentoArea, BentoBars, BentoTiles, BentoSteps } from '../components/BentoVisuals'
+import ActionButton from '../components/ActionButton'
 import { Alert } from '../components/ui'
 import { getProjects, getProjectStatus } from '../lib/api'
 import { POLL_INTERVAL_MS, STATUS } from '../lib/format'
@@ -317,14 +318,17 @@ export default function Dashboard() {
           <p className="mt-1 text-[13px] text-txt-lo">Uptime, latency and SLA posture across every endpoint.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={loadProjects} disabled={loading} className="btn-ghost">
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin-slow' : ''}`} strokeWidth={1.75} />
-            {loading ? 'Refreshing' : 'Refresh'}
-          </button>
-          <button onClick={() => setShowAddModal(true)} className="btn-accent">
-            <Plus className="h-3.5 w-3.5" strokeWidth={2} />
-            Add Endpoint
-          </button>
+          <ActionButton
+            variant="secondary"
+            icon={<RefreshCw className="h-3.5 w-3.5" strokeWidth={2} />}
+            onAction={loadProjects}
+            labels={{ loading: 'Refreshing…', success: 'Updated', error: 'Failed' }}
+          >
+            Refresh
+          </ActionButton>
+          <ActionButton icon={<Plus className="h-3.5 w-3.5" strokeWidth={2.5} />} onAction={() => setShowAddModal(true)}>
+            Add endpoint
+          </ActionButton>
         </div>
       </div>
 
@@ -385,10 +389,9 @@ export default function Dashboard() {
               <p className="font-display text-[15px] font-semibold text-txt-hi">No endpoints yet</p>
               <p className="mt-1 text-[13px] text-txt-lo">Add a website to start checking it every minute.</p>
             </div>
-            <button onClick={() => setShowAddModal(true)} className="btn-accent">
-              <Plus className="h-3.5 w-3.5" strokeWidth={2} />
-              Add Endpoint
-            </button>
+            <ActionButton icon={<Plus className="h-3.5 w-3.5" strokeWidth={2.5} />} onAction={() => setShowAddModal(true)}>
+              Add endpoint
+            </ActionButton>
           </div>
         )}
 

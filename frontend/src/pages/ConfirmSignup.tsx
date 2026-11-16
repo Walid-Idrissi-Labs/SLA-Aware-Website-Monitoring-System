@@ -3,7 +3,8 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Mail, ShieldCheck } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
 import CodeSlots, { type CodeSlotsStatus } from '../components/CodeSlots'
-import { Alert, Spinner } from '../components/ui'
+import { Alert } from '../components/ui'
+import ActionButton from '../components/ActionButton'
 import { confirmSignUp, resendConfirmationCode, friendlyAuthMessage } from '../lib/cognito'
 
 interface ConfirmState {
@@ -144,15 +145,17 @@ export default function ConfirmSignup() {
           </div>
         </div>
 
-        <button type="submit" disabled={loading || status === 'success'} className="btn-auth">
-          {loading || status === 'success' ? (
-            <Spinner size={16} />
-          ) : (
-            <>
-              <ShieldCheck className="h-4 w-4" strokeWidth={2} /> Verify &amp; continue
-            </>
-          )}
-        </button>
+        <ActionButton
+          type="submit"
+          size="lg"
+          fullWidth
+          icon={<ShieldCheck className="h-4 w-4" strokeWidth={2} />}
+          state={status === 'success' ? 'success' : status === 'error' ? 'error' : loading ? 'loading' : 'idle'}
+          labels={{ loading: 'Verifying…', success: 'Verified' }}
+          disabled={loading || status === 'success'}
+        >
+          Verify &amp; continue
+        </ActionButton>
       </form>
 
       <div className="mt-4 text-center text-[12px] text-txt-lo">

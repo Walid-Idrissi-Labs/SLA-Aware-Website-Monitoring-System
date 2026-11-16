@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Mail, Lock, Eye, EyeOff } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff, LogIn } from 'lucide-react'
+import ActionButton from '../components/ActionButton'
 import AuthLayout from '../components/AuthLayout'
 import GoogleSignIn from '../components/GoogleSignIn'
 import { Alert } from '../components/ui'
@@ -65,7 +66,6 @@ export default function Login() {
 
   return (
     <AuthLayout
-      kicker="Secure Access"
       title="Sign in"
       subtitle="Access your endpoints, uptime history, and SLA reports."
       footer={
@@ -135,9 +135,17 @@ export default function Login() {
           </div>
         </div>
 
-        <button type="submit" className="btn-auth" disabled={loading}>
-          {loading ? 'Signing in…' : 'Sign in'}
-        </button>
+        <ActionButton
+          type="submit"
+          size="lg"
+          fullWidth
+          icon={<LogIn className="h-4 w-4" strokeWidth={2} />}
+          state={loading ? 'loading' : 'idle'}
+          labels={{ loading: 'Signing in…' }}
+          disabled={loading}
+        >
+          Sign in
+        </ActionButton>
       </form>
 
       <GoogleSignIn onError={setError} />

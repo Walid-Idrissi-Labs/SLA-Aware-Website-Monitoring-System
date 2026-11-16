@@ -190,39 +190,102 @@ body {
     background-size: 38px 38px;
   }
 
-  /* Primary action button */
-  .btn-accent {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-3.5 h-8
-           font-mono text-[11px] font-bold uppercase tracking-wider text-white
-           bg-accent-sheen transition-all duration-150
-           hover:brightness-110 active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
-    box-shadow: 0 0 0 1px rgba(250, 92, 41, 0.4), 0 8px 22px -10px rgba(250, 92, 41, 0.7);
+  /* ── Buttons ───────────────────────────────────────────────────────────────
+     Sans, sentence case, 36px. The mono-uppercase treatment is gone; these
+     mirror components/ActionButton.tsx, which adds the loading/success/error
+     lifecycle on top of the same surface. Declared inside @layer components so
+     a Tailwind size utility on an individual button still wins. */
+  .btn-accent,
+  .btn-auth {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 36px;
+    padding: 0 14px;
+    border-radius: 10px;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 0.005em;
+    color: #fff;
+    background-image: linear-gradient(180deg, #ff8358 0%, #fa5c29 52%, #ea4f16 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.32),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.16),
+      0 1px 2px rgba(0, 0, 0, 0.45),
+      0 10px 24px -10px rgba(250, 92, 41, 0.8);
+    transition:
+      filter 0.15s ease,
+      transform 0.1s ease;
+  }
+  .btn-accent:hover,
+  .btn-auth:hover {
+    filter: brightness(1.07);
+  }
+  .btn-accent:active,
+  .btn-auth:active {
+    transform: scale(0.975);
+  }
+  .btn-accent:disabled,
+  .btn-auth:disabled {
+    opacity: 0.45;
+    pointer-events: none;
   }
 
-  /* Ghost / secondary button */
+  .btn-auth {
+    width: 100%;
+    height: 44px;
+    font-size: 13.5px;
+  }
+
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 h-8
-           font-mono text-[11px] font-bold uppercase tracking-wider
-           text-txt-mid border border-white/[0.08] bg-white/[0.03]
-           transition-colors duration-150
-           hover:text-accent hover:border-accent/40 hover:bg-accent/[0.06]
-           active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 36px;
+    padding: 0 13px;
+    border-radius: 10px;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    color: #b7bec6;
+    background-color: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    transition:
+      background-color 0.15s ease,
+      color 0.15s ease,
+      border-color 0.15s ease;
+  }
+  .btn-ghost:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+    color: #eceef0;
+    border-color: rgba(255, 255, 255, 0.14);
   }
 
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 h-8
-           font-mono text-[11px] font-bold uppercase tracking-wider
-           text-crit border border-crit/25 bg-crit/[0.06]
-           transition-colors duration-150 hover:bg-crit/[0.12]
-           active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 36px;
+    padding: 0 13px;
+    border-radius: 10px;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    color: #f87171;
+    background-color: rgba(248, 113, 113, 0.08);
+    border: 1px solid rgba(248, 113, 113, 0.25);
+    transition: background-color 0.15s ease;
   }
-
-  /* Full-width primary CTA for the auth pages (taller than .btn-accent) */
-  .btn-auth {
-    @apply inline-flex h-11 w-full items-center justify-center gap-2 rounded-md
-           bg-accent-sheen font-mono text-[12px] font-bold uppercase tracking-wider
-           text-white shadow-glow-accent transition-all duration-150
-           hover:brightness-110 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60;
+  .btn-danger:hover {
+    background-color: rgba(248, 113, 113, 0.14);
   }
 
   /* Form field */
