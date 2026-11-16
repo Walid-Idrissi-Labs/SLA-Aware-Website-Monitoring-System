@@ -69,7 +69,7 @@ export default function Sidebar() {
   return (
     // Reserves the collapsed width in the flex row; the rail itself overlays.
     <div className="relative h-full w-14 shrink-0">
-      <aside className="rail absolute inset-y-3 left-0 z-30 flex flex-col overflow-hidden rounded-r-[20px] border border-l-0 border-white/[0.07] bg-[#0a0b0d]">
+      <aside className="rail absolute inset-0 z-30 flex flex-col overflow-hidden rounded-[20px] border border-white/[0.07] bg-[#0d1014]">
         <div className="flex h-full flex-col" style={{ width: EXPANDED_W }}>
           {/* Brand */}
           <Link to="/dashboard" className="flex h-14 flex-none items-center gap-3 px-2.5" title="SLA Monitor">
