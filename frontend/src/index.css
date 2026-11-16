@@ -16,104 +16,49 @@ html {
   color-scheme: dark;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   Liquid glass — two dials, every surface
-
-   --glass-level      transparency: 0 = clear (thin, see-through), 1 = frosted.
-                      Apple's look lives low; blur past ~0.5 washes out the
-                      refraction that makes it glass rather than frosting.
-   --glass-distortion refraction strength, read by <LiquidGlass/> when it builds
-                      the per-element SVG filters. Negative bulges outward.
-
-   Override either on :root for the whole app, or --glass-level on a single
-   element for a local variant. From JS: lib/glass.ts, or in the dev console
-   `setGlass(0.15)` / `setGlassDistortion(-240)`.
-   ───────────────────────────────────────────────────────────────────────────── */
 :root {
-  --glass-level: 0.22;
-  --glass-distortion: -180;
-  /* Strength of the white specular edge — the rim glow and the hairline
-     border. 1 = the reference component's full brightness. */
-  --glass-edge: 0.4;
-  /* Surface tint (ink-800), as an unquoted rgb triple so alpha can vary. */
-  --glass-tint: 14 17 21;
+  /* Stepper surface tokens (components/Stepper.tsx reads these). Single dark
+     theme — the app has no light mode, so these live here rather than in a
+     theme map inside the component. */
+  --stepper-frame: rgba(20, 23, 28, 0.94);
+  --stepper-frame-edge: rgba(255, 255, 255, 0.08);
+  --stepper-frame-highlight: rgba(255, 255, 255, 0.06);
+  --stepper-frame-shadow: 0 22px 44px -20px rgba(0, 0, 0, 0.8), 0 6px 16px -8px rgba(0, 0, 0, 0.5);
+  --stepper-tile: linear-gradient(180deg, #22272e 0%, #1a1e24 100%);
+  --stepper-tile-edge: rgba(255, 255, 255, 0.07);
+  --stepper-tile-highlight: rgba(255, 255, 255, 0.1);
+  --stepper-tile-shadow: 0 4px 10px -4px rgba(0, 0, 0, 0.7);
+  --stepper-well: rgba(255, 255, 255, 0.045);
+  --stepper-track: rgba(255, 255, 255, 0.1);
+  --stepper-ink: #eceef0;
+  --stepper-muted: rgba(236, 238, 240, 0.55);
+  --stepper-faint: rgba(255, 255, 255, 0.22);
+  --stepper-solid: #fa5c29;
+  --stepper-solid-ink: #ffffff;
+  --stepper-hover: brightness(1.12);
+  --stepper-hover-fill: rgba(255, 255, 255, 0.04);
+  --stepper-solid-hover: brightness(1.1);
+  --stepper-press: brightness(0.85);
 }
 
+/* The page background is painted once and never animated. This replaced three
+   46vw blobs under `filter: blur(90px)` that drifted forever — the single
+   biggest reason an idle dashboard tab pulled ~85 W. */
 body {
   margin: 0;
   min-height: 100vh;
   font-family: 'Inter', system-ui, sans-serif;
   color: #eceef0;
   background-color: #060708;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   Ambient moving background — large blurred colour blobs that slowly drift on
-   their own and gently lean toward the pointer (parallax by depth). Rendered
-   once behind everything by <BackgroundFX/>; the frosted panels blur it live.
-   ───────────────────────────────────────────────────────────────────────────── */
-.bg-fx {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  overflow: hidden;
-  pointer-events: none;
-  /* eased pointer offset in the range -1..1, written by BackgroundFX via rAF */
-}
-/* The engineering grid itself is the <GridPattern/> SVG rendered by
-   BackgroundFX — skew, mask and colour all live on that element. */
-.bg-fx__track {
-  position: absolute;
-  inset: 0;
-  transform: translate3d(
-    calc(var(--mx, 0) * var(--depth, 0px)),
-    calc(var(--my, 0) * var(--depth, 0px)),
-    0
-  );
-  will-change: transform;
-}
-.bg-fx__blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(90px);
-  will-change: transform;
-}
-.bg-fx__blob--accent {
-  top: -24%;
-  left: 26%;
-  width: 46vw;
-  height: 46vw;
-  background: radial-gradient(circle, rgba(250, 92, 41, 0.22), transparent 66%);
-  animation: fx-drift-a 26s ease-in-out infinite alternate;
-}
-.bg-fx__blob--mint {
-  top: -16%;
-  right: -8%;
-  width: 40vw;
-  height: 40vw;
-  background: radial-gradient(circle, rgba(52, 211, 153, 0.11), transparent 65%);
-  animation: fx-drift-b 34s ease-in-out infinite alternate;
-}
-.bg-fx__blob--ember {
-  bottom: -32%;
-  left: -10%;
-  width: 52vw;
-  height: 52vw;
-  background: radial-gradient(circle, rgba(250, 92, 41, 0.09), transparent 68%);
-  animation: fx-drift-c 45s ease-in-out infinite alternate;
-}
-
-@keyframes fx-drift-a {
-  from { transform: translate3d(0, 0, 0) scale(1); }
-  to   { transform: translate3d(6vw, 5vh, 0) scale(1.12); }
-}
-@keyframes fx-drift-b {
-  from { transform: translate3d(0, 0, 0) scale(1); }
-  to   { transform: translate3d(-7vw, 6vh, 0) scale(1.08); }
-}
-@keyframes fx-drift-c {
-  from { transform: translate3d(0, 0, 0) scale(1.05); }
-  to   { transform: translate3d(5vw, -6vh, 0) scale(0.94); }
+  background-image:
+    radial-gradient(900px circle at 50% -12%, rgba(250, 92, 41, 0.075), transparent 70%),
+    linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.016) 1px, transparent 1px);
+  background-size:
+    auto,
+    44px 44px,
+    44px 44px;
+  background-attachment: fixed;
 }
 
 ::selection {
@@ -122,73 +67,30 @@ body {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   Component utilities
+   Surfaces
+
+   Opaque, hairline-ruled panels. No backdrop-filter anywhere: blurring a live
+   background forces the compositor to re-sample every panel on every frame, and
+   it never bought legibility we could not get from a solid tint.
    ───────────────────────────────────────────────────────────────────────────── */
 @layer components {
-  /* ── Liquid glass surface ──────────────────────────────────────────────────
-     The refraction is not here — <LiquidGlass/> generates one SVG filter per
-     element and sets backdrop-filter inline, because the displacement map has
-     to match each element's exact size and corner radius. What lives here is
-     everything that dial-scales in CSS: the tint, the fallback blur, and the
-     specular. Keep the blur low — heavy blur washes the rim refraction out,
-     and that refraction is the whole effect. */
   .glass,
   .panel,
   .panel-flush {
-    --glass-blur: calc(1px + var(--glass-level) * 15px);
-    --glass-fill: calc(0.02 + var(--glass-level) * 0.55);
-    --glass-sat: calc(1.15 + var(--glass-level) * 0.75);
-    --glass-rim: calc(0.13 + var(--glass-level) * 0.1);
-
     position: relative;
-    background-color: rgb(var(--glass-tint) / var(--glass-fill));
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-    /* Two tight inner glows read as the lit thickness of the pane; the outer
-       stack is the soft, layered drop shadow Apple's panels sit on. Both glows
-       scale off --glass-edge, so the rim can be dialled without touching the
-       tint or the shadow. */
+    background-color: #0d1014;
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0));
     box-shadow:
-      inset 0 0 2px 1px rgb(255 255 255 / calc(var(--glass-rim) * var(--glass-edge) * 2.4)),
-      inset 0 0 10px 4px rgb(255 255 255 / calc(var(--glass-rim) * var(--glass-edge) * 0.9)),
-      0 4px 16px rgb(0 0 0 / 0.22),
-      0 8px 24px rgb(0 0 0 / 0.18),
-      0 16px 56px rgb(0 0 0 / 0.16);
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 1px 2px rgba(0, 0, 0, 0.4),
+      0 16px 40px -24px rgba(0, 0, 0, 0.9);
   }
 
-  /* Hairline border for panes that need a defined edge — also dial-scaled, so
-     it fades with the rim glow instead of staying a hard white line. */
-  .glass-bordered,
+  /* Panels carry the hairline; bare `.glass` surfaces (the sidebar) let their
+     own single edge border do the work. */
   .panel,
   .panel-flush {
-    border: 1px solid rgb(255 255 255 / calc(var(--glass-edge) * 0.11));
-  }
-
-  /* Thin glass for controls — same dial, shallower blur and a firmer fill so
-     small elements stay legible. Deliberately outside the refraction selector:
-     displacing something button-sized just reads as a smudge. Declared before
-     the controls that use it, so their own --glass-tint / --glass-fill
-     overrides win the cascade. */
-  .glass-thin,
-  .field,
-  .btn-ghost,
-  .btn-danger {
-    --glass-blur: calc(2px + var(--glass-level) * 10px);
-    --glass-fill: calc(0.1 + var(--glass-level) * 0.5);
-    --glass-sat: calc(1.05 + var(--glass-level) * 0.6);
-    --glass-rim: calc(0.07 + var(--glass-level) * 0.1);
-
-    background-color: rgb(var(--glass-tint) / var(--glass-fill));
-    background-image: linear-gradient(
-      180deg,
-      rgb(255 255 255 / calc(var(--glass-rim) * 0.35)),
-      rgb(255 255 255 / 0) 55%
-    );
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / calc(var(--glass-rim) * var(--glass-edge) * 1.2)),
-      inset 0 -1px 0 rgb(0 0 0 / 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.07);
   }
 
   .panel {
@@ -291,30 +193,18 @@ body {
   .btn-ghost {
     @apply inline-flex items-center justify-center gap-2 rounded-md px-3 h-8
            font-mono text-[11px] font-bold uppercase tracking-wider
-           text-txt-mid border border-white/[0.08]
-           transition-all duration-150
-           hover:text-accent hover:border-accent/40
+           text-txt-mid border border-white/[0.08] bg-white/[0.03]
+           transition-colors duration-150
+           hover:text-accent hover:border-accent/40 hover:bg-accent/[0.06]
            active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
-    /* lighter than the panel behind it, so it lifts off the surface */
-    --glass-tint: 90 100 112;
-    --glass-fill: calc(0.04 + var(--glass-level) * 0.06);
-  }
-  .btn-ghost:hover {
-    --glass-tint: 250 92 41;
-    --glass-fill: calc(0.06 + var(--glass-level) * 0.08);
   }
 
   .btn-danger {
     @apply inline-flex items-center justify-center gap-2 rounded-md px-3 h-8
            font-mono text-[11px] font-bold uppercase tracking-wider
-           text-crit border border-crit/25
-           transition-all duration-150
+           text-crit border border-crit/25 bg-crit/[0.06]
+           transition-colors duration-150 hover:bg-crit/[0.12]
            active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
-    --glass-tint: 248 113 113;
-    --glass-fill: calc(0.06 + var(--glass-level) * 0.08);
-  }
-  .btn-danger:hover {
-    --glass-fill: calc(0.12 + var(--glass-level) * 0.1);
   }
 
   /* Full-width primary CTA for the auth pages (taller than .btn-accent) */
@@ -327,16 +217,11 @@ body {
 
   /* Form field */
   .field {
-    @apply w-full rounded-md border border-white/[0.08] text-txt-hi
+    @apply w-full rounded-md border border-white/[0.08] bg-ink-950 text-txt-hi
            px-3 h-10 text-[13px] font-mono placeholder:text-txt-dim
-           transition-all duration-150
+           transition-colors duration-150
            focus:outline-none focus:border-accent/70
            focus:ring-2 focus:ring-accent/20;
-    /* darker tint than the panels it sits on, so inputs read as recessed */
-    --glass-tint: 6 7 8;
-  }
-  .field:focus {
-    --glass-fill: calc(0.35 + var(--glass-level) * 0.45);
   }
 
   .field-label {
@@ -352,6 +237,158 @@ body {
     @apply absolute inset-0 -translate-x-full animate-shimmer;
     background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
   }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Bento grid (components/MagicBento.tsx)
+
+   The card's spotlight and rim are driven by two custom properties written by
+   the component's rAF loop: --mb-x / --mb-y, the pointer position relative to
+   that card. `data-near="0"` means "far from the pointer" and hides both, so a
+   card only costs a gradient paint while the cursor is actually near it.
+   ───────────────────────────────────────────────────────────────────────────── */
+.mb {
+  position: relative;
+  display: grid;
+  grid-auto-flow: row dense;
+  width: 100%;
+}
+
+.mb__cell {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.mb__card {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--mb-radius, 19px);
+  color: #eceef0;
+  background-color: #0d1014;
+  background-image: linear-gradient(180deg, #12161b 0%, #0c0f13 100%);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 20px 44px -28px rgba(0, 0, 0, 0.9);
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.mb__card[data-clickable] {
+  cursor: pointer;
+}
+
+.mb__card[data-clickable]:hover,
+.mb__card[data-clickable]:focus-visible {
+  border-color: rgba(250, 92, 41, 0.4);
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 26px 54px -28px rgba(0, 0, 0, 0.95);
+  outline: none;
+}
+
+.mb__card[data-clickable]:focus-visible {
+  box-shadow:
+    inset 0 0 0 1px rgba(250, 92, 41, 0.7),
+    0 26px 54px -28px rgba(0, 0, 0, 0.95);
+}
+
+/* Spotlight wash under the pointer. */
+.mb__spot {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 0.28s ease;
+  background: radial-gradient(
+    var(--mb-reach, 330px) circle at var(--mb-x, 50%) var(--mb-y, 50%),
+    rgb(var(--mb-glow) / 0.09),
+    transparent 68%
+  );
+}
+
+.mb__card[data-near='1'] .mb__spot {
+  opacity: 1;
+}
+
+/* 1px gradient rim that lights up near the pointer. */
+.mb__rim {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  padding: 1px;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.28s ease;
+  background: radial-gradient(
+    calc(var(--mb-reach, 330px) * 0.72) circle at var(--mb-x, 50%) var(--mb-y, 50%),
+    rgb(var(--mb-glow) / 0.7),
+    transparent 70%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+
+.mb__card[data-near='1'] .mb__rim {
+  opacity: 1;
+}
+
+.mb__body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  padding: 16px;
+}
+
+.mb__label {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #5c646d;
+}
+
+.mb__text {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mb__title {
+  margin: 0;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #eceef0;
+}
+
+.mb__desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #9aa2ab;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

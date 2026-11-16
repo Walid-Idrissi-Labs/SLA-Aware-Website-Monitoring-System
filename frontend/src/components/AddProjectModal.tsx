@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { X, Plus, Radar } from 'lucide-react'
+import { X, Radar, Bell, Target } from 'lucide-react'
+import Stepper, { Step } from './Stepper'
 import { createProject } from '../lib/api'
-import { Alert, Spinner } from './ui'
+import { Alert } from './ui'
 import { PROJECT_DEFAULTS } from '../lib/format'
 import type { Project, CreateProjectInput } from '../types'
 
@@ -10,6 +11,10 @@ interface Props {
   onSuccess: (project: Project) => void
 }
 
+/**
+ * Add-endpoint flow. Three short steps instead of one wall of fields: what to
+ * watch, when to shout, and what counts as good.
+ */
 export default function AddProjectModal({ onClose, onSuccess }: Props) {
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
@@ -18,26 +23,27 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
   const [minUptime, setMinUptime] = useState<number>(PROJECT_DEFAULTS.min_uptime_pct)
   const [maxLatency, setMaxLatency] = useState<number>(PROJECT_DEFAULTS.max_avg_latency_ms)
   const [notificationEmail, setNotificationEmail] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [step, setStep] = useState(1)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !loading && onClose()
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !saving && onClose()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, loading])
+  }, [onClose, saving])
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function create() {
     if (!name.trim() || !url.trim()) {
       setError('Name and URL are required')
+      setStep(1)
       return
     }
     let normalizedUrl = url.trim()
     if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
       normalizedUrl = 'https://' + normalizedUrl
     }
-    setLoading(true)
+    setSaving(true)
     setError(null)
     try {
       const data: CreateProjectInput = {
@@ -48,89 +54,182 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
         thresholds: { min_uptime_pct: minUptime, max_avg_latency_ms: maxLatency },
       }
       if (notificationEmail.trim()) data.notification_email = notificationEmail.trim()
-      const project = await createProject(data)
-      onSuccess(project)
+      onSuccess(await createProject(data))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create project')
     } finally {
-      setLoading(false)
+      setSaving(false)
     }
   }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-md animate-fade-in"
-      onClick={(e) => e.target === e.currentTarget && !loading && onClose()}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fade-in"
+      onClick={(e) => e.target === e.currentTarget && !saving && onClose()}
     >
-      <div role="dialog" aria-modal="true" aria-label="Add endpoint" className="panel frame-corners w-full max-w-lg animate-scale-in overflow-hidden">
-        <div className="panel-head">
-          <div className="flex items-center gap-2.5">
-            <span className="grid h-6 w-6 place-items-center rounded-md bg-accent/[0.12] text-accent">
-              <Radar className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </span>
-            <div className="leading-tight">
-              <p className="kicker">New endpoint</p>
-              <p className="font-display text-[13px] font-semibold text-txt-hi">Add a website to monitor</p>
+      <div className="relative w-full max-w-[480px] animate-scale-in">
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute -top-2 -right-2 z-10 grid h-7 w-7 place-items-center rounded-md text-txt-lo transition-colors hover:bg-white/[0.06] hover:text-txt-hi"
+        >
+          <X className="h-4 w-4" strokeWidth={1.75} />
+        </button>
+
+        {error && (
+          <Alert tone="error" className="mb-2">
+            {error}
+          </Alert>
+        )}
+
+        <Stepper
+          step={step}
+          onStepChange={setStep}
+          onFinalStepCompleted={create}
+          indicator="numbers"
+          orientation="horizontal"
+          width="100%"
+          radius={22}
+          linear={false}
+          backButtonText="Back"
+          nextButtonText="Continue"
+          completeButtonText={saving ? 'Creating…' : 'Create endpoint'}
+          nextButtonProps={{
+            disabled: saving,
+            onClick: (event) => {
+              if (step === 1 && (!name.trim() || !url.trim())) {
+                event.preventDefault()
+                setError('Name and URL are required')
+              } else {
+                setError(null)
+              }
+            },
+          }}
+        >
+          <Step title="Endpoint" icon={<Radar size={13} strokeWidth={2} />}>
+            <div className="space-y-3.5">
+              <div>
+                <label className="field-label" htmlFor="projName">
+                  Name
+                </label>
+                <input
+                  id="projName"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="field"
+                  placeholder="My Portfolio"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="projUrl">
+                  Target URL
+                </label>
+                <input
+                  id="projUrl"
+                  type="text"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  className="field"
+                  placeholder="https://mysite.com"
+                />
+              </div>
             </div>
-          </div>
-          <button onClick={onClose} aria-label="Close" className="grid h-7 w-7 place-items-center rounded-md text-txt-lo transition-colors hover:bg-white/[0.05] hover:text-txt-hi">
-            <X className="h-4 w-4" strokeWidth={1.75} />
-          </button>
-        </div>
+          </Step>
 
-        <form onSubmit={handleSubmit} className="space-y-4 p-5">
-          {error && <Alert tone="error">{error}</Alert>}
-
-          <div>
-            <label className="field-label" htmlFor="projName">Name *</label>
-            <input id="projName" type="text" value={name} onChange={(e) => setName(e.target.value)} className="field" placeholder="My Portfolio" required />
-          </div>
-
-          <div>
-            <label className="field-label" htmlFor="projUrl">Target URL *</label>
-            <input id="projUrl" type="text" value={url} onChange={(e) => setUrl(e.target.value)} className="field" placeholder="https://mysite.com" required />
-          </div>
-
-          <div>
-            <label className="field-label" htmlFor="acceptedStatus">Accepted HTTP statuses</label>
-            <input id="acceptedStatus" type="text" value={acceptedStatus} onChange={(e) => setAcceptedStatus(e.target.value)} className="field" placeholder="200-399" />
-            <p className="mt-1.5 text-[10px] text-txt-dim">
-              Ranges or codes, comma separated. Anything else counts as down. Sites behind bot protection usually need their challenge status added here.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="field-label" htmlFor="failureThresh">Failure threshold</label>
-              <input id="failureThresh" type="number" min={1} max={10} value={failureThreshold} onChange={(e) => setFailureThreshold(Number(e.target.value))} className="field" />
-              <p className="mt-1.5 text-[10px] text-txt-dim">Consecutive failures before an alert</p>
+          <Step title="Alerting" icon={<Bell size={13} strokeWidth={2} />}>
+            <div className="space-y-3.5">
+              <div>
+                <label className="field-label" htmlFor="acceptedStatus">
+                  Accepted HTTP statuses
+                </label>
+                <input
+                  id="acceptedStatus"
+                  type="text"
+                  value={acceptedStatus}
+                  onChange={(e) => setAcceptedStatus(e.target.value)}
+                  className="field"
+                  placeholder="200-399"
+                />
+                <p className="mt-1.5 text-[10px] leading-relaxed text-txt-dim">
+                  Ranges or codes, comma separated. Anything else counts as down. Sites behind bot protection
+                  usually need their challenge status added here.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="field-label" htmlFor="failureThresh">
+                    Failure threshold
+                  </label>
+                  <input
+                    id="failureThresh"
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={failureThreshold}
+                    onChange={(e) => setFailureThreshold(Number(e.target.value))}
+                    className="field"
+                  />
+                  <p className="mt-1.5 text-[10px] text-txt-dim">Failures before an incident</p>
+                </div>
+                <div>
+                  <label className="field-label" htmlFor="notifEmail">
+                    Notify
+                  </label>
+                  <input
+                    id="notifEmail"
+                    type="email"
+                    value={notificationEmail}
+                    onChange={(e) => setNotificationEmail(e.target.value)}
+                    className="field"
+                    placeholder="Optional"
+                  />
+                  <p className="mt-1.5 text-[10px] text-txt-dim">Defaults to your email</p>
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="field-label" htmlFor="notifEmail">Notification email</label>
-              <input id="notifEmail" type="email" value={notificationEmail} onChange={(e) => setNotificationEmail(e.target.value)} className="field" placeholder="Optional" />
-              <p className="mt-1.5 text-[10px] text-txt-dim">Defaults to your account email</p>
-            </div>
-          </div>
+          </Step>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="field-label" htmlFor="minUptime">Min uptime %</label>
-              <input id="minUptime" type="number" min={90} max={100} step={0.01} value={minUptime} onChange={(e) => setMinUptime(Number(e.target.value))} className="field" />
+          <Step title="SLA targets" icon={<Target size={13} strokeWidth={2} />}>
+            <div className="space-y-3.5">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="field-label" htmlFor="minUptime">
+                    Min uptime %
+                  </label>
+                  <input
+                    id="minUptime"
+                    type="number"
+                    min={90}
+                    max={100}
+                    step={0.01}
+                    value={minUptime}
+                    onChange={(e) => setMinUptime(Number(e.target.value))}
+                    className="field"
+                  />
+                </div>
+                <div>
+                  <label className="field-label" htmlFor="maxLatency">
+                    Max latency (ms)
+                  </label>
+                  <input
+                    id="maxLatency"
+                    type="number"
+                    min={50}
+                    value={maxLatency}
+                    onChange={(e) => setMaxLatency(Number(e.target.value))}
+                    className="field"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] leading-relaxed text-txt-lo">
+                These are the targets reports and the error budget are scored against — not what triggers an
+                incident. Consecutive failures past the threshold do that.
+              </p>
             </div>
-            <div>
-              <label className="field-label" htmlFor="maxLatency">Max latency (ms)</label>
-              <input id="maxLatency" type="number" min={50} value={maxLatency} onChange={(e) => setMaxLatency(Number(e.target.value))} className="field" />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 border-t border-white/[0.06] pt-4">
-            <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
-            <button type="submit" disabled={loading} className="btn-accent">
-              {loading ? <Spinner /> : <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />}
-              {loading ? 'Creating…' : 'Add endpoint'}
-            </button>
-          </div>
-        </form>
+          </Step>
+        </Stepper>
       </div>
     </div>
   )

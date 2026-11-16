@@ -3,7 +3,6 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
 import GoogleSignIn from '../components/GoogleSignIn'
-import SpecularButton from '../components/SpecularButton'
 import { Alert } from '../components/ui'
 import { isAuthenticated, setToken } from '../lib/auth'
 import { signIn, friendlyAuthMessage } from '../lib/cognito'
@@ -136,20 +135,9 @@ export default function Login() {
           </div>
         </div>
 
-        <SpecularButton
-          type="submit"
-          size="md"
-          radius={10}
-          tint="#fa5c29"
-          tintOpacity={1}
-          lineColor="#ffffff"
-          baseColor="#fa5c29"
-          textColor="#d8dbde"
-          className="w-full transition-colors duration-150 hover:bg-[#e04d1f] hover:text-white"
-          disabled={loading}
-        >
+        <button type="submit" className="btn-auth" disabled={loading}>
           {loading ? 'Signing in…' : 'Sign in'}
-        </SpecularButton>
+        </button>
       </form>
 
       <GoogleSignIn onError={setError} />
