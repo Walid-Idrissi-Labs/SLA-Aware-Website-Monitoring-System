@@ -24,8 +24,8 @@ export default function RegionStatus() {
         strokeWidth={2}
         style={{ filter: 'drop-shadow(0 0 4px rgba(52,211,153,0.65))' }}
       />
-      <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-ok">Live</span>
-      <span className="hidden font-mono text-[10px] text-ok/60 md:inline">{region}</span>
+      <span className="font-pixel text-[12px] leading-none text-ok">Live</span>
+      <span className="hidden font-pixel text-[12px] leading-none text-ok/60 md:inline">{region}</span>
     </div>
   )
 }

@@ -448,6 +448,24 @@ body {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
+   Sidebar (components/Sidebar.tsx)
+
+   Only the <aside> width is animated; its inner content keeps a fixed expanded
+   width and is clipped by overflow-hidden. Labels therefore just fade — no
+   text reflow, no per-item relayout while the rail moves. Opacity is a
+   compositor-only property, so the fade costs nothing.
+   ───────────────────────────────────────────────────────────────────────────── */
+.sidebar__label {
+  opacity: 1;
+  transition: opacity 160ms ease 110ms;
+}
+
+aside:not([data-open]) .sidebar__label {
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
    Flip clock (components/FlipClock.tsx)
    ───────────────────────────────────────────────────────────────────────────── */
 .fc {

@@ -21,6 +21,7 @@ import TickerStat from '../components/TickerStat'
 import MagicBento from '../components/MagicBento'
 import Counter from '../components/Counter'
 import FlipClock from '../components/FlipClock'
+import RubberSegment from '../components/RubberSegment'
 import { BentoFigure, BentoArea, BentoBars, BentoMeter } from '../components/BentoVisuals'
 import LatencyChart from '../components/LatencyChart'
 import UptimeGauge from '../components/UptimeGauge'
@@ -558,21 +559,19 @@ export default function ProjectDetail() {
         <div className="panel-flush self-start lg:col-span-2 animate-fade-up" style={{ animationDelay: '120ms' }}>
           <div className="panel-head">
             <span className="text-[13px] font-semibold text-txt-hi">Latency Analytics</span>
-            <div className="flex gap-1">
-              {[1, 24, 72].map((h) => (
-                <button
-                  key={h}
-                  onClick={() => setHours(h)}
-                  className={`rounded px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors ${
-                    hours === h
-                      ? 'border border-accent/40 bg-accent/[0.1] text-accent'
-                      : 'border border-white/[0.07] text-txt-lo hover:text-txt-mid'
-                  }`}
-                >
-                  {h}h
-                </button>
-              ))}
-            </div>
+            <RubberSegment
+              items={['1h', '24h', '72h']}
+              value={`${hours}h`}
+              onChange={(next) => setHours(Number(next.replace('h', '')))}
+              size="sm"
+              radius={9}
+              inset={2}
+              trackColor="rgba(255,255,255,0.05)"
+              thumbColor="#eceef0"
+              textColor="#9aa2ab"
+              activeTextColor="#0e1115"
+              aria-label="Chart time window"
+            />
           </div>
           <div className="grid-overlay p-2">
             {loading ? (
@@ -661,15 +660,6 @@ export default function ProjectDetail() {
           </span>
         </div>
       )}
-
-      {/* Incident-free streak — a flip clock counting up since the last incident */}
-      <div className="mt-3">
-        <FlipClock
-          since={incidentFreeSince}
-          open={Boolean(reliability?.open_incident)}
-          label="No recorded incidents in"
-        />
-      </div>
 
       <MagicBento
         columns={4}
@@ -824,9 +814,17 @@ export default function ProjectDetail() {
         ]}
       />
 
-      {/* Incident log */}
-      <div className="mt-3">
-        <IncidentTimeline incidents={incidents} />
+      {/* Streak + incident log, side by side once there is room for both */}
+      <div className="mt-3 grid items-stretch gap-3 lg:grid-cols-2">
+        <FlipClock
+          since={incidentFreeSince}
+          open={Boolean(reliability?.open_incident)}
+          label="No recorded incidents in"
+          className="flex h-full flex-col justify-center"
+        />
+        <div className="min-w-0">
+          <IncidentTimeline incidents={incidents} />
+        </div>
       </div>
 
       {/* Reports */}
@@ -842,20 +840,20 @@ export default function ProjectDetail() {
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-2.5">
           <div className="flex items-center gap-2">
             <span className="micro text-txt-lo">Period</span>
-            <div className="flex overflow-hidden rounded-md border border-white/[0.08]">
-              {([1, 7, 30] as const).map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setGenDays(d)}
-                  disabled={generating}
-                  className={`px-2.5 py-1 font-mono text-[10px] font-bold uppercase transition-colors disabled:opacity-50 ${
-                    genDays === d ? 'bg-accent/[0.12] text-accent' : 'text-txt-lo hover:text-txt-mid'
-                  }`}
-                >
-                  {d}d
-                </button>
-              ))}
-            </div>
+            <RubberSegment
+              items={['1d', '7d', '30d']}
+              value={`${genDays}d`}
+              onChange={(next) => setGenDays(Number(next.replace('d', '')) as 1 | 7 | 30)}
+              disabled={generating}
+              size="sm"
+              radius={9}
+              inset={2}
+              trackColor="rgba(255,255,255,0.05)"
+              thumbColor="#eceef0"
+              textColor="#9aa2ab"
+              activeTextColor="#0e1115"
+              aria-label="Report period"
+            />
             <button
               onClick={handleGenerate}
               disabled={generating}
