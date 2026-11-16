@@ -24,8 +24,13 @@ export default function Login() {
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const expired = new URLSearchParams(location.search).has('expired')
   const [notice, setNotice] = useState<string | null>(
-    state?.justConfirmed ? 'Email verified — you can sign in now.' : null
+    state?.justConfirmed
+      ? 'Email verified — you can sign in now.'
+      : expired
+        ? 'Your session expired. Sign in again.'
+        : null
   )
 
   useEffect(() => {
