@@ -92,6 +92,25 @@ def get_project_or_403(project_id: str, user_id: str) -> dict | None:
 
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# Which HTTP statuses a monitor treats as "up". Stored as a compact string so it
+# stays readable in the DynamoDB console and in check snapshots.
+ACCEPTED_STATUS_SPEC_RE = re.compile(r"^\d{3}(-\d{3})?(,\d{3}(-\d{3})?)*$")
+
+
+def validate_accepted_status(spec) -> str | None:
+    """Normalise '200-399, 404' to '200-399,404', or return None if unusable."""
+    if not isinstance(spec, str) or not spec.strip() or len(spec) > 200:
+        return None
+    compact = ",".join(part.strip() for part in spec.split(","))
+    if not ACCEPTED_STATUS_SPEC_RE.match(compact):
+        return None
+    for part in compact.split(","):
+        low, _, high = part.partition("-")
+        high = high or low
+        low_code, high_code = int(low), int(high)
+        if not (100 <= low_code <= 599 and 100 <= high_code <= 599 and low_code <= high_code):
+            return None
+    return compact
 
 # These values flow into every downstream Lambda (monitor loop arithmetic,
 # incident detection, HTML emails), so bad types here become cross-tenant
@@ -131,6 +150,15 @@ def validate_project_fields(body: dict) -> tuple[dict, str | None]:
         if not isinstance(email, str) or not EMAIL_RE.match(email) or len(email) > 254:
             return {}, "notification_email must be a valid email address"
         clean["notification_email"] = email.strip()
+
+    if "accepted_status" in body:
+        spec = validate_accepted_status(body["accepted_status"])
+        if spec is None:
+            return {}, (
+                'accepted_status must be a status list like "200-399" or "200-399,404" '
+                "(codes 100-599, ranges low to high)"
+            )
+        clean["accepted_status"] = spec
 
     if "thresholds" in body:
         thresholds = body["thresholds"]
@@ -244,6 +272,7 @@ def handle_post_projects(event: dict) -> dict:
     # Apply defaults, then validate everything through one gate.
     body.setdefault("failure_threshold", 3)
     body.setdefault("thresholds", {"min_uptime_pct": 99.9, "max_avg_latency_ms": 300})
+    body.setdefault("accepted_status", "200-399")
     if not body.get("notification_email"):
         body["notification_email"] = user_email
 

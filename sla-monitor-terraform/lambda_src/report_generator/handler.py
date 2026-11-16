@@ -74,14 +74,41 @@ def send_report_email(to_address: str, subject: str, html_body: str) -> None:
 
 
 
-def compute_availability_metrics(checks: list[dict]) -> dict[str, float]:
-    total = len(checks)
-    if total == 0:
-        return {"uptime_pct": 0.0}
+# The monitor rule runs at rate(1 minute). Coverage compares the checks that
+# produced a verdict against the checks this schedule should have produced.
+CHECK_INTERVAL_SECONDS = 60
+# Below this share of conclusive evidence an SLO is reported as unproven rather
+# than passed or failed: 100% availability over 3% of the expected checks is not
+# a result.
+SLO_MIN_COVERAGE_PCT = 95.0
 
-    successful = sum(1 for c in checks if c["status"] == "success")
-    uptime_pct = round((successful / total) * 100, 2)
-    return {"uptime_pct": uptime_pct}
+
+def compute_availability_metrics(checks: list[dict], expected_checks: int | None = None) -> dict[str, Any]:
+    """Availability over conclusive evidence only, plus how much evidence there was.
+
+    An inconclusive check (bot challenge, probe-side error) is neither an up nor
+    a down minute, so it leaves the numerator and the denominator alone and only
+    costs coverage.
+    """
+    total = len(checks)
+    up = sum(1 for c in checks if c.get("status") == "success")
+    down = sum(1 for c in checks if c.get("status") == "failure")
+    inconclusive = total - up - down
+    conclusive = up + down
+
+    # max() with conclusive keeps coverage at 100% if the interval assumption is
+    # ever off; missing checks still count as missing.
+    expected = max(int(expected_checks or total), conclusive, 1)
+
+    return {
+        "uptime_pct": round((up / conclusive) * 100, 2) if conclusive else 0.0,
+        "coverage_pct": round((conclusive / expected) * 100, 2),
+        "checks_total": total,
+        "checks_up": up,
+        "checks_down": down,
+        "checks_inconclusive": inconclusive,
+        "checks_expected": expected,
+    }
 
 
 def compute_performance_metrics(checks: list[dict]) -> dict[str, float]:
@@ -109,7 +136,18 @@ def compute_reliability_metrics(incidents: list[dict]) -> dict[str, Any]:
     }
 
 
-def evaluate_sla(thresholds: dict, uptime_pct: float, avg_latency_ms: float) -> tuple[bool, str]:
+def evaluate_sla(
+    thresholds: dict,
+    uptime_pct: float,
+    avg_latency_ms: float,
+    coverage_pct: float = 100.0,
+) -> tuple[bool, str, str]:
+    """Return (sla_pass, severity, slo_status).
+
+    sla_pass and severity stay as they were so existing payloads keep working.
+    slo_status is the three-valued verdict: too little evidence is "unproven",
+    never "missed".
+    """
     min_uptime = thresholds.get("min_uptime_pct", 99.9)
     max_latency = thresholds.get("max_avg_latency_ms", 300)
 
@@ -124,7 +162,14 @@ def evaluate_sla(thresholds: dict, uptime_pct: float, avg_latency_ms: float) -> 
     else:
         severity = "critical"
 
-    return sla_pass, severity
+    if coverage_pct < SLO_MIN_COVERAGE_PCT:
+        slo_status = "unproven"
+    elif sla_pass:
+        slo_status = "met"
+    else:
+        slo_status = "missed"
+
+    return sla_pass, severity, slo_status
 
 
 
@@ -134,16 +179,18 @@ def build_report(
     checks: list[dict],
     incidents: list[dict],
     report_id: str,
+    expected_checks: int | None = None,
 ) -> dict:
 
-    avail = compute_availability_metrics(checks)
+    avail = compute_availability_metrics(checks, expected_checks)
     perf = compute_performance_metrics(checks)
     rel = compute_reliability_metrics(incidents)
 
-    sla_pass, severity = evaluate_sla(
+    sla_pass, severity, slo_status = evaluate_sla(
         project.get("thresholds", {}),
         avail["uptime_pct"],
         perf["avg_latency_ms"],
+        avail["coverage_pct"],
     )
 
     generated_at = datetime.now(timezone.utc).isoformat()
@@ -152,12 +199,19 @@ def build_report(
         "project_id": project["project_id"],
         "report_id": report_id,
         "uptime_pct": avail["uptime_pct"],
+        "coverage_pct": avail["coverage_pct"],
+        "checks_total": avail["checks_total"],
+        "checks_up": avail["checks_up"],
+        "checks_down": avail["checks_down"],
+        "checks_inconclusive": avail["checks_inconclusive"],
+        "checks_expected": avail["checks_expected"],
         "avg_latency_ms": perf["avg_latency_ms"],
         "p95_latency_ms": perf["p95_latency_ms"],
         "incident_count": rel["incident_count"],
         "total_downtime_sec": rel["total_downtime_sec"],
         "severity": severity,
         "sla_pass": sla_pass,
+        "slo_status": slo_status,
         "generated_at": generated_at,
     }
 
@@ -273,7 +327,13 @@ def generate_for_project(
         logger.info(f"  {project_id}: no checks in window — skipping weekly report")
         return None
 
-    report = build_report(project, checks, incidents, report_id)
+    report = build_report(
+        project,
+        checks,
+        incidents,
+        report_id,
+        expected_checks=int((window_end - window_start).total_seconds() // CHECK_INTERVAL_SECONDS),
+    )
     # report holds native floats/ints (JSON-safe for S3/email); convert floats ->
     # Decimal only for the DynamoDB write.
     reports_table.put_item(Item=floats_to_decimal(report))

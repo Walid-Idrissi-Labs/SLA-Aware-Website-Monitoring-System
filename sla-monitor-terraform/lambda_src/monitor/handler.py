@@ -27,6 +27,13 @@ checks_table = dynamodb.Table(os.environ["CHECKS_TABLE_NAME"])
 FAILURE_THRESHOLD_DEFAULT = int(os.environ.get("FAILURE_THRESHOLD_DEFAULT", "3"))
 HTTP_TIMEOUT_SECONDS = int(os.environ.get("HTTP_TIMEOUT_SECONDS", "10"))
 MAX_REDIRECTS = 3
+# Which HTTP statuses count as "up" when a project does not override them.
+# Stored per project and snapshotted onto every check, so editing it later never
+# reinterprets checks that were already recorded.
+DEFAULT_ACCEPTED_STATUSES = "200-399"
+# Covers Cloudflare and AWS WAF. Both mean "your client was stopped", which says
+# nothing about whether the site is serving real users.
+CHALLENGE_HEADERS = ("cf-mitigated", "x-amzn-waf-action")
 SES_SENDER_PARAM_PATH = os.environ["SES_SENDER_PARAM_PATH"]
 # Cert expiry is slow-moving per-project state; refresh it at most this often
 # rather than on every per-minute check.
@@ -85,6 +92,57 @@ def classify_error(exc: Exception) -> str:
     return "conn"
 
 
+def parse_accepted_statuses(spec: str | None) -> list[tuple[int, int]]:
+    """'200-399,404' -> [(200, 399), (404, 404)].
+
+    Malformed input falls back to the default rather than raising: a bad value
+    should never turn a working monitor into a crash loop. The write path
+    (project_manager) rejects malformed values before they are stored.
+    """
+    ranges: list[tuple[int, int]] = []
+    for part in str(spec or DEFAULT_ACCEPTED_STATUSES).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            if "-" in part:
+                low, high = part.split("-", 1)
+                ranges.append((int(low), int(high)))
+            else:
+                code = int(part)
+                ranges.append((code, code))
+        except ValueError:
+            logger.warning(f"Ignoring malformed accepted_status entry {part!r}")
+    if not ranges:
+        return [(200, 399)]
+    return ranges
+
+
+def is_status_accepted(http_status: int, ranges: list[tuple[int, int]]) -> bool:
+    return any(low <= http_status <= high for low, high in ranges)
+
+
+def is_bot_challenge(headers) -> bool:
+    """True when the response is a challenge/CAPTCHA page rather than the site."""
+    for header in CHALLENGE_HEADERS:
+        if str(headers.get(header, "")).lower() in ("challenge", "captcha"):
+            return True
+    return False
+
+
+def classify_response(http_status: int, headers, ranges: list[tuple[int, int]]) -> tuple[str, str | None]:
+    """Turn an HTTP response we actually received into (status, error_type).
+
+    Accepted codes are tested first, so a monitor that deliberately accepts 403
+    keeps a real signal instead of being treated as blocked.
+    """
+    if is_status_accepted(http_status, ranges):
+        return "success", None
+    if is_bot_challenge(headers):
+        return "inconclusive", "blocked"
+    return "failure", "http"
+
+
 def probe_certificate(url: str, timeout: int = 5) -> dict | None:
     """Best-effort TLS certificate read for HTTPS URLs.
 
@@ -113,7 +171,8 @@ def probe_certificate(url: str, timeout: int = 5) -> dict | None:
         return None
 
 
-def perform_http_check(url: str) -> dict:
+def perform_http_check(url: str, accepted_statuses: str | None = None) -> dict:
+    ranges = parse_accepted_statuses(accepted_statuses)
     session = requests.Session()
     session.max_redirects = MAX_REDIRECTS
     start_time = time.time()
@@ -121,15 +180,13 @@ def perform_http_check(url: str) -> dict:
         response   = session.get(url, timeout=HTTP_TIMEOUT_SECONDS, allow_redirects=True)
         latency_ms = int((time.time() - start_time) * 1000)
         http_status = response.status_code
-        if http_status == 200:
-            status     = "success"
-            error_type = None
-        else:
-            status     = "failure"
-            error_type = "http"  # a response came back, just not a healthy one
+        status, error_type = classify_response(http_status, response.headers, ranges)
     except requests.exceptions.RequestException as exc:
         latency_ms  = HTTP_TIMEOUT_SECONDS * 1000
         http_status = 0
+        # A timeout, refused connection or TLS failure is evidence about the
+        # target, so it stays a failure. Only our own inability to form a
+        # verdict (a challenge page, a probe-side error) is inconclusive.
         status      = "failure"
         error_type  = classify_error(exc)
     finally:
@@ -179,14 +236,24 @@ def refresh_certificate_if_stale(project: dict) -> None:
 
 def fetch_recent_checks(project_id: str, failure_threshold: int) -> list[dict]:
     # Newest first: the current check (written moments ago — hence the
-    # consistent read), the N-check window, and one check before the window.
+    # consistent read), the N-check window, and enough history to see where the
+    # run before it started. Inconclusive checks lengthen that history, so the
+    # window is wider than the threshold.
     response = checks_table.query(
         KeyConditionExpression=Key("project_id").eq(project_id),
         ScanIndexForward=False,
-        Limit=failure_threshold + 2,
+        Limit=(failure_threshold * 2) + 5,
         ConsistentRead=True,
     )
     return response.get("Items", [])
+
+
+def _is_failure(check: dict) -> bool:
+    return check.get("status") == "failure"
+
+
+def _is_success(check: dict) -> bool:
+    return check.get("status") == "success"
 
 
 def detect_transition(items: list[dict], failure_threshold: int) -> str | None:
@@ -196,24 +263,28 @@ def detect_transition(items: list[dict], failure_threshold: int) -> str | None:
     current = items[0]
 
     # DOWN: the last N checks (including the current one) all failed, and the
-    # check before that window succeeded — or doesn't exist, meaning the
-    # project has been down since its very first checks.
+    # run starts here — the check before the window is not a failure, or does
+    # not exist, meaning the project has been down since its first checks.
+    # An inconclusive check inside the window breaks it, so a blocked probe can
+    # never manufacture a DOWN alert.
     window = items[:failure_threshold]
-    if len(window) == failure_threshold and all(c["status"] == "failure" for c in window):
+    if len(window) == failure_threshold and all(_is_failure(c) for c in window):
         before = items[failure_threshold] if len(items) > failure_threshold else None
-        if before is None or before["status"] == "success":
+        if before is None or not _is_failure(before):
             return "down"
 
     # UP: the current check succeeded immediately after a failure run long
     # enough to have triggered a DOWN alert. Anything shorter never alerted,
     # so a recovery email would be noise; and only the first success after
     # the run fires, so a sustained recovery doesn't repeat the email.
-    if current["status"] == "success":
+    # Inconclusive checks are skipped, not counted: a transient block between
+    # the outage and the recovery must not swallow the recovery email.
+    if _is_success(current):
         run = 0
         for check in items[1:]:
-            if check["status"] == "failure":
+            if _is_failure(check):
                 run += 1
-            else:
+            elif _is_success(check):
                 break
         if run >= failure_threshold:
             return "up"
@@ -223,11 +294,12 @@ def detect_transition(items: list[dict], failure_threshold: int) -> str | None:
 
 def get_first_failure_timestamp(items: list[dict]) -> int:
     # Oldest failure in the consecutive run that starts at the current check.
+    # Inconclusive checks are skipped, for the same reason as in detect_transition.
     first_failure_ts = None
     for item in items:
-        if item["status"] == "failure":
+        if _is_failure(item):
             first_failure_ts = int(item["timestamp"])
-        else:
+        elif _is_success(item):
             break
     return first_failure_ts if first_failure_ts is not None else int(time.time() * 1000)
 
@@ -238,7 +310,9 @@ def check_project(project: dict) -> None:
     notification_email = project.get("notification_email")
 
 
-    check_result = perform_http_check(project["url"])
+    check_result = perform_http_check(
+        project["url"], project.get("accepted_status") or DEFAULT_ACCEPTED_STATUSES
+    )
     now_ms = int(time.time() * 1000)
     ttl_seconds = int(time.time()) + 7_776_000  # 90 days : dynamodb ttl expects seconds
 
@@ -249,6 +323,9 @@ def check_project(project: dict) -> None:
         "status": check_result["status"],
         "latency_ms": check_result["latency_ms"],
         "http_status_code": check_result["http_status_code"],
+        # Snapshot of the rule that judged this check. Editing a project's
+        # accepted statuses later must not rewrite history.
+        "accepted_status": project.get("accepted_status") or DEFAULT_ACCEPTED_STATUSES,
         "ttl": ttl_seconds,
     }
     # Only stored on failures — success has no cause and a null attribute is noise.

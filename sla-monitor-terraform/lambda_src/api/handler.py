@@ -51,6 +51,11 @@ class DecimalEncoder(json.JSONEncoder):
 
 
 
+# The monitor rule runs at rate(1 minute); used to say how many checks a window
+# should have contained, so missing evidence is visible instead of implied.
+CHECK_INTERVAL_SECONDS = 60
+
+
 def _get_tables():
     global _dynamodb, _users_table, _projects_table, _checks_table, _reports_table, _project_gsi_name
     if _dynamodb is None:
@@ -228,11 +233,30 @@ def handle_get_projects_status(event: dict) -> dict:
             break
         query_kwargs["ExclusiveStartKey"] = last_key
 
-    current_status = checks[-1]["status"] if checks else "unknown"
+    current_status = checks[-1].get("status") if checks else "unknown"
+
+    up = sum(1 for c in checks if c.get("status") == "success")
+    down = sum(1 for c in checks if c.get("status") == "failure")
+    inconclusive = len(checks) - up - down
+    conclusive = up + down
+    expected = max(hours * 3600 // CHECK_INTERVAL_SECONDS, 1)
+
+    summary = {
+        "window_hours": hours,
+        "checks_total": len(checks),
+        "checks_up": up,
+        "checks_down": down,
+        "checks_inconclusive": inconclusive,
+        "checks_expected": expected,
+        # None, not 0.0: "no conclusive checks" is not "0% uptime".
+        "uptime_pct": round((up / conclusive) * 100, 2) if conclusive else None,
+        "coverage_pct": round(min(conclusive / expected, 1) * 100, 2),
+    }
 
     return success(200, {
         "project_id": project_id,
         "current_status": current_status,
+        "summary": summary,
         "checks": checks,
     })
 
