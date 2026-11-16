@@ -31,6 +31,9 @@ export interface CounterProps {
   padding?: number
   tabular?: boolean
   digitStyle?: CSSProperties
+  /** Extra class on each digit wrapper — lets a caller turn every digit into a
+   *  fixed-size tile without fighting Counter's inline width logic. */
+  digitClassName?: string
   className?: string
   style?: CSSProperties
 }
@@ -224,6 +227,7 @@ export default function Counter({
   padding = 0,
   tabular = true,
   digitStyle,
+  digitClassName = '',
   className = '',
   style,
 }: CounterProps) {
@@ -573,7 +577,7 @@ export default function Counter({
         {affix(prefix)}
         {list.map((slot) =>
           slot.kind === 'digit' ? (
-            <span key={slot.key} data-slot={slot.key} className={DIGIT} style={digitStyle}>
+            <span key={slot.key} data-slot={slot.key} className={`${DIGIT} ${digitClassName}`.trim()} style={digitStyle}>
               <span className={SIZER}>{digits[slot.digit]}</span>
               <span className={WINDOW} style={{ maskImage: MASK, WebkitMaskImage: MASK }}>
                 <span className={STRIP} data-strip="">

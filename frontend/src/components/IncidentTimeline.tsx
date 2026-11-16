@@ -10,7 +10,7 @@ export default function IncidentTimeline({ incidents }: { incidents: Incident[] 
     <div className="panel-flush animate-fade-up" style={{ animationDelay: '300ms' }}>
       <div className="panel-head">
         <div className="flex items-center gap-2.5">
-          <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Incident Log</span>
+          <span className="text-[13px] font-semibold text-txt-hi">Incident Log</span>
           <span className="font-mono text-[11px] text-txt-dim">[{incidents.length}]</span>
         </div>
       </div>

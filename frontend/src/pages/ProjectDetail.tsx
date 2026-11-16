@@ -14,17 +14,14 @@ import {
   CircleDashed,
   Download,
   Sheet,
-  Timer,
-  Activity,
-  Hourglass,
-  Gauge,
   Radio,
 } from 'lucide-react'
 import Shell from '../components/Shell'
 import TickerStat from '../components/TickerStat'
-import StatCard from '../components/StatCard'
 import MagicBento from '../components/MagicBento'
 import Counter from '../components/Counter'
+import FlipClock from '../components/FlipClock'
+import { BentoFigure, BentoArea, BentoBars, BentoMeter } from '../components/BentoVisuals'
 import LatencyChart from '../components/LatencyChart'
 import UptimeGauge from '../components/UptimeGauge'
 import StatusStrip from '../components/StatusStrip'
@@ -213,7 +210,7 @@ function DeleteModal({ projectName, onClose, onConfirm, deleting, error }: Delet
       <div role="dialog" aria-modal="true" aria-label="Confirm delete" className="panel w-full max-w-sm animate-scale-in overflow-hidden border-crit/25">
         <div className="flex items-center gap-2.5 border-b border-crit/20 bg-crit/[0.05] px-5 h-11">
           <TriangleAlert className="h-4 w-4 text-crit" strokeWidth={1.75} />
-          <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-crit">Confirm delete</span>
+          <span className="text-[13px] font-semibold text-crit">Confirm delete</span>
         </div>
         <div className="space-y-2 p-5">
           <p className="text-[13px] leading-relaxed text-txt-mid">
@@ -238,7 +235,7 @@ function DeleteModal({ projectName, onClose, onConfirm, deleting, error }: Delet
 function Metric({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) {
   return (
     <div className="flex items-center justify-between border-b border-white/[0.05] py-2.5 last:border-0">
-      <span className="micro">{label}</span>
+      <span className="text-[12px] font-medium text-txt-lo">{label}</span>
       <span className="data text-[14px] font-semibold" style={{ color: color ?? '#eceef0' }}>
         {value}
       </span>
@@ -271,15 +268,6 @@ export default function ProjectDetail() {
   const [genMsg, setGenMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null)
   const [downloadKey, setDownloadKey] = useState<string | null>(null)
 
-  // Clock for the incident-free counter. Once a minute is plenty — the readout
-  // is in days/hours/minutes, and Counter only re-animates a digit whose value
-  // actually changed.
-  const [nowMs, setNowMs] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = window.setInterval(() => setNowMs(Date.now()), 30_000)
-    return () => window.clearInterval(timer)
-  }, [])
-
   /** Epoch ms of the moment the last incident resolved, or of the endpoint's
    *  creation when it has never had one. `null` means we cannot say yet. */
   const incidentFreeSince = useMemo(() => {
@@ -292,15 +280,29 @@ export default function ProjectDetail() {
     return Math.max(...resolved.map((i) => (i.end_time as number) * 1000))
   }, [incidents, project])
 
-  const incidentFree = useMemo(() => {
-    if (incidentFreeSince == null || reliability?.open_incident) return null
-    const secs = Math.max(0, Math.floor((nowMs - incidentFreeSince) / 1000))
-    return {
-      days: Math.floor(secs / 86_400),
-      hours: Math.floor((secs % 86_400) / 3600),
-      mins: Math.floor((secs % 3600) / 60),
+  /** Incident durations in minutes, oldest first — the shape of the instability. */
+  const incidentDurations = useMemo(
+    () =>
+      incidents
+        .filter((i) => i.duration_seconds != null)
+        .slice()
+        .sort((a, b) => a.start_time - b.start_time)
+        .map((i) => Math.round(((i.duration_seconds as number) / 60) * 10) / 10),
+    [incidents],
+  )
+
+  /** Healthy gaps between consecutive resolved incidents, in hours. */
+  const incidentGaps = useMemo(() => {
+    const resolved = incidents
+      .filter((i) => i.resolved && i.end_time != null)
+      .slice()
+      .sort((a, b) => a.start_time - b.start_time)
+    const gaps: number[] = []
+    for (let i = 1; i < resolved.length; i++) {
+      gaps.push(Math.round(((resolved[i].start_time - (resolved[i - 1].end_time as number)) / 3600) * 10) / 10)
     }
-  }, [incidentFreeSince, nowMs, reliability])
+    return gaps
+  }, [incidents])
 
   const loadData = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -555,7 +557,7 @@ export default function ProjectDetail() {
         {/* Chart */}
         <div className="panel-flush self-start lg:col-span-2 animate-fade-up" style={{ animationDelay: '120ms' }}>
           <div className="panel-head">
-            <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Latency Analytics</span>
+            <span className="text-[13px] font-semibold text-txt-hi">Latency Analytics</span>
             <div className="flex gap-1">
               {[1, 24, 72].map((h) => (
                 <button
@@ -585,7 +587,7 @@ export default function ProjectDetail() {
 
         {/* Vitals */}
         <div className="panel animate-fade-up p-5" style={{ animationDelay: '180ms' }}>
-          <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Vitals</span>
+          <span className="text-[13px] font-semibold text-txt-hi">Vitals</span>
           <div className="hr-accent mt-3" />
 
           <div className="mt-4 flex justify-center">
@@ -634,7 +636,7 @@ export default function ProjectDetail() {
           </div>
 
           <div className="mt-4">
-            <span className="micro">Recent probes</span>
+            <span className="text-[12px] font-medium text-txt-lo">Recent probes</span>
             <div className="mt-2">
               <StatusStrip checks={checks} bars={48} />
             </div>
@@ -644,7 +646,7 @@ export default function ProjectDetail() {
 
       {/* Reliability */}
       <div className="mt-8 flex items-center gap-3 animate-fade-up" style={{ animationDelay: '250ms' }}>
-        <h2 className="font-mono text-[12px] font-bold uppercase tracking-micro text-txt-hi">Reliability</h2>
+        <h2 className="font-display text-[15px] font-semibold tracking-[-0.01em] text-txt-hi">Reliability</h2>
         <span className="rounded-md border border-white/[0.08] bg-white/[0.02] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-txt-mid">
           {INCIDENT_WINDOW_DAYS}d
         </span>
@@ -660,119 +662,163 @@ export default function ProjectDetail() {
         </div>
       )}
 
-      {/* Incident-free streak — counts up since the last incident resolved */}
-      <div className="panel mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3">
-        <div className="min-w-0">
-          <span className="micro">No recorded incidents in</span>
-          <p className="mt-0.5 font-mono text-[10px] text-txt-dim">
-            {incidentFreeSince != null
-              ? `since ${new Date(incidentFreeSince).toISOString().slice(0, 16).replace('T', ' ')} UTC`
-              : 'waiting for the first check'}
-          </p>
-        </div>
-        {incidentFree ? (
-          <div className="flex items-baseline gap-2.5">
-            {[
-              { value: incidentFree.days, unit: 'd' },
-              { value: incidentFree.hours, unit: 'h' },
-              { value: incidentFree.mins, unit: 'm' },
-            ].map(({ value, unit }) => (
-              <span key={unit} className="flex items-baseline gap-0.5">
-                <Counter
-                  value={value}
-                  direction="up"
-                  duration={0.8}
-                  bounce={0.3}
-                  stagger={0.03}
-                  fade={0.22}
-                  fontSize={26}
-                  fontWeight={700}
-                  minDigits={1}
-                  tabular
-                  motionBlur
-                  className="data font-display leading-none text-txt-hi"
-                />
-                <span className="data text-[11px] font-semibold text-txt-lo">{unit}</span>
-              </span>
-            ))}
-          </div>
-        ) : (
-          <span className="font-mono text-[11px] font-semibold text-crit">
-            {reliability?.open_incident ? 'incident in progress' : '—'}
-          </span>
-        )}
+      {/* Incident-free streak — a flip clock counting up since the last incident */}
+      <div className="mt-3">
+        <FlipClock
+          since={incidentFreeSince}
+          open={Boolean(reliability?.open_incident)}
+          label="No recorded incidents in"
+        />
       </div>
 
       <MagicBento
         columns={4}
-        rowHeight={116}
+        rowHeight={176}
         gap={12}
-        radius={14}
-        minCell={150}
+        radius={18}
+        minCell={190}
         spotlightRadius={260}
         className="mt-3"
         items={[
           {
             id: 'mttr',
-            content: (
-              <StatCard
-                label="MTTR"
-                value={reliability ? reliability.mttr_sec / 60 : null}
-                decimals={1}
-                unit="min"
-                icon={<Timer className="h-4 w-4" strokeWidth={1.75} />}
-                sub="mean time to recovery"
-              />
+            title: 'MTTR',
+            description: 'Mean time to recovery, per incident.',
+            visual: (
+              <>
+                <BentoFigure
+                  value={
+                    reliability ? (
+                      <Counter
+                        value={reliability.mttr_sec / 60}
+                        decimals={1}
+                        suffix="min"
+                        direction="up"
+                        duration={0.9}
+                        bounce={0.28}
+                        stagger={0.03}
+                        fade={0.24}
+                        fontSize={24}
+                        fontWeight={600}
+                        tabular
+                        motionBlur
+                      />
+                    ) : (
+                      '—'
+                    )
+                  }
+                  note={incidentDurations.length > 1 ? `${incidentDurations.length} incidents` : undefined}
+                />
+                <BentoArea values={incidentDurations} color={STATUS.warn} />
+              </>
             ),
           },
           {
             id: 'mtbf',
-            content: (
-              <StatCard
-                label="MTBF"
-                value={reliability && reliability.mtbf_sec != null ? reliability.mtbf_sec / 3600 : null}
-                decimals={1}
-                unit="h"
-                icon={<Activity className="h-4 w-4" strokeWidth={1.75} />}
-                sub="mean time between failures"
-              />
+            title: 'MTBF',
+            description: 'Healthy time between failures.',
+            visual: (
+              <>
+                <BentoFigure
+                  value={
+                    reliability && reliability.mtbf_sec != null ? (
+                      <Counter
+                        value={reliability.mtbf_sec / 3600}
+                        decimals={1}
+                        suffix="h"
+                        direction="up"
+                        duration={0.9}
+                        bounce={0.28}
+                        stagger={0.03}
+                        fade={0.24}
+                        fontSize={24}
+                        fontWeight={600}
+                        tabular
+                        motionBlur
+                      />
+                    ) : (
+                      '—'
+                    )
+                  }
+                  note={incidentGaps.length >= 2 ? 'per gap' : undefined}
+                />
+                <BentoBars values={incidentGaps.length ? incidentGaps : [0]} color={STATUS.ok} />
+              </>
             ),
           },
           {
             id: 'longest',
-            content: (
-              <StatCard
-                label="Longest Outage"
-                value={reliability ? reliability.longest_outage_sec / 60 : null}
-                decimals={1}
-                unit="min"
-                icon={<Hourglass className="h-4 w-4" strokeWidth={1.75} />}
-                sub={
-                  reliability
-                    ? `${reliability.incident_count} incident${reliability.incident_count === 1 ? '' : 's'} · ${INCIDENT_WINDOW_DAYS}d`
-                    : '—'
-                }
-              />
+            title: 'Longest outage',
+            description: `Worst single incident in ${INCIDENT_WINDOW_DAYS} days.`,
+            visual: (
+              <>
+                <BentoFigure
+                  value={
+                    reliability ? (
+                      <Counter
+                        value={reliability.longest_outage_sec / 60}
+                        decimals={1}
+                        suffix="min"
+                        direction="up"
+                        duration={0.9}
+                        bounce={0.28}
+                        stagger={0.03}
+                        fade={0.24}
+                        fontSize={24}
+                        fontWeight={600}
+                        tabular
+                        motionBlur
+                      />
+                    ) : (
+                      '—'
+                    )
+                  }
+                  note={reliability ? `${reliability.incident_count} total` : undefined}
+                />
+                <BentoBars values={incidentDurations.length ? incidentDurations : [0]} color={STATUS.crit} />
+              </>
             ),
           },
           {
             id: 'budget',
-            content: (
-              <StatCard
-                label="Error Budget"
-                value={reliability ? reliability.error_budget.burn_pct : null}
-                decimals={1}
-                unit="%"
-                icon={<Gauge className="h-4 w-4" strokeWidth={1.75} />}
-                accent={reliability ? (reliability.error_budget.ok ? STATUS.ok : STATUS.crit) : STATUS.accent}
-                sub={
-                  reliability
-                    ? reliability.error_budget.ok
-                      ? `${formatDowntime(reliability.error_budget.remaining_sec)} left`
-                      : `${formatDowntime(Math.abs(reliability.error_budget.remaining_sec))} over`
-                    : 'burned this window'
-                }
-              />
+            title: 'Error budget',
+            description: 'Share of the allowed downtime already spent.',
+            visual: (
+              <>
+                <BentoFigure
+                  value={
+                    reliability ? (
+                      <Counter
+                        value={reliability.error_budget.burn_pct}
+                        decimals={1}
+                        suffix="%"
+                        direction="up"
+                        duration={0.9}
+                        bounce={0.28}
+                        stagger={0.03}
+                        fade={0.24}
+                        fontSize={24}
+                        fontWeight={600}
+                        tabular
+                        motionBlur
+                      />
+                    ) : (
+                      '—'
+                    )
+                  }
+                  note={
+                    reliability
+                      ? reliability.error_budget.ok
+                        ? `${formatDowntime(reliability.error_budget.remaining_sec)} left`
+                        : `${formatDowntime(Math.abs(reliability.error_budget.remaining_sec))} over`
+                      : undefined
+                  }
+                />
+                <BentoMeter
+                  pct={reliability ? reliability.error_budget.burn_pct : 0}
+                  color={reliability?.error_budget.ok ? STATUS.ok : STATUS.crit}
+                />
+              </>
             ),
           },
         ]}
@@ -787,7 +833,7 @@ export default function ProjectDetail() {
       <div className="panel-flush mt-3 animate-fade-up" style={{ animationDelay: '240ms' }}>
         <div className="panel-head">
           <div className="flex items-center gap-2.5">
-            <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">SLA Reports</span>
+            <span className="text-[13px] font-semibold text-txt-hi">SLA Reports</span>
             <span className="font-mono text-[11px] text-txt-dim">[{reports.length}]</span>
           </div>
         </div>

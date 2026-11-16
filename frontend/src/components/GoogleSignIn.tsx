@@ -27,7 +27,7 @@ export default function GoogleSignIn({ onError }: Props) {
     <>
       <div className="my-5 flex items-center gap-3">
         <div className="h-px flex-1 bg-white/[0.08]" />
-        <span className="font-mono text-[10px] uppercase tracking-micro text-txt-dim">or</span>
+        <span className="text-[11px] text-txt-dim">or</span>
         <div className="h-px flex-1 bg-white/[0.08]" />
       </div>
 

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Mail, KeyRound, ShieldCheck } from 'lucide-react'
+import { Mail, ShieldCheck } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
+import CodeSlots, { type CodeSlotsStatus } from '../components/CodeSlots'
 import { Alert, Spinner } from '../components/ui'
 import { confirmSignUp, resendConfirmationCode, friendlyAuthMessage } from '../lib/cognito'
 
@@ -16,25 +17,35 @@ export default function ConfirmSignup() {
 
   const [email, setEmail] = useState(state?.email ?? '')
   const [code, setCode] = useState('')
+  const [status, setStatus] = useState<CodeSlotsStatus>('idle')
   const [loading, setLoading] = useState(false)
   const [resending, setResending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!email.trim() || !code.trim()) {
-      setError('Enter your email and the verification code.')
+  async function verify(value: string) {
+    if (!email.trim()) {
+      setError('Enter your email first, then the code.')
+      setStatus('error')
+      return
+    }
+    if (value.length !== 6) {
+      setError('The code is six digits.')
       return
     }
     setLoading(true)
     setError(null)
     setNotice(null)
     try {
-      await confirmSignUp(email.trim(), code)
-      navigate('/login', { state: { email: email.trim(), justConfirmed: true } })
+      await confirmSignUp(email.trim(), value)
+      setStatus('success')
+      window.setTimeout(
+        () => navigate('/login', { state: { email: email.trim(), justConfirmed: true } }),
+        900,
+      )
     } catch (err) {
       setError(friendlyAuthMessage(err).message)
+      setStatus('error')
       setLoading(false)
     }
   }
@@ -71,7 +82,13 @@ export default function ConfirmSignup() {
         </>
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          verify(code)
+        }}
+        className="space-y-5"
+      >
         {notice && (
           <Alert tone="success" className="animate-fade-in">
             {notice}
@@ -102,27 +119,33 @@ export default function ConfirmSignup() {
         </div>
 
         <div>
-          <label className="field-label" htmlFor="code">
-            <span className="inline-flex items-center gap-1.5">
-              <KeyRound className="h-3 w-3" strokeWidth={1.75} /> Verification code
-            </span>
-          </label>
-          <input
-            id="code"
-            type="text"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={6}
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-            className="field text-center text-[16px] tracking-[0.5em]"
-            placeholder="123456"
-            required
-          />
+          <span className="field-label">Verification code</span>
+          <div className="flex justify-center pt-1">
+            <CodeSlots
+              length={6}
+              value={code}
+              status={status}
+              disabled={loading || status === 'success'}
+              autoFocus={Boolean(state?.email)}
+              onChange={(next) => {
+                setCode(next)
+                if (status === 'error') setStatus('idle')
+              }}
+              onComplete={verify}
+              accentColor="#eceef0"
+              inkColor="#eceef0"
+              slotColor="#1c1f25"
+              digitColor="#0e1115"
+              dangerColor="#f87171"
+              slotSize={46}
+              gap={8}
+              radius={12}
+            />
+          </div>
         </div>
 
-        <button type="submit" disabled={loading} className="btn-auth">
-          {loading ? (
+        <button type="submit" disabled={loading || status === 'success'} className="btn-auth">
+          {loading || status === 'success' ? (
             <Spinner size={16} />
           ) : (
             <>

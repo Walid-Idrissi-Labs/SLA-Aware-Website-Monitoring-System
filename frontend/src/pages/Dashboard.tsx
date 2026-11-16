@@ -1,16 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ShieldCheck, Gauge, TriangleAlert, Radar, RefreshCw, Plus } from 'lucide-react'
+import { RefreshCw, Plus, Radar } from 'lucide-react'
 import Shell from '../components/Shell'
 import TickerStat from '../components/TickerStat'
-import StatCard from '../components/StatCard'
 import ProjectCard from '../components/ProjectCard'
 import AddProjectModal from '../components/AddProjectModal'
 import MagicBento, { type MagicBentoItem } from '../components/MagicBento'
+import Counter from '../components/Counter'
+import { BentoFigure, BentoArea, BentoBars, BentoTiles, BentoSteps } from '../components/BentoVisuals'
 import { Alert } from '../components/ui'
 import { getProjects, getProjectStatus } from '../lib/api'
 import { POLL_INTERVAL_MS, STATUS } from '../lib/format'
-import type { Project, ProjectStatus } from '../types'
+import type { Check, Project, ProjectStatus } from '../types'
+
+/** Consecutive failures at the end of the check list, newest first. */
+function failureStreak(checks: Check[]): number {
+  const sorted = [...checks].sort((a, b) => b.timestamp - a.timestamp)
+  let streak = 0
+  for (const check of sorted) {
+    if (check.status === 'inconclusive') continue
+    if (check.status === 'failure') streak += 1
+    else break
+  }
+  return streak
+}
 
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
@@ -66,7 +79,7 @@ export default function Dashboard() {
     return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [loadProjects])
 
-  const activeProjects = projects.filter((p) => p.active)
+  const activeProjects = useMemo(() => projects.filter((p) => p.active), [projects])
   const total = activeProjects.length
   // A project with no checks yet is "pending", not down.
   const checked = activeProjects.filter((p) => p.current_status === 'success' || p.current_status === 'failure')
@@ -79,60 +92,184 @@ export default function Dashboard() {
   const incidents = checked.filter((p) => p.current_status === 'failure').length
   const healthPct = checked.length > 0 ? (healthy / checked.length) * 100 : null
 
-  const kpis: MagicBentoItem[] = useMemo(
-    () => [
+  /** One bucket per minute across every endpoint: the pass rate and the mean
+   *  latency for that minute. Inconclusive checks are excluded from both — an
+   *  unanswered probe is not a slow one. */
+  const timeline = useMemo(() => {
+    const buckets = new Map<number, { up: number; conclusive: number; latency: number; measured: number }>()
+    for (const project of activeProjects) {
+      for (const check of statuses[project.project_id]?.checks ?? []) {
+        const minute = Math.floor(check.timestamp / 60_000)
+        const bucket = buckets.get(minute) ?? { up: 0, conclusive: 0, latency: 0, measured: 0 }
+        if (check.status === 'success') {
+          bucket.up += 1
+          bucket.conclusive += 1
+        } else if (check.status === 'failure') {
+          bucket.conclusive += 1
+        }
+        if (check.status !== 'inconclusive' && check.latency_ms != null) {
+          bucket.latency += check.latency_ms
+          bucket.measured += 1
+        }
+        buckets.set(minute, bucket)
+      }
+    }
+    const minutes = [...buckets.keys()].sort((a, b) => a - b)
+    const health: number[] = []
+    const latency: number[] = []
+    for (const minute of minutes) {
+      const bucket = buckets.get(minute)!
+      if (bucket.conclusive > 0) health.push((bucket.up / bucket.conclusive) * 100)
+      if (bucket.measured > 0) latency.push(Math.round(bucket.latency / bucket.measured))
+    }
+    return { health, latency }
+  }, [activeProjects, statuses])
+
+  const failing = useMemo(
+    () =>
+      activeProjects
+        .map((project) => ({
+          project,
+          streak: failureStreak(statuses[project.project_id]?.checks ?? []),
+        }))
+        .filter((entry) => entry.project.current_status === 'failure'),
+    [activeProjects, statuses],
+  )
+
+  const kpis: MagicBentoItem[] = useMemo(() => {
+    const healthSeries = timeline.health.length >= 2 ? timeline.health.slice(-40) : []
+    const latencySeries = timeline.latency.length >= 2 ? timeline.latency.slice(-30) : []
+
+    return [
       {
         id: 'health',
-        content: (
-          <StatCard
-            label="System Health"
-            value={healthPct}
-            decimals={1}
-            unit="%"
-            icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.75} />}
-            accent={healthPct === null || healthPct >= 99 ? STATUS.ok : STATUS.warn}
-            sub={checked.length > 0 ? `${healthy} of ${checked.length} responding` : 'no checks yet'}
-          />
+        title: 'System Health',
+        description: 'Minute-by-minute pass rate across every endpoint.',
+        visual: (
+          <>
+            <BentoFigure
+              value={
+                healthPct === null ? (
+                  '—'
+                ) : (
+                  <Counter
+                    value={healthPct}
+                    decimals={1}
+                    suffix="%"
+                    direction="up"
+                    duration={0.9}
+                    bounce={0.28}
+                    stagger={0.03}
+                    fade={0.24}
+                    fontSize={24}
+                    fontWeight={600}
+                    tabular
+                    motionBlur
+                  />
+                )
+              }
+              note={checked.length > 0 ? `${healthy} of ${checked.length} responding` : 'no checks yet'}
+            />
+            <BentoArea
+              values={healthSeries}
+              color={healthPct === null || healthPct >= 99 ? STATUS.ok : STATUS.warn}
+              floorAtZero
+            />
+          </>
         ),
       },
       {
         id: 'latency',
-        content: (
-          <StatCard
-            label="Avg Latency"
-            value={avgLatency}
-            unit="ms"
-            icon={<Gauge className="h-4 w-4" strokeWidth={1.75} />}
-            sub="across active endpoints"
-          />
+        title: 'Avg Latency',
+        description: 'Mean response time, bucketed by minute.',
+        visual: (
+          <>
+            <BentoFigure
+              value={
+                avgLatency === null ? (
+                  '—'
+                ) : (
+                  <Counter
+                    value={avgLatency}
+                    suffix="ms"
+                    direction="up"
+                    duration={0.9}
+                    bounce={0.28}
+                    stagger={0.03}
+                    fade={0.24}
+                    fontSize={24}
+                    fontWeight={600}
+                    tabular
+                    motionBlur
+                  />
+                )
+              }
+              note={latencySeries.length >= 2 ? 'last 30 min' : 'waiting for data'}
+            />
+            <BentoBars values={latencySeries.length >= 2 ? latencySeries : [0]} color={STATUS.accent} />
+          </>
         ),
       },
       {
         id: 'incidents',
-        content: (
-          <StatCard
-            label="Active Incidents"
-            value={incidents}
-            icon={<TriangleAlert className="h-4 w-4" strokeWidth={1.75} />}
-            accent={incidents > 0 ? STATUS.crit : STATUS.ok}
-            sub={incidents > 0 ? 'endpoints failing checks' : 'no failing endpoints'}
-          />
+        title: 'Active Incidents',
+        description: 'Endpoints that have tripped their failure threshold.',
+        visual: (
+          <>
+            <BentoFigure
+              value={
+                <Counter
+                  value={incidents}
+                  direction="up"
+                  duration={0.8}
+                  bounce={0.3}
+                  stagger={0.03}
+                  fade={0.24}
+                  fontSize={24}
+                  fontWeight={600}
+                  tabular
+                  motionBlur
+                />
+              }
+              note={incidents > 0 ? 'failing now' : 'all clear'}
+            />
+            <BentoSteps
+              steps={
+                failing.length > 0
+                  ? failing.slice(0, 3).map((entry) => ({
+                      label: entry.project.name,
+                      meta: `${entry.streak} failed`,
+                    }))
+                  : [{ label: 'No endpoint is failing', done: true }]
+              }
+            />
+          </>
         ),
       },
       {
         id: 'endpoints',
-        content: (
-          <StatCard
-            label="Endpoints"
-            value={total}
-            icon={<Radar className="h-4 w-4" strokeWidth={1.75} />}
-            sub="checked every minute"
-          />
+        title: 'Endpoints',
+        description: 'Probed once a minute, around the clock.',
+        visual: (
+          <>
+            <BentoFigure value={<Counter value={total} fontSize={24} fontWeight={600} tabular motionBlur />} note="monitored" />
+            <BentoTiles
+              items={activeProjects.map((project) => ({
+                key: project.project_id,
+                label: project.name,
+                tone:
+                  project.current_status === 'success'
+                    ? ('ok' as const)
+                    : project.current_status === 'failure'
+                      ? ('crit' as const)
+                      : ('neutral' as const),
+              }))}
+            />
+          </>
         ),
       },
-    ],
-    [healthPct, avgLatency, incidents, total, healthy, checked.length],
-  )
+    ]
+  }, [healthPct, avgLatency, incidents, total, healthy, checked.length, timeline, failing, activeProjects])
 
   const cards: MagicBentoItem[] = useMemo(
     () =>
@@ -162,9 +299,8 @@ export default function Dashboard() {
       {/* Page header */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="kicker mb-1.5">Operations</p>
-          <h1 className="text-sheen font-display text-[26px] font-bold tracking-tight">Overview</h1>
-          <p className="mt-1 text-[12px] text-txt-lo">Uptime, latency, and SLA posture across every endpoint.</p>
+          <h1 className="font-display text-[26px] font-semibold tracking-[-0.02em] text-txt-hi">Overview</h1>
+          <p className="mt-1 text-[13px] text-txt-lo">Uptime, latency and SLA posture across every endpoint.</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={loadProjects} disabled={loading} className="btn-ghost">
@@ -182,25 +318,22 @@ export default function Dashboard() {
       <MagicBento
         items={kpis}
         columns={4}
-        rowHeight={116}
+        rowHeight={200}
         gap={10}
-        radius={14}
-        minCell={150}
-        spotlightRadius={260}
+        radius={18}
+        minCell={200}
+        spotlightRadius={280}
         className="mt-6"
       />
 
       {/* Section header */}
-      <div className="mt-8 flex items-center gap-3">
-        <h2 className="font-mono text-[12px] font-bold uppercase tracking-micro text-txt-hi">Monitored Endpoints</h2>
-        <span className="rounded-md border border-white/[0.08] bg-white/[0.02] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-txt-mid">
-          {total}
-        </span>
-        <span className="hr-accent flex-1" />
+      <div className="mt-8 mb-3 flex items-center gap-2.5">
+        <h2 className="font-display text-[15px] font-semibold tracking-[-0.01em] text-txt-hi">Monitored endpoints</h2>
+        <span className="rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[11px] font-medium text-txt-mid">{total}</span>
       </div>
 
       {/* Content */}
-      <div className="mt-4">
+      <div>
         {error && (
           <Alert
             tone="error"
@@ -219,26 +352,24 @@ export default function Dashboard() {
         {loading && !loaded && (
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="panel h-[244px] p-4">
-                <div className="skeleton h-3 w-20" />
-                <div className="skeleton mt-3 h-4 w-40" />
+              <div key={i} className="mb__card h-[248px] p-[18px]">
+                <div className="skeleton h-6 w-24" />
+                <div className="skeleton mt-4 h-14 w-full" />
+                <div className="skeleton mt-6 h-4 w-40" />
                 <div className="skeleton mt-2 h-3 w-28" />
-                <div className="skeleton mt-6 h-8 w-24" />
-                <div className="skeleton mt-6 h-8 w-full" />
-                <div className="skeleton mt-3 h-6 w-full" />
               </div>
             ))}
           </div>
         )}
 
         {loaded && activeProjects.length === 0 && (
-          <div className="panel flex flex-col items-center justify-center gap-4 py-20 text-center">
-            <span className="grid h-14 w-14 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.02] text-txt-lo">
+          <div className="mb__card flex flex-col items-center justify-center gap-4 py-20 text-center">
+            <span className="grid h-14 w-14 place-items-center rounded-xl bg-white/[0.04] text-txt-lo">
               <Radar className="h-6 w-6" strokeWidth={1.75} />
             </span>
             <div>
               <p className="font-display text-[15px] font-semibold text-txt-hi">No endpoints yet</p>
-              <p className="mt-1 text-[12px] text-txt-lo">Add a website to start checking it every minute.</p>
+              <p className="mt-1 text-[13px] text-txt-lo">Add a website to start checking it every minute.</p>
             </div>
             <button onClick={() => setShowAddModal(true)} className="btn-accent">
               <Plus className="h-3.5 w-3.5" strokeWidth={2} />
@@ -248,7 +379,7 @@ export default function Dashboard() {
         )}
 
         {cards.length > 0 && (
-          <MagicBento items={cards} columns={3} rowHeight={244} gap={10} radius={16} minCell={280} />
+          <MagicBento items={cards} columns={3} rowHeight={252} gap={10} radius={18} minCell={290} />
         )}
       </div>
 
