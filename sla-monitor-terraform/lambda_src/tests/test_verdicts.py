@@ -10,6 +10,11 @@ import os
 import sys
 import unittest
 
+# The handlers are imported from inside the Lambda source directories. Writing
+# __pycache__ there puts .pyc files into the deployment zip, so keep bytecode out
+# of the source tree entirely.
+sys.dont_write_bytecode = True
+
 SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Handlers build boto3 clients at import time. Nothing here talks to AWS, but the

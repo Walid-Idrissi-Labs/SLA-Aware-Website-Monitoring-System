@@ -5,9 +5,25 @@ data "archive_file" "lambda_zip" {
   source_dir = var.source_dir
 
   # Keep build/OS cruft out of the deployment package (bloat + confusion).
-  excludes = ["handler.zip", ".DS_Store", "__pycache__"]
+  # `__pycache__/*` is listed separately: excluding the directory name alone has
+  # not always kept the compiled files out of the archive.
+  excludes = ["handler.zip", ".DS_Store", "__pycache__", "__pycache__/*", "*.pyc"]
 
   output_path = "${path.module}/tmp/${var.function_name}.zip"
+}
+
+locals {
+  # output_base64sha256 is base64, so it can carry "+" and "/" into the object
+  # key. Those characters are legal in S3 but do not survive every layer that
+  # touches the key: one such key ended up recorded in state with a duplicate
+  # "/", and CreateFunction then returned NoSuchKey for an object that existed
+  # under a slightly different key. Base64url keeps the SHA-256 and makes the
+  # key unambiguous.
+  zip_key_hash = replace(
+    replace(data.archive_file.lambda_zip.output_base64sha256, "/", "_"),
+    "+",
+    "-"
+  )
 }
 
 
@@ -16,7 +32,7 @@ data "archive_file" "lambda_zip" {
 resource "aws_s3_object" "lambda_zip" {
   bucket = var.artifacts_bucket_name
   #object path
-  key    = "lambda/${var.function_name}/${data.archive_file.lambda_zip.output_base64sha256}.zip"
+  key    = "lambda/${var.function_name}/${local.zip_key_hash}.zip"
   source = data.archive_file.lambda_zip.output_path
 
   #! evaluated at plan time, causing the hash to be compared before it exists on disk
