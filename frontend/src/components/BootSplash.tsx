@@ -7,7 +7,7 @@ interface Props {
 /** Full-screen branded boot / auth handoff splash. */
 export default function BootSplash({ title }: Props) {
   return (
-    <div className="relative grid min-h-screen place-items-center overflow-hidden px-6">
+    <div className="relative grid h-full place-items-center overflow-y-auto overflow-x-hidden px-6">
       {/* ambient glow */}
       <div className="pointer-events-none absolute left-1/2 top-1/2 h-[420px] w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/10 blur-[100px]" />
 

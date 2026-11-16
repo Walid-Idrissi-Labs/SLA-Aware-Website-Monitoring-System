@@ -12,26 +12,22 @@ interface Props {
  * App frame: navigation rail · a raised content panel with a fixed command bar
  * and its own scroll area.
  *
- * The panel owns the scrolling rather than the window, so the command bar
- * never needs `position: sticky` and the panel's rounded border stays put
- * instead of sliding away with the content.
+ * The app is exactly viewport height and the document never scrolls — the panel
+ * owns the scrollbar. That keeps the rail, the command bar and the panel's
+ * rounded border fixed, and avoids a second scrollbar on the window.
  */
 export default function Shell({ ticker, children }: Props) {
   return (
-    <div className="flex h-screen overflow-hidden bg-[#08090b] text-txt-hi">
+    <div className="flex h-full overflow-hidden bg-[#08090b] text-txt-hi">
       <Sidebar />
 
-      <div className="flex min-w-0 flex-1 flex-col p-4 pl-0">
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] border border-white/[0.07] bg-[#0c0e11]">
+      <div className="flex min-w-0 flex-1 flex-col py-3 pr-3">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[20px] border border-white/[0.07] bg-[#0c0e11]">
           {/* Command bar */}
-          <header className="flex h-12 flex-none items-center gap-4 border-b border-white/[0.07] px-4">
-            <span className="shrink-0 font-display text-[13px] font-semibold tracking-tight text-txt-hi">
-              SLA<span className="text-accent">://</span>MONITOR
-            </span>
-
-            <div className="hidden h-4 w-px bg-white/[0.08] md:block" />
-
+          <header className="flex h-12 flex-none items-center gap-4 border-b border-white/[0.07] pl-4 pr-3">
             <div className="flex min-w-0 flex-1 items-center gap-5 overflow-hidden">{ticker}</div>
+
+            <div className="hidden h-4 w-px shrink-0 bg-white/[0.08] sm:block" />
 
             <RegionStatus />
             <TickerClock />

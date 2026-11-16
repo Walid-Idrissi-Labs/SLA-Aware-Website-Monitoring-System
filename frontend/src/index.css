@@ -16,6 +16,17 @@ html {
   color-scheme: dark;
 }
 
+/* The document never scrolls. Only <main> does. Without this the window gets
+   its own scrollbar alongside the panel's, and because the sidebar is
+   `height: 100%` of a taller-than-viewport container, its top scrolls away
+   while the account block stays pinned. */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
 :root {
   /* Stepper surface tokens (components/Stepper.tsx reads these). Single dark
      theme — the app has no light mode, so these live here rather than in a
@@ -46,7 +57,6 @@ html {
    biggest reason an idle dashboard tab pulled ~85 W. */
 body {
   margin: 0;
-  min-height: 100vh;
   font-family: 'Inter', system-ui, sans-serif;
   color: #eceef0;
   background-color: #060708;
@@ -455,14 +465,29 @@ body {
    text reflow, no per-item relayout while the rail moves. Opacity is a
    compositor-only property, so the fade costs nothing.
    ───────────────────────────────────────────────────────────────────────────── */
-.sidebar__label {
-  opacity: 1;
-  transition: opacity 160ms ease 110ms;
+.rail {
+  width: 56px;
+  transition: width 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-aside:not([data-open]) .sidebar__label {
+/* Hover or keyboard focus expands it. Expansion is an overlay: the rail is
+   absolutely positioned over the content panel, so nothing in the page layout
+   changes and the panel never reflows. */
+.rail:hover,
+.rail:focus-within {
+  width: 240px;
+  box-shadow: 24px 0 60px -30px rgba(0, 0, 0, 0.95);
+}
+
+.sidebar__label {
   opacity: 0;
-  transition: opacity 100ms ease;
+  transition: opacity 90ms ease;
+}
+
+.rail:hover .sidebar__label,
+.rail:focus-within .sidebar__label {
+  opacity: 1;
+  transition: opacity 160ms ease 100ms;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

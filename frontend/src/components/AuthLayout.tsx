@@ -17,7 +17,7 @@ interface Props {
  */
 export default function AuthLayout({ kicker, title, subtitle, children, footer }: Props) {
   return (
-    <div className="relative grid min-h-screen place-items-center overflow-hidden px-6 py-12">
+    <div className="relative grid h-full place-items-center overflow-y-auto overflow-x-hidden px-6 py-12">
       {/* ambient glow */}
       <div className="pointer-events-none absolute left-1/2 top-0 h-[440px] w-[560px] -translate-x-1/2 rounded-full bg-accent/10 blur-[120px]" />
 
