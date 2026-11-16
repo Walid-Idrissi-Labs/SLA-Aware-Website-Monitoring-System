@@ -7,8 +7,9 @@ export interface User {
 }
 
 /** Coarse failure cause recorded per check / incident by the backend.
- *  Absent on legacy rows written before it was captured. */
-export type ErrorType = 'timeout' | 'dns' | 'conn' | 'tls' | 'http';
+ *  `blocked` means the probe was challenged (WAF/CAPTCHA), not that the site
+ *  failed. Absent on legacy rows written before it was captured. */
+export type ErrorType = 'timeout' | 'dns' | 'conn' | 'tls' | 'http' | 'blocked';
 
 export interface Project {
   project_id: string;
@@ -22,8 +23,12 @@ export interface Project {
   };
   notification_email: string;
   created_at: string;
+  /** HTTP statuses this monitor treats as up, e.g. "200-399" (or "200-399,404").
+   *  Absent on projects created before the field existed; the backend then
+   *  applies the same default. */
+  accepted_status?: string;
   /** 'unknown' (or absent) until the first check lands. */
-  current_status?: 'success' | 'failure' | 'unknown';
+  current_status?: 'success' | 'failure' | 'inconclusive' | 'unknown';
   last_latency_ms?: number | null;
   /** Epoch milliseconds of the most recent check. */
   last_checked_at?: number | null;
@@ -36,10 +41,15 @@ export interface Project {
 
 export interface Check {
   timestamp: number;
-  status: 'success' | 'failure';
+  /** success = up, failure = down, inconclusive = the check produced no usable
+   *  evidence (bot challenge, probe-side error). Only success and failure count
+   *  toward uptime. */
+  status: 'success' | 'failure' | 'inconclusive';
   latency_ms: number;
   http_status_code: number;
   error_type?: ErrorType | null;
+  /** Snapshot of the accepted-status rule that judged this check. */
+  accepted_status?: string;
 }
 
 export interface Incident {
@@ -79,9 +89,25 @@ export interface IncidentsResponse {
   metrics: ReliabilityMetrics;
 }
 
+export interface StatusSummary {
+  window_hours: number;
+  checks_total: number;
+  checks_up: number;
+  checks_down: number;
+  checks_inconclusive: number;
+  /** Checks the 1-minute schedule should have produced in this window. */
+  checks_expected: number;
+  /** Conclusive-only uptime. `null` means no conclusive checks at all, which is
+   *  not the same claim as 0%. */
+  uptime_pct: number | null;
+  /** Share of expected checks that produced a verdict (0–100). */
+  coverage_pct: number;
+}
+
 export interface ProjectStatus {
   project_id: string;
-  current_status: 'success' | 'failure' | 'unknown';
+  current_status: 'success' | 'failure' | 'inconclusive' | 'unknown';
+  summary?: StatusSummary;
   checks: Check[];
 }
 
@@ -95,12 +121,22 @@ export interface ProjectReport {
   total_downtime_sec: number;
   severity: 'healthy' | 'degraded' | 'major' | 'critical';
   sla_pass: boolean;
+  /** Three-valued SLO verdict. 'unproven' means too little evidence to judge.
+   *  Absent on reports generated before the field existed. */
+  slo_status?: 'met' | 'missed' | 'unproven';
+  coverage_pct?: number;
+  checks_total?: number;
+  checks_up?: number;
+  checks_down?: number;
+  checks_inconclusive?: number;
+  checks_expected?: number;
   generated_at: string;
 }
 
 export interface CreateProjectInput {
   name: string;
   url: string;
+  accepted_status?: string;
   failure_threshold?: number;
   thresholds?: {
     min_uptime_pct: number;
@@ -113,6 +149,7 @@ export interface UpdateProjectInput {
   name?: string;
   url?: string;
   active?: boolean;
+  accepted_status?: string;
   failure_threshold?: number;
   thresholds?: {
     min_uptime_pct: number;

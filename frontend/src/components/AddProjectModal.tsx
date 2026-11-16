@@ -14,6 +14,7 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
   const [failureThreshold, setFailureThreshold] = useState<number>(PROJECT_DEFAULTS.failure_threshold)
+  const [acceptedStatus, setAcceptedStatus] = useState<string>('200-399')
   const [minUptime, setMinUptime] = useState<number>(PROJECT_DEFAULTS.min_uptime_pct)
   const [maxLatency, setMaxLatency] = useState<number>(PROJECT_DEFAULTS.max_avg_latency_ms)
   const [notificationEmail, setNotificationEmail] = useState('')
@@ -43,6 +44,7 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
         name: name.trim(),
         url: normalizedUrl,
         failure_threshold: failureThreshold,
+        accepted_status: acceptedStatus.trim(),
         thresholds: { min_uptime_pct: minUptime, max_avg_latency_ms: maxLatency },
       }
       if (notificationEmail.trim()) data.notification_email = notificationEmail.trim()
@@ -87,6 +89,14 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
           <div>
             <label className="field-label" htmlFor="projUrl">Target URL *</label>
             <input id="projUrl" type="text" value={url} onChange={(e) => setUrl(e.target.value)} className="field" placeholder="https://mysite.com" required />
+          </div>
+
+          <div>
+            <label className="field-label" htmlFor="acceptedStatus">Accepted HTTP statuses</label>
+            <input id="acceptedStatus" type="text" value={acceptedStatus} onChange={(e) => setAcceptedStatus(e.target.value)} className="field" placeholder="200-399" />
+            <p className="mt-1.5 text-[10px] text-txt-dim">
+              Ranges or codes, comma separated. Anything else counts as down. Sites behind bot protection usually need their challenge status added here.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

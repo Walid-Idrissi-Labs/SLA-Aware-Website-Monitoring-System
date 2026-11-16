@@ -11,6 +11,7 @@ import {
   ChevronRight,
   CircleCheck,
   CircleAlert,
+  CircleDashed,
   Download,
   Sheet,
   Timer,
@@ -39,10 +40,18 @@ import {
 } from '../lib/api'
 import { Alert, Spinner } from '../components/ui'
 import type { ProjectStatus, ProjectReport, Project, UpdateProjectInput, Incident, ReliabilityMetrics } from '../types'
-import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, bareUrl, fmtUtcTime, formatDowntime } from '../lib/format'
+import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, evidenceFromChecks, verdictFromStatus, VERDICT, bareUrl, fmtUtcTime, formatDowntime } from '../lib/format'
 
 /** Incident/reliability window is fixed (independent of the latency chart toggle). */
 const INCIDENT_WINDOW_DAYS = 30
+
+/** Header status pill: border, wash and text per verdict. */
+const HEADER_BADGE = {
+  up: { classes: 'border-ok/25 bg-ok/[0.08] text-ok' },
+  down: { classes: 'border-crit/25 bg-crit/[0.08] text-crit' },
+  inconclusive: { classes: 'border-white/[0.12] bg-white/[0.04] text-txt-lo' },
+  pending: { classes: 'border-white/[0.12] bg-white/[0.04] text-txt-lo' },
+} as const
 
 // ─── Edit Modal ─────────────────────────────────────────────────────────────
 interface EditModalProps {
@@ -56,6 +65,7 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
     name: project.name,
     url: project.url,
     failure_threshold: project.failure_threshold ?? PROJECT_DEFAULTS.failure_threshold,
+    accepted_status: project.accepted_status ?? '200-399',
     notification_email: project.notification_email ?? '',
     thresholds: {
       min_uptime_pct: project.thresholds?.min_uptime_pct ?? PROJECT_DEFAULTS.min_uptime_pct,
@@ -113,6 +123,20 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
           <div>
             <label className="field-label" htmlFor="edit-url">Target URL</label>
             <input id="edit-url" type="url" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="field" />
+          </div>
+          <div>
+            <label className="field-label" htmlFor="edit-accepted">Accepted HTTP statuses</label>
+            <input
+              id="edit-accepted"
+              type="text"
+              value={form.accepted_status ?? ''}
+              onChange={(e) => setForm({ ...form, accepted_status: e.target.value })}
+              className="field"
+              placeholder="200-399"
+            />
+            <p className="mt-1.5 text-[10px] text-txt-dim">
+              Ranges or codes, comma separated. Other responses count as down. Changes apply to new checks only.
+            </p>
           </div>
           <div>
             <label className="field-label" htmlFor="edit-email">Notification email</label>
@@ -305,7 +329,13 @@ export default function ProjectDetail() {
 
   const checks = status?.checks || []
   const latestCheck = checks[checks.length - 1]
-  const isUp = status?.current_status === 'success'
+  const verdict = verdictFromStatus(status?.current_status)
+  const isUp = verdict === 'up'
+  const isDownState = verdict === 'down'
+  const summary = status?.summary
+  // The API measures coverage against the checks the schedule should have
+  // produced; the fallback only knows about the checks that came back.
+  const coverage = summary?.coverage_pct ?? evidenceFromChecks(checks)
   const uptime = uptimeFromChecks(checks)
   const sortedReports = [...reports].sort((a, b) => b.generated_at.localeCompare(a.generated_at))
 
@@ -384,8 +414,8 @@ export default function ProjectDetail() {
     <>
       <TickerStat
         label="Status"
-        value={status ? (isUp ? 'UP' : 'DOWN') : '—'}
-        color={status ? (isUp ? STATUS.ok : STATUS.crit) : undefined}
+        value={status ? VERDICT[verdict].short : '—'}
+        color={status ? VERDICT[verdict].color : undefined}
       />
       <TickerStat label="Latency" value={latestCheck ? `${latestCheck.latency_ms}ms` : '—'} />
       <TickerStat label="Reports" value={String(reports.length)} />
@@ -443,15 +473,17 @@ export default function ProjectDetail() {
             {project && (
               <span
                 className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider ${
-                  isUp ? 'border-ok/25 bg-ok/[0.08] text-ok' : 'border-crit/25 bg-crit/[0.08] text-crit'
+                  HEADER_BADGE[verdict].classes
                 }`}
               >
                 {isUp ? (
                   <CircleCheck className="h-3.5 w-3.5" strokeWidth={1.75} />
-                ) : (
+                ) : isDownState ? (
                   <CircleAlert className="h-3.5 w-3.5" strokeWidth={1.75} />
+                ) : (
+                  <CircleDashed className="h-3.5 w-3.5" strokeWidth={1.75} />
                 )}
-                {isUp ? 'Operational' : 'Down'}
+                {VERDICT[verdict].label}
               </span>
             )}
           </div>
@@ -527,6 +559,11 @@ export default function ProjectDetail() {
           <div className="mt-4 flex justify-center">
             <UptimeGauge value={uptime} label={`Uptime · ${hours}h`} />
           </div>
+          {summary && (
+            <p className="mt-2 text-center font-mono text-[10px] text-txt-dim">
+              {summary.checks_up + summary.checks_down} of {summary.checks_expected} expected checks were conclusive
+            </p>
+          )}
 
           <div className="mt-4">
             <Metric label="Current Latency" value={latestCheck ? `${latestCheck.latency_ms}ms` : '—'} />
@@ -536,9 +573,17 @@ export default function ProjectDetail() {
               color={windowStats.avg != null && windowStats.avg > latencyTarget ? STATUS.warn : undefined}
             />
             <Metric label={`P95 · ${hours}h`} value={windowStats.p95 != null ? `${windowStats.p95}ms` : '—'} />
-            <Metric label="Status" value={status ? (isUp ? 'UP' : 'DOWN') : '—'} color={status ? (isUp ? STATUS.ok : STATUS.crit) : undefined} />
+            <Metric label="Status" value={status ? VERDICT[verdict].short : '—'} color={status ? VERDICT[verdict].color : undefined} />
+            <Metric
+              label={`Evidence · ${hours}h`}
+              value={coverage != null ? `${coverage.toFixed(1)}%` : '—'}
+              color={coverage != null && coverage < 95 ? STATUS.warn : undefined}
+            />
             <Metric label="HTTP Code" value={latestCheck ? latestCheck.http_status_code || 'ERR' : '—'} />
-            <Metric label="Checks · window" value={checks.length} />
+            <Metric
+              label="Checks · window"
+              value={summary ? `${summary.checks_total} / ${summary.checks_expected}` : checks.length}
+            />
             <Metric label="Last Check" value={latestCheck ? fmtUtcTime(latestCheck.timestamp) : '—'} />
             <Metric
               label="Cert Expires"

@@ -172,12 +172,21 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
           />
         </g>
 
-        {/* failure markers */}
-        {sorted.map((c, i) =>
-          c.status === 'failure' ? (
-            <circle key={i} cx={x(i)} cy={y(c.latency_ms)} r="3" fill={STATUS.crit} stroke="#0e1115" strokeWidth="1.5" />
-          ) : null
-        )}
+        {/* verdict markers: red = down, neutral = no evidence */}
+        {sorted.map((c, i) => {
+          if (c.status === 'success') return null
+          return (
+            <circle
+              key={i}
+              cx={x(i)}
+              cy={y(c.latency_ms)}
+              r="3"
+              fill={c.status === 'inconclusive' ? STATUS.neutral : STATUS.crit}
+              stroke="#0e1115"
+              strokeWidth="1.5"
+            />
+          )
+        })}
 
         {/* crosshair */}
         {hoverCheck && (
@@ -205,12 +214,23 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
           <div className="flex items-center gap-2">
             <span
               className="w-[3px] rounded-full"
-              style={{ height: '0.75rem', background: hoverCheck.status === 'success' ? STATUS.ok : STATUS.crit }}
+              style={{
+                height: '0.75rem',
+                background:
+                  hoverCheck.status === 'success'
+                    ? STATUS.ok
+                    : hoverCheck.status === 'inconclusive'
+                      ? STATUS.neutral
+                      : STATUS.crit,
+              }}
             />
             <span className="data text-[13px] font-bold text-txt-hi">{hoverCheck.latency_ms}ms</span>
           </div>
           <div className="mt-0.5 font-mono text-[9px] text-txt-lo">
-            {fmtUtcTime(hoverCheck.timestamp)} · {hoverCheck.http_status_code || 'ERR'}
+            {fmtUtcTime(hoverCheck.timestamp)} ·{' '}
+            {hoverCheck.status === 'inconclusive'
+              ? (hoverCheck.error_type ?? 'NO EVIDENCE').toUpperCase()
+              : hoverCheck.http_status_code || 'ERR'}
           </div>
         </div>
       )}

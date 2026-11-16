@@ -8,7 +8,19 @@ interface Props {
   className?: string
 }
 
-/** Classic uptime bar strip: one bar per check, green = up, red = down. */
+/** Three tones: green = up, red = down, neutral = no evidence. An inconclusive
+ *  check is not a failure, so it must not borrow the down colour. */
+const TONE = {
+  success: { bar: 'bg-ok/70 hover:bg-ok', glow: undefined, label: 'UP' },
+  failure: {
+    bar: 'bg-crit/80 hover:bg-crit',
+    glow: '0 0 6px -1px rgba(248,113,113,0.7)',
+    label: 'DOWN',
+  },
+  inconclusive: { bar: 'bg-white/20 hover:bg-white/35', glow: undefined, label: 'NO EVIDENCE' },
+} as const
+
+/** Classic uptime bar strip: one bar per check — green up, red down, grey no data. */
 export default function StatusStrip({ checks, bars = 40, className }: Props) {
   const sorted = [...checks].sort((a, b) => a.timestamp - b.timestamp)
   const recent = sorted.slice(-bars)
@@ -21,15 +33,16 @@ export default function StatusStrip({ checks, bars = 40, className }: Props) {
         <div key={`e-${i}`} className="flex-1 h-full rounded-[1px] bg-white/[0.04]" />
       ))}
       {recent.map((c, i) => {
-        const up = c.status === 'success'
+        const tone = TONE[c.status] ?? TONE.inconclusive
+        // A timeout records a synthetic latency; showing it as a measurement
+        // would invent a number nobody observed.
+        const latency = c.status === 'inconclusive' ? '—' : `${c.latency_ms}ms`
         return (
           <div
             key={c.timestamp ?? i}
-            title={`${up ? 'UP' : 'DOWN'} · ${c.latency_ms}ms · ${fmtUtcTime(c.timestamp)}`}
-            className={`flex-1 h-full rounded-[1px] transition-colors ${
-              up ? 'bg-ok/70 hover:bg-ok' : 'bg-crit/80 hover:bg-crit'
-            }`}
-            style={up ? undefined : { boxShadow: '0 0 6px -1px rgba(248,113,113,0.7)' }}
+            title={`${tone.label} · ${latency} · ${fmtUtcTime(c.timestamp)}`}
+            className={`flex-1 h-full rounded-[1px] transition-colors ${tone.bar}`}
+            style={tone.glow ? { boxShadow: tone.glow } : undefined}
           />
         )
       })}

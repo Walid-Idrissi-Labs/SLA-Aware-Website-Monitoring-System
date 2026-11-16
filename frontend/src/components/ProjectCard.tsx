@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ArrowUpRight, CircleCheck, CircleAlert, CircleDashed } from 'lucide-react'
 import type { Project, Check } from '../types'
-import { timeAgo, uptimeFromChecks, bareUrl, STATUS, PROJECT_DEFAULTS } from '../lib/format'
+import { timeAgo, uptimeFromChecks, evidenceFromChecks, verdictFromStatus, VERDICT, bareUrl, STATUS, PROJECT_DEFAULTS } from '../lib/format'
 import StatusStrip from './StatusStrip'
 import Sparkline from './Sparkline'
 
@@ -12,21 +12,23 @@ interface Props {
 }
 
 export default function ProjectCard({ project, checks, index = 0 }: Props) {
-  // Three states: up, down, or pending (created moments ago, no checks yet).
-  const state =
-    project.current_status === 'success' ? 'up' : project.current_status === 'failure' ? 'down' : 'pending'
-  const isDown = state === 'down'
+  // Four states: up, down, no evidence (challenged/blocked), or pending (created
+  // moments ago, no checks yet).
+  const verdict = verdictFromStatus(project.current_status)
+  const isDown = verdict === 'down'
   const latency = project.last_latency_ms
   const threshold = project.thresholds?.max_avg_latency_ms ?? PROJECT_DEFAULTS.max_avg_latency_ms
   const uptime = uptimeFromChecks(checks)
+  const evidence = evidenceFromChecks(checks)
   const latencyValues = [...checks].sort((a, b) => a.timestamp - b.timestamp).map((c) => c.latency_ms)
   const overThreshold = latency != null && latency > threshold
 
   const stateBadge = {
-    up: { classes: 'text-ok', Icon: CircleCheck, label: 'Operational' },
-    down: { classes: 'text-crit', Icon: CircleAlert, label: 'Down' },
-    pending: { classes: 'text-txt-lo', Icon: CircleDashed, label: 'Pending first check' },
-  }[state]
+    up: { classes: VERDICT.up.textClass, Icon: CircleCheck, label: VERDICT.up.label },
+    down: { classes: VERDICT.down.textClass, Icon: CircleAlert, label: VERDICT.down.label },
+    inconclusive: { classes: VERDICT.inconclusive.textClass, Icon: CircleDashed, label: VERDICT.inconclusive.label },
+    pending: { classes: VERDICT.pending.textClass, Icon: CircleDashed, label: VERDICT.pending.label },
+  }[verdict]
 
   return (
     <Link
@@ -74,6 +76,9 @@ export default function ProjectCard({ project, checks, index = 0 }: Props) {
           <div className="mt-1 data text-[15px] font-semibold text-txt-mid">
             {uptime !== null ? `${uptime.toFixed(1)}%` : '—'}
           </div>
+          {evidence !== null && evidence < 100 && (
+            <div className="mt-0.5 font-mono text-[9px] text-txt-dim">{evidence.toFixed(0)}% evidence</div>
+          )}
         </div>
       </div>
 
@@ -89,7 +94,7 @@ export default function ProjectCard({ project, checks, index = 0 }: Props) {
           />
         ) : (
           <div className="flex h-[30px] items-center font-mono text-[10px] text-txt-dim">
-            {state === 'pending' ? 'First check runs within a minute' : 'Awaiting data…'}
+            {verdict === 'pending' ? 'First check runs within a minute' : 'Awaiting data…'}
           </div>
         )}
       </div>

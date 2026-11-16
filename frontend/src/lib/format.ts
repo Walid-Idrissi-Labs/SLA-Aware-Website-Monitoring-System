@@ -7,6 +7,8 @@ export const STATUS = {
   warn: '#fbbf24',
   crit: '#f87171',
   accent: '#fa5c29',
+  /** "No evidence" — a third tone that is neither health nor failure. */
+  neutral: '#a1a1aa',
 } as const
 
 /** How often live views re-poll the API (matches the 1-minute check cadence). */
@@ -38,12 +40,49 @@ export function timeAgo(ts: string | number | undefined): string {
   return `${Math.floor(hours / 24)}d`
 }
 
-/** Uptime % computed from a set of checks (success ratio). */
+/** Uptime % over conclusive checks only. Inconclusive checks are excluded from
+ *  both the numerator and the denominator, so a blocked probe can neither add
+ *  uptime nor take it away. Returns null when no check produced a verdict —
+ *  "no evidence" is not "0%". */
 export function uptimeFromChecks(checks: Check[]): number | null {
   if (!checks || checks.length === 0) return null
-  const ok = checks.filter((c) => c.status === 'success').length
-  return (ok / checks.length) * 100
+  const up = checks.filter((c) => c.status === 'success').length
+  const down = checks.filter((c) => c.status === 'failure').length
+  if (up + down === 0) return null
+  return (up / (up + down)) * 100
 }
+
+/** Share of observed checks that produced a verdict (0–100), or null if there
+ *  are no checks. Distinct from the API's coverage_pct, which is measured
+ *  against the checks the schedule should have produced. */
+export function evidenceFromChecks(checks: Check[]): number | null {
+  if (!checks || checks.length === 0) return null
+  const conclusive = checks.filter((c) => c.status === 'success' || c.status === 'failure').length
+  return (conclusive / checks.length) * 100
+}
+
+/** The three verdicts plus "no checks yet". */
+export type Verdict = 'up' | 'down' | 'inconclusive' | 'pending'
+
+export function verdictFromStatus(status: string | undefined): Verdict {
+  if (status === 'success') return 'up'
+  if (status === 'failure') return 'down'
+  if (status === 'inconclusive') return 'inconclusive'
+  return 'pending'
+}
+
+/** Verdict display metadata. `textClass` for Tailwind text, `color` for inline SVG. */
+export const VERDICT = {
+  up: { label: 'Operational', short: 'UP', textClass: 'text-ok', color: STATUS.ok },
+  down: { label: 'Down', short: 'DOWN', textClass: 'text-crit', color: STATUS.crit },
+  inconclusive: {
+    label: 'No evidence',
+    short: 'NO DATA',
+    textClass: 'text-txt-lo',
+    color: STATUS.neutral,
+  },
+  pending: { label: 'Pending first check', short: '—', textClass: 'text-txt-lo', color: STATUS.neutral },
+} as const
 
 /** Severity → display metadata (label + tailwind-friendly hex). */
 export const SEVERITY = {
@@ -85,4 +124,5 @@ export const ERROR_TYPE = {
   conn: { label: 'CONN', color: STATUS.crit },
   tls: { label: 'TLS', color: SEVERITY.major.color },
   http: { label: 'HTTP', color: STATUS.warn },
+  blocked: { label: 'BLOCKED', color: STATUS.neutral },
 } as const
