@@ -21,11 +21,11 @@ import TickerStat from '../components/TickerStat'
 import MagicBento from '../components/MagicBento'
 import Counter from '../components/Counter'
 import FlipClock from '../components/FlipClock'
+import UptimeHeatmap from '../components/UptimeHeatmap'
 import RubberSegment from '../components/RubberSegment'
 import { BentoFigure, BentoArea, BentoBars, BentoMeter } from '../components/BentoVisuals'
 import LatencyChart from '../components/LatencyChart'
 import UptimeGauge from '../components/UptimeGauge'
-import StatusStrip from '../components/StatusStrip'
 import IncidentTimeline from '../components/IncidentTimeline'
 import {
   getProject,
@@ -445,6 +445,38 @@ export default function ProjectDetail() {
     URL.revokeObjectURL(url)
   }
 
+  /** Uptime per time bucket over the selected window — 5-minute cells for the
+   *  1-hour view, hourly otherwise. Derived from the same checks the chart
+   *  already has, so this costs no extra request. */
+  const uptimeBuckets = useMemo(() => {
+    const size = hours <= 1 ? 5 * 60_000 : 60 * 60_000
+    const buckets = new Map<number, { up: number; conclusive: number; total: number }>()
+    for (const check of checks) {
+      const key = Math.floor(check.timestamp / size) * size
+      const bucket = buckets.get(key) ?? { up: 0, conclusive: 0, total: 0 }
+      bucket.total += 1
+      if (check.status === 'success') {
+        bucket.up += 1
+        bucket.conclusive += 1
+      } else if (check.status === 'failure') {
+        bucket.conclusive += 1
+      }
+      buckets.set(key, bucket)
+    }
+    return [...buckets.keys()]
+      .sort((a, b) => a - b)
+      .map((key) => {
+        const bucket = buckets.get(key)!
+        return {
+          key: String(key),
+          label: `${new Date(key).toISOString().slice(11, 16)} UTC`,
+          uptime: bucket.conclusive > 0 ? (bucket.up / bucket.conclusive) * 100 : null,
+          checks: bucket.total,
+          conclusive: bucket.conclusive,
+        }
+      })
+  }, [checks, hours])
+
   const ticker = (
     <>
       <TickerStat
@@ -452,8 +484,38 @@ export default function ProjectDetail() {
         value={status ? VERDICT[verdict].short : '—'}
         color={status ? VERDICT[verdict].color : undefined}
       />
-      <TickerStat label="Latency" value={latestCheck ? `${latestCheck.latency_ms}ms` : '—'} />
-      <TickerStat label="Reports" value={String(reports.length)} />
+      <TickerStat
+        label="Uptime"
+        value={uptime != null ? `${uptime.toFixed(1)}%` : '—'}
+        color={uptime == null ? undefined : uptime >= 99.9 ? STATUS.ok : STATUS.warn}
+      />
+      <TickerStat label="Avg" value={windowStats.avg != null ? `${windowStats.avg}ms` : '—'} />
+      <TickerStat
+        label="P95"
+        value={windowStats.p95 != null ? `${windowStats.p95}ms` : '—'}
+        color={windowStats.p95 != null && windowStats.p95 > latencyTarget ? STATUS.warn : undefined}
+        className="hidden md:flex"
+      />
+      <TickerStat
+        label="Coverage"
+        value={coverage != null ? `${coverage.toFixed(0)}%` : '—'}
+        color={coverage != null && coverage < 95 ? STATUS.warn : undefined}
+        className="hidden lg:flex"
+      />
+      <TickerStat
+        label="Incidents"
+        value={String(reliability?.incident_count ?? 0)}
+        color={reliability?.open_incident ? STATUS.crit : undefined}
+        className="hidden sm:flex"
+      />
+      <TickerStat
+        label="Budget"
+        value={reliability ? `${reliability.error_budget.burn_pct.toFixed(0)}%` : '—'}
+        color={
+          reliability ? (reliability.error_budget.ok ? STATUS.ok : STATUS.crit) : undefined
+        }
+        className="hidden xl:flex"
+      />
     </>
   )
 
@@ -634,12 +696,24 @@ export default function ProjectDetail() {
             <Metric label="Cert Issuer" value={project?.cert_issuer || '—'} />
           </div>
 
-          <div className="mt-4">
-            <span className="text-[12px] font-medium text-txt-lo">Recent probes</span>
-            <div className="mt-2">
-              <StatusStrip checks={checks} bars={48} />
-            </div>
+        </div>
+      </div>
+
+      {/* Uptime heatmap */}
+      <div className="panel-flush mt-3">
+        <div className="panel-head">
+          <div className="flex items-center gap-2.5">
+            <span className="text-[13px] font-semibold text-txt-hi">Uptime</span>
+            <span className="rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[11px] font-medium text-txt-mid">
+              {hours}h
+            </span>
           </div>
+          <span className="text-[11.5px] text-txt-lo">
+            {hours <= 1 ? '5-minute buckets' : 'hourly buckets'} · conclusive checks only
+          </span>
+        </div>
+        <div className="px-4 pb-4 pt-3">
+          <UptimeHeatmap buckets={uptimeBuckets} columns={hours <= 1 ? 12 : 24} />
         </div>
       </div>
 

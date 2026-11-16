@@ -125,6 +125,14 @@ export default function Dashboard() {
     return { health, latency }
   }, [activeProjects, statuses])
 
+  /** Mean share of expected checks that produced a verdict, across endpoints. */
+  const coverage = useMemo(() => {
+    const values = activeProjects
+      .map((project) => statuses[project.project_id]?.summary?.coverage_pct)
+      .filter((value): value is number => typeof value === 'number')
+    return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null
+  }, [activeProjects, statuses])
+
   const failing = useMemo(
     () =>
       activeProjects
@@ -290,7 +298,13 @@ export default function Dashboard() {
       />
       <TickerStat label="Avg Lat" value={avgLatency !== null ? `${avgLatency}ms` : '—'} />
       <TickerStat label="Incidents" value={String(incidents)} color={incidents > 0 ? STATUS.crit : STATUS.ok} />
-      <TickerStat label="Endpoints" value={String(total)} />
+      <TickerStat
+        label="Coverage"
+        value={coverage !== null ? `${coverage.toFixed(0)}%` : '—'}
+        color={coverage !== null && coverage < 95 ? STATUS.warn : undefined}
+        className="hidden sm:flex"
+      />
+      <TickerStat label="Endpoints" value={String(total)} className="hidden md:flex" />
     </>
   )
 
