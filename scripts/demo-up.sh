@@ -25,8 +25,12 @@ HOSTED_UI_URL=$(terraform output -raw cognito_hosted_ui_url)
 set_env () {
   local NAME="$1" VALUE="$2"
   vercel env rm "$NAME" production --yes >/dev/null 2>&1 || true
-  printf '%s' "$VALUE" | vercel env add "$NAME" production >/dev/null
+  # --type config: Vite inlines VITE_* into the browser bundle, so Vercel rejects
+  # any other type ("public framework prefix cannot use visibility: secret").
+  printf '%s' "$VALUE" | vercel env add "$NAME" production --type config >/dev/null
 }
+
+DASHBOARD_URL="https://sla-aware-website-monitoring-system.vercel.app"
 
 echo "==> Updating Vercel production environment variables..."
 cd "$REPO_ROOT"
@@ -38,9 +42,24 @@ set_env VITE_COGNITO_HOSTED_UI_URL "$HOSTED_UI_URL"
 echo "==> Triggering a production deploy so the build picks up the new env vars..."
 vercel --prod --yes
 
+# A deploy that silently kept the old env vars succeeds exactly like a good one
+# until you open the site in a browser. Check the built bundle instead of trusting
+# the exit code: the API URL must be inlined in it.
+echo "==> Verifying the deployed bundle points at this stack..."
+BUNDLE=$(curl -s "$DASHBOARD_URL/" | grep -o 'assets/index-[^"]*\.js' | head -1 || true)
+if [ -z "$BUNDLE" ]; then
+  echo "    ! could not read $DASHBOARD_URL — check it by hand"
+elif curl -s "$DASHBOARD_URL/$BUNDLE" | grep -Fq "$API_URL"; then
+  echo "    ok — bundle references $API_URL"
+else
+  echo "    ! bundle does not reference $API_URL"
+  echo "      The deploy built with stale env vars. Re-run this script."
+  exit 1
+fi
+
 echo ""
 echo "Demo is live."
-echo "  Dashboard: https://sla-aware-website-monitoring-system.vercel.app"
+echo "  Dashboard: $DASHBOARD_URL"
 echo "  API:       $API_URL"
 echo ""
 echo "DynamoDB is empty and Cognito has no accounts yet - sign up (or sign in with"
