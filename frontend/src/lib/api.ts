@@ -33,11 +33,11 @@ async function request<T>(
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  // Expired or revoked session: stop polling with a dead token and
-  // send the user back to sign in.
+  // Expired or revoked session: stop polling with a dead token and send the
+  // user back to sign in, saying why — a bare redirect reads as a bug.
   if (res.status === 401) {
     clearToken();
-    window.location.assign('/login');
+    window.location.assign('/login?expired=1');
     throw new Error('Session expired');
   }
 
