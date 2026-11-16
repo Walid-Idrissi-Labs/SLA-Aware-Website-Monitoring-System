@@ -8,9 +8,6 @@ import {
   TriangleAlert,
   ExternalLink,
   ChevronRight,
-  CircleCheck,
-  CircleAlert,
-  CircleDashed,
   Download,
   Sheet,
   Radio,
@@ -21,6 +18,10 @@ import FlipClock from '../components/FlipClock'
 import IncidentReport from '../components/IncidentReport'
 import UptimeHeatmap from '../components/UptimeHeatmap'
 import RubberSegment from '../components/RubberSegment'
+import UseAnimations from 'react-useanimations'
+import checkCircle from 'react-useanimations/lib/checkCircle'
+import alertOctagon from 'react-useanimations/lib/alertOctagon'
+import alertTriangle from 'react-useanimations/lib/alertTriangle'
 import ActionButton from '../components/ActionButton'
 import TrendChart from '../components/TrendChart'
 import HoldButton from '../components/HoldButton'
@@ -43,15 +44,6 @@ import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks,
 /** Incident/reliability window is fixed (independent of the latency chart toggle). */
 const INCIDENT_WINDOW_DAYS = 30
 
-/** Header status pill: border, wash and text per verdict. */
-const HEADER_BADGE = {
-  up: { classes: 'border-ok/25 bg-ok/[0.08] text-ok' },
-  down: { classes: 'border-crit/25 bg-crit/[0.08] text-crit' },
-  inconclusive: { classes: 'border-white/[0.12] bg-white/[0.04] text-txt-lo' },
-  pending: { classes: 'border-white/[0.12] bg-white/[0.04] text-txt-lo' },
-} as const
-
-// ─── Edit Modal ─────────────────────────────────────────────────────────────
 interface EditModalProps {
   project: Project
   onClose: () => void
@@ -205,6 +197,9 @@ function percentile(sorted: number[], p: number): number | null {
   const high = Math.ceil(index)
   return low === high ? sorted[low] : sorted[low] + (sorted[high] - sorted[low]) * (index - low)
 }
+
+const REDUCED_MOTION =
+  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 // ─── Main Page ──────────────────────────────────────────────────────────────
 export default function ProjectDetail() {
@@ -521,20 +516,21 @@ export default function ProjectDetail() {
         <div className="min-w-0">
           <div className="flex items-center gap-3">
             <h1 className="text-sheen font-display text-[26px] font-bold tracking-tight">{project?.name || 'Loading…'}</h1>
+            {/* Icon only, no chrome. The label stays for screen readers and as a
+                tooltip — colour and icon alone are not an accessible state. */}
             {project && (
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider ${
-                  HEADER_BADGE[verdict].classes
-                }`}
-              >
-                {isUp ? (
-                  <CircleCheck className="h-3.5 w-3.5" strokeWidth={1.75} />
-                ) : isDownState ? (
-                  <CircleAlert className="h-3.5 w-3.5" strokeWidth={1.75} />
-                ) : (
-                  <CircleDashed className="h-3.5 w-3.5" strokeWidth={1.75} />
-                )}
-                {VERDICT[verdict].label}
+              <span title={VERDICT[verdict].label} className="inline-grid place-items-center">
+                <UseAnimations
+                  key={verdict}
+                  animation={isUp ? checkCircle : isDownState ? alertOctagon : alertTriangle}
+                  size={22}
+                  strokeColor={VERDICT[verdict].color}
+                  autoplay={!REDUCED_MOTION}
+                  loop={isDownState}
+                  interaction={isDownState ? 'loop' : 'click-replay'}
+                  speed={isDownState ? 1 : 1.4}
+                />
+                <span className="sr-only">{VERDICT[verdict].label}</span>
               </span>
             )}
           </div>
@@ -761,7 +757,7 @@ export default function ProjectDetail() {
         {/* Generate toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-2.5">
           <div className="flex items-center gap-2">
-            <span className="micro text-txt-lo">Period</span>
+            <span className="text-[12px] text-txt-lo">Period</span>
             <RubberSegment
               items={['1d', '7d', '30d']}
               value={`${genDays}d`}
@@ -905,6 +901,7 @@ export default function ProjectDetail() {
             resetAfter={1200}
             disabled={deleting}
             onHold={handleDelete}
+            className="font-pixel"
           >
             Hold to delete
           </HoldButton>

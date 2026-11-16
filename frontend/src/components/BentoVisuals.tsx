@@ -191,17 +191,3 @@ export function BentoSteps({
     </div>
   )
 }
-
-/** Thin horizontal meter, for budget/ratio style metrics. */
-export function BentoMeter({ pct, color = STATUS.accent }: { pct: number; color?: string }) {
-  return (
-    <div className="flex min-h-[26px] flex-1 items-center">
-      <div className="h-2 w-full overflow-hidden rounded-full bg-white/[0.07]">
-        <div
-          className="h-full rounded-full transition-[width] duration-500"
-          style={{ width: `${Math.min(100, Math.max(0, pct))}%`, backgroundColor: color }}
-        />
-      </div>
-    </div>
-  )
-}
