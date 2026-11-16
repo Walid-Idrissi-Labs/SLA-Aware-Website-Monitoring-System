@@ -36,7 +36,9 @@ export default {
       fontFamily: {
         display: ['Space Grotesk', 'system-ui', 'sans-serif'],
         sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+        mono: ['Geist Mono', 'ui-monospace', 'monospace'],
+        /* Chunky pixel face — reserved for compact readouts in the command bar. */
+        pixel: ['Geist Pixel', 'Geist Mono', 'ui-monospace', 'monospace'],
       },
       letterSpacing: {
         micro: '0.18em',

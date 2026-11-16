@@ -5,13 +5,17 @@ import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Callback from './pages/Callback'
 import Dashboard from './pages/Dashboard'
-import ProjectDetail from './pages/ProjectDetail'
 import Settings from './pages/Settings'
 import About from './pages/About'
 
-// CodeSlots pulls in `motion` (~180 kB). Only the confirmation screen needs it,
-// so it loads on that route instead of with the dashboard.
+// `motion` (~180 kB minified) is only reachable through RubberSegment and
+// CodeSlots. Both live behind routes, so those routes are split out and Rollup
+// hoists motion into one async chunk shared by them. The dashboard — the page
+// people actually land on — never downloads it.
 const ConfirmSignup = lazy(() => import('./pages/ConfirmSignup'))
+const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
+
+const routeFallback = <div className="grid min-h-screen place-items-center text-txt-lo">Loading…</div>
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (!isAuthenticated()) {
@@ -29,7 +33,7 @@ export default function App() {
         <Route
           path="/confirm"
           element={
-            <Suspense fallback={<div className="grid min-h-screen place-items-center text-txt-lo">Loading…</div>}>
+            <Suspense fallback={routeFallback}>
               <ConfirmSignup />
             </Suspense>
           }
@@ -47,7 +51,9 @@ export default function App() {
           path="/projects/:id"
           element={
             <ProtectedRoute>
-              <ProjectDetail />
+              <Suspense fallback={routeFallback}>
+                <ProjectDetail />
+              </Suspense>
             </ProtectedRoute>
           }
         />

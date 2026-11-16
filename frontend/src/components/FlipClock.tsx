@@ -7,6 +7,7 @@ interface Props {
   /** True while an incident is still open — there is no streak to count. */
   open?: boolean
   label?: ReactNode
+  className?: string
 }
 
 const pad = (value: number) => String(Math.max(0, Math.floor(value))).padStart(2, '0')
@@ -19,7 +20,7 @@ const pad = (value: number) => String(Math.max(0, Math.floor(value))).padStart(2
  * animates a digit whose value actually changed, so a tick usually costs one
  * rolling tile.
  */
-export default function FlipClock({ since, open = false, label = 'No recorded incidents in' }: Props) {
+export default function FlipClock({ since, open = false, label = 'No recorded incidents in', className = '' }: Props) {
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -47,7 +48,7 @@ export default function FlipClock({ since, open = false, label = 'No recorded in
 
   if (open) {
     return (
-      <div className="fc">
+      <div className={`fc ${className}`.trim()}>
         <p className="fc__label">Incident in progress</p>
         <p className="fc__note">The streak restarts when the incident resolves.</p>
       </div>
@@ -56,7 +57,7 @@ export default function FlipClock({ since, open = false, label = 'No recorded in
 
   if (since == null) {
     return (
-      <div className="fc">
+      <div className={`fc ${className}`.trim()}>
         <p className="fc__label">{label}</p>
         <p className="fc__note">Waiting for the first check.</p>
       </div>
@@ -72,7 +73,7 @@ export default function FlipClock({ since, open = false, label = 'No recorded in
   ]
 
   return (
-    <div className="fc">
+    <div className={`fc ${className}`.trim()}>
       <p className="fc__label">{label}</p>
       <div className="fc__row">
         {units.map((unit, index) => (
