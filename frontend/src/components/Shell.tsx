@@ -18,11 +18,10 @@ interface Props {
  */
 export default function Shell({ ticker, children }: Props) {
   return (
-    <div className="flex h-full overflow-hidden bg-[#08090b] text-txt-hi">
+    <div className="flex h-full gap-1.5 overflow-hidden bg-[#08090b] p-3 text-txt-hi">
       <Sidebar />
 
-      <div className="flex min-w-0 flex-1 flex-col py-3 pr-3">
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[20px] border border-white/[0.07] bg-[#0c0e11]">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[20px] border border-white/[0.07] bg-[#0c0e11]">
           {/* Command bar */}
           <header className="flex h-12 flex-none items-center gap-4 border-b border-white/[0.07] pl-4 pr-3">
             <div className="flex min-w-0 flex-1 items-center gap-5 overflow-hidden">{ticker}</div>
@@ -36,8 +35,7 @@ export default function Shell({ ticker, children }: Props) {
           {/* Content */}
           <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8">
             <div className="mx-auto w-full max-w-[1440px]">{children}</div>
-          </main>
-        </div>
+        </main>
       </div>
     </div>
   )
