@@ -101,13 +101,15 @@ React 18 SPA built with Vite and Tailwind CSS. Deployed separately (Vercel).
 
 Views:
 
-- **Login / Signup / Confirm** : custom auth pages backed by Cognito SRP, plus "Continue with Google" via the Cognito OAuth endpoint (PKCE)
+- **Login / Signup / Confirm** : custom auth pages backed by Cognito SRP, plus "Continue with Google" via the Cognito OAuth endpoint (PKCE). The confirmation step is a six-tile one-time-code input.
 - **Callback** : exchanges the OAuth authorization code for tokens
-- **Dashboard** : KPI tiles and a project card grid (status, latency sparkline, uptime strip), auto-refreshing every minute
-- **Project Detail** : latency chart with crosshair tooltip, uptime gauge, recent-probe strip, and the SLA report table with on-demand generation, HTML/JSON downloads, and CSV export
+- **Dashboard** : a bento grid of KPI cards — system health with a minute-by-minute pass-rate area chart, mean latency with a bar chart, active incidents, and endpoint coverage — followed by one card per endpoint showing its latency trend, status strip and verdict. Auto-refreshes every minute.
+- **Project Detail** : a single 1 h / 24 h / 72 h selector drives three panels — a per-check latency chart, an uptime heatmap (one cell per time bucket, coloured on a green → yellow → orange → red ramp, grey where no check produced a verdict), and Vitals (uptime and evidence meters, a p50/p95 percentile chart, and the endpoint's status, HTTP code, accepted statuses, last check and certificate expiry). Below that: an incident report with a downtime-per-day trend, period-over-period deltas and reliability rows; the incident log; the SLA report table with on-demand generation and HTML/JSON downloads; and a hold-to-confirm delete zone.
 - **Settings** : profile and notification email
 
 All charts are hand-rolled SVG — no chart library. API calls carry the Cognito ID token in the Authorization header; a 401 clears the session and returns the user to login.
+
+The interface is dark-only by design — monitoring surfaces are read for long stretches, and the instrument aesthetic depends on it. Surfaces are opaque panels with hairline borders; there is no backdrop blur, no ambient animation and no WebGL, so an idle dashboard tab costs essentially nothing. Animation is limited to short, self-terminating transitions and is disabled under `prefers-reduced-motion`.
 
 ---
 
