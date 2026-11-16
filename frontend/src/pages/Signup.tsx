@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { User as UserIcon, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
 import GoogleSignIn from '../components/GoogleSignIn'
-import { Alert, Spinner } from '../components/ui'
+import { Alert } from '../components/ui'
+import ActionButton from '../components/ActionButton'
 import { signUp, friendlyAuthMessage } from '../lib/cognito'
 
 export default function Signup() {
@@ -144,15 +145,17 @@ export default function Signup() {
           />
         </div>
 
-        <button type="submit" disabled={loading} className="btn-auth">
-          {loading ? (
-            <Spinner size={16} />
-          ) : (
-            <>
-              Create account <ArrowRight className="h-4 w-4" strokeWidth={2} />
-            </>
-          )}
-        </button>
+        <ActionButton
+          type="submit"
+          size="lg"
+          fullWidth
+          icon={<ArrowRight className="h-4 w-4" strokeWidth={2} />}
+          state={loading ? 'loading' : 'idle'}
+          labels={{ loading: 'Creating account…' }}
+          disabled={loading}
+        >
+          Create account
+        </ActionButton>
       </form>
 
       <GoogleSignIn onError={setError} />

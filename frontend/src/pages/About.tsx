@@ -142,7 +142,7 @@ const PRINCIPLES: { title: string; body: string }[] = [
 
 function SpecChip({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded border border-white/[0.08] bg-white/[0.02] px-2 py-1 font-mono text-[10px] font-semibold text-txt-mid">
+    <span className="rounded-md border border-white/[0.07] bg-white/[0.02] px-2.5 py-1 text-[11.5px] font-medium text-txt-mid">
       {children}
     </span>
   )
@@ -163,9 +163,9 @@ export default function About() {
       <div className="mx-auto w-full max-w-5xl">
         {/* Header */}
         <div className="animate-fade-up">
-          <p className="kicker mb-1.5">System</p>
-          <h1 className="text-sheen font-display text-[26px] font-bold tracking-tight">About this project</h1>
-          <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-txt-lo">
+          <p className="mb-1.5 text-[12px] font-medium text-accent">Architecture</p>
+          <h1 className="font-display text-[24px] font-semibold tracking-[-0.02em] text-txt-hi">About this project</h1>
+          <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-txt-lo">
             A serverless uptime and SLA monitor, built on AWS end to end. Here is what it does and how the pieces fit
             together.
           </p>
@@ -206,7 +206,7 @@ export default function About() {
             {STACK.map((s) => (
               <div
                 key={s.name}
-                className="group rounded-lg border border-white/[0.06] bg-ink-950/50 p-4 transition-colors hover:border-accent/30 hover:bg-white/[0.02]"
+                className="group rounded-[14px] border border-white/[0.07] bg-white/[0.02] p-4 transition-colors hover:border-accent/30 hover:bg-white/[0.04]"
               >
                 <div className="flex items-center gap-2.5">
                   <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-white/[0.08] bg-white/[0.02] text-accent transition-colors group-hover:border-accent/30 group-hover:bg-accent/[0.08]">
@@ -215,7 +215,7 @@ export default function About() {
                   <div className="min-w-0">
                     <p className="truncate font-display text-[13px] font-semibold text-txt-hi">{s.name}</p>
                     {s.tag && (
-                      <p className="font-mono text-[9px] uppercase tracking-wider text-txt-lo">{s.tag}</p>
+                      <p className="text-[11px] text-txt-lo">{s.tag}</p>
                     )}
                   </div>
                 </div>
@@ -235,7 +235,7 @@ export default function About() {
             {JOBS.map((j) => (
               <div
                 key={j.title}
-                className="flex gap-3 rounded-lg border border-white/[0.06] bg-ink-950/50 p-4"
+                className="flex gap-3 rounded-[14px] border border-white/[0.07] bg-white/[0.02] p-4"
               >
                 <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-accent/25 bg-accent/[0.08] text-accent">
                   {j.icon}
@@ -243,7 +243,7 @@ export default function About() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-display text-[13px] font-semibold text-txt-hi">{j.title}</p>
-                    <span className="rounded border border-accent/25 bg-accent/[0.07] px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-accent">
+                    <span className="rounded-md bg-accent/[0.1] px-1.5 py-0.5 text-[11px] font-medium text-accent">
                       {j.cadence}
                     </span>
                   </div>
@@ -263,7 +263,7 @@ export default function About() {
           <PanelTitle>Why it's built this way</PanelTitle>
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {PRINCIPLES.map((p) => (
-              <div key={p.title} className="rounded-lg border border-white/[0.06] bg-ink-950/50 p-4">
+              <div key={p.title} className="rounded-[14px] border border-white/[0.07] bg-white/[0.02] p-4">
                 <p className="font-display text-[13px] font-semibold text-txt-hi">{p.title}</p>
                 <p className="mt-1.5 text-[12px] leading-relaxed text-txt-mid">{p.body}</p>
               </div>

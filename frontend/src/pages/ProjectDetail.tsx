@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   RefreshCw,
   SquarePen,
-  Trash2,
   X,
   TriangleAlert,
   ExternalLink,
@@ -22,6 +21,9 @@ import FlipClock from '../components/FlipClock'
 import IncidentReport from '../components/IncidentReport'
 import UptimeHeatmap from '../components/UptimeHeatmap'
 import RubberSegment from '../components/RubberSegment'
+import ActionButton from '../components/ActionButton'
+import TrendChart from '../components/TrendChart'
+import HoldButton from '../components/HoldButton'
 import LatencyChart from '../components/LatencyChart'
 import IncidentTimeline from '../components/IncidentTimeline'
 import {
@@ -185,60 +187,23 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
 }
 
 // ─── Delete Modal ───────────────────────────────────────────────────────────
-interface DeleteModalProps {
-  projectName: string
-  onClose: () => void
-  onConfirm: () => void
-  deleting: boolean
-  error: string | null
-}
-
-function DeleteModal({ projectName, onClose, onConfirm, deleting, error }: DeleteModalProps) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !deleting && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, deleting])
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-md animate-fade-in"
-      onClick={(e) => e.target === e.currentTarget && !deleting && onClose()}
-    >
-      <div role="dialog" aria-modal="true" aria-label="Confirm delete" className="panel w-full max-w-sm animate-scale-in overflow-hidden border-crit/25">
-        <div className="flex items-center gap-2.5 border-b border-crit/20 bg-crit/[0.05] px-5 h-11">
-          <TriangleAlert className="h-4 w-4 text-crit" strokeWidth={1.75} />
-          <span className="text-[13px] font-semibold text-crit">Confirm delete</span>
-        </div>
-        <div className="space-y-2 p-5">
-          <p className="text-[13px] leading-relaxed text-txt-mid">
-            This stops monitoring <span className="font-semibold text-accent">{projectName}</span>.
-            Its check history and reports are kept.
-          </p>
-          {error && <Alert tone="error">{error}</Alert>}
-        </div>
-        <div className="flex justify-end gap-2 border-t border-white/[0.06] px-5 py-4">
-          <button onClick={onClose} disabled={deleting} className="btn-ghost">Cancel</button>
-          <button onClick={onConfirm} disabled={deleting} className="btn-danger">
-            {deleting && <Spinner />}
-            {deleting ? 'Deleting…' : 'Delete endpoint'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Vitals metric row ──────────────────────────────────────────────────────
 function Metric({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) {
   return (
-    <div className="flex items-center justify-between border-b border-white/[0.05] py-2.5 last:border-0">
+    <div className="flex items-center justify-between border-b border-white/[0.05] py-2 last:border-0">
       <span className="text-[12px] font-medium text-txt-lo">{label}</span>
-      <span className="data text-[14px] font-semibold" style={{ color: color ?? '#eceef0' }}>
+      <span className="data max-w-[60%] truncate text-[13px] font-semibold" style={{ color: color ?? '#eceef0' }}>
         {value}
       </span>
     </div>
   )
+}
+
+function percentile(sorted: number[], p: number): number | null {
+  if (sorted.length === 0) return null
+  const index = (sorted.length - 1) * p
+  const low = Math.floor(index)
+  const high = Math.ceil(index)
+  return low === high ? sorted[low] : sorted[low] + (sorted[high] - sorted[low]) * (index - low)
 }
 
 // ─── Main Page ──────────────────────────────────────────────────────────────
@@ -251,13 +216,11 @@ export default function ProjectDetail() {
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [reliability, setReliability] = useState<ReliabilityMetrics | null>(null)
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [hours, setHours] = useState(24)
   const requestSeq = useRef(0)
 
   const [showEdit, setShowEdit] = useState(false)
-  const [showDelete, setShowDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
@@ -280,13 +243,12 @@ export default function ProjectDetail() {
   }, [incidents, project])
 
   const loadData = useCallback(
-    async (options?: { silent?: boolean }) => {
+    async () => {
       if (!id) return
       // Sequence counter: switching the time window mid-flight starts a new
       // request, and only the latest one is allowed to land.
       const seq = ++requestSeq.current
-      if (options?.silent) setRefreshing(true)
-      else setLoading(true)
+      setLoading(true)
       try {
         const [projectData, statusData, reportsData, incidentsData] = await Promise.all([
           getProject(id),
@@ -305,10 +267,7 @@ export default function ProjectDetail() {
         if (seq !== requestSeq.current) return
         setLoadError(e instanceof Error ? e.message : 'Failed to load endpoint')
       } finally {
-        if (seq === requestSeq.current) {
-          if (options?.silent) setRefreshing(false)
-          else setLoading(false)
-        }
+        if (seq === requestSeq.current) setLoading(false)
       }
     },
     [hours, id]
@@ -319,7 +278,7 @@ export default function ProjectDetail() {
   }, [loadData])
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => loadData({ silent: true }), POLL_INTERVAL_MS)
+    const intervalId = window.setInterval(() => loadData(), POLL_INTERVAL_MS)
     return () => window.clearInterval(intervalId)
   }, [loadData])
 
@@ -419,15 +378,15 @@ export default function ProjectDetail() {
     URL.revokeObjectURL(url)
   }
 
-  /** Uptime per time bucket over the selected window — 5-minute cells for the
-   *  1-hour view, hourly otherwise. Derived from the same checks the chart
-   *  already has, so this costs no extra request. */
-  const uptimeBuckets = useMemo(() => {
+  /** One bucket per 5 minutes (1h view) or per hour, carrying both the uptime
+   *  for the heatmap and the latency percentiles for the vitals chart. Derived
+   *  from the checks already in hand — no extra request. */
+  const windowBuckets = useMemo(() => {
     const size = hours <= 1 ? 5 * 60_000 : 60 * 60_000
-    const buckets = new Map<number, { up: number; conclusive: number; total: number }>()
+    const map = new Map<number, { up: number; conclusive: number; total: number; latencies: number[] }>()
     for (const check of checks) {
       const key = Math.floor(check.timestamp / size) * size
-      const bucket = buckets.get(key) ?? { up: 0, conclusive: 0, total: 0 }
+      const bucket = map.get(key) ?? { up: 0, conclusive: 0, total: 0, latencies: [] }
       bucket.total += 1
       if (check.status === 'success') {
         bucket.up += 1
@@ -435,21 +394,52 @@ export default function ProjectDetail() {
       } else if (check.status === 'failure') {
         bucket.conclusive += 1
       }
-      buckets.set(key, bucket)
+      if (check.status !== 'inconclusive' && check.latency_ms != null) {
+        bucket.latencies.push(check.latency_ms)
+      }
+      map.set(key, bucket)
     }
-    return [...buckets.keys()]
+    return [...map.keys()]
       .sort((a, b) => a - b)
       .map((key) => {
-        const bucket = buckets.get(key)!
+        const bucket = map.get(key)!
+        bucket.latencies.sort((a, b) => a - b)
         return {
           key: String(key),
           label: `${new Date(key).toISOString().slice(11, 16)} UTC`,
           uptime: bucket.conclusive > 0 ? (bucket.up / bucket.conclusive) * 100 : null,
           checks: bucket.total,
           conclusive: bucket.conclusive,
+          p50: percentile(bucket.latencies, 0.5),
+          p95: percentile(bucket.latencies, 0.95),
         }
       })
   }, [checks, hours])
+
+  const uptimeBuckets = windowBuckets
+
+  /** Percentile bands for the vitals chart. Buckets with no measured check
+   *  carry the previous value forward, so a gap does not plunge the line to 0. */
+  const latencyTrend = useMemo(() => {
+    if (windowBuckets.length === 0) return null
+    const carry = (pick: (bucket: (typeof windowBuckets)[number]) => number | null) => {
+      let last = 0
+      let seen = false
+      return windowBuckets.map((bucket) => {
+        const value = pick(bucket)
+        if (value != null) {
+          last = value
+          seen = true
+        }
+        return seen ? last : 0
+      })
+    }
+    return {
+      labels: windowBuckets.map((bucket) => bucket.label),
+      p50: carry((bucket) => bucket.p50),
+      p95: carry((bucket) => bucket.p95),
+    }
+  }, [windowBuckets])
 
   const ticker = (
     <>
@@ -516,16 +506,6 @@ export default function ProjectDetail() {
   return (
     <Shell ticker={ticker}>
       {showEdit && project && <EditModal project={project} onClose={() => setShowEdit(false)} onSaved={(u) => { setProject(u); setShowEdit(false) }} />}
-      {showDelete && project && (
-        <DeleteModal
-          projectName={project.name}
-          onClose={() => { setShowDelete(false); setDeleteError(null) }}
-          onConfirm={handleDelete}
-          deleting={deleting}
-          error={deleteError}
-        />
-      )}
-
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 font-mono text-[11px] text-txt-lo animate-fade-up">
         <Link to="/dashboard" className="flex items-center gap-1.5 transition-colors hover:text-accent">
@@ -572,29 +552,7 @@ export default function ProjectDetail() {
         </div>
 
         {project && (
-          <div className="flex items-center gap-2">
-            <button onClick={() => loadData({ silent: true })} disabled={loading || refreshing} className="btn-ghost">
-              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin-slow' : ''}`} strokeWidth={1.75} />
-              {refreshing ? 'Refreshing' : 'Refresh'}
-            </button>
-            <button onClick={() => setShowEdit(true)} className="btn-ghost">
-              <SquarePen className="h-3.5 w-3.5" strokeWidth={1.75} />
-              Edit
-            </button>
-            <button onClick={() => setShowDelete(true)} className="btn-danger">
-              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
-              Delete
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Chart + Vitals */}
-      <div className="mt-5 grid grid-cols-1 items-start gap-3 lg:grid-cols-3">
-        {/* Chart */}
-        <div className="panel-flush self-start lg:col-span-2 animate-fade-up" style={{ animationDelay: '120ms' }}>
-          <div className="panel-head">
-            <span className="text-[13px] font-semibold text-txt-hi">Latency Analytics</span>
+          <div className="flex flex-wrap items-center gap-2">
             <RubberSegment
               items={['1h', '24h', '72h']}
               value={`${hours}h`}
@@ -606,8 +564,34 @@ export default function ProjectDetail() {
               thumbColor="#eceef0"
               textColor="#9aa2ab"
               activeTextColor="#0e1115"
-              aria-label="Chart time window"
+              aria-label="Time window for the chart, heatmap and vitals"
             />
+            <ActionButton
+              variant="secondary"
+              icon={<RefreshCw className="h-3.5 w-3.5" strokeWidth={2} />}
+              onAction={loadData}
+              labels={{ loading: 'Refreshing…', success: 'Updated', error: 'Failed' }}
+            >
+              Refresh
+            </ActionButton>
+            <ActionButton
+              variant="secondary"
+              icon={<SquarePen className="h-3.5 w-3.5" strokeWidth={2} />}
+              onAction={() => setShowEdit(true)}
+            >
+              Edit
+            </ActionButton>
+          </div>
+        )}
+      </div>
+
+      {/* Chart + Vitals */}
+      <div className="mt-5 grid grid-cols-1 items-start gap-3 lg:grid-cols-3">
+        {/* Chart */}
+        <div className="panel-flush self-start lg:col-span-2 animate-fade-up" style={{ animationDelay: '120ms' }}>
+          <div className="panel-head">
+            <span className="text-[13px] font-semibold text-txt-hi">Latency</span>
+            <span className="text-[11.5px] text-txt-lo">per check · {hours}h</span>
           </div>
           <div className="grid-overlay p-2">
             {loading ? (
@@ -659,14 +643,36 @@ export default function ProjectDetail() {
             />
           </div>
 
-          <div className="mt-5 grid grid-cols-3 divide-x divide-white/[0.06] border-y border-white/[0.06] py-3">
-            <LatencyCell label="Now" value={latestCheck?.latency_ms ?? null} />
-            <LatencyCell label="Avg" value={windowStats.avg} />
-            <LatencyCell
-              label="P95"
-              value={windowStats.p95}
-              warn={windowStats.p95 != null && windowStats.p95 > latencyTarget}
-            />
+          <div className="mt-5 border-t border-white/[0.06] pt-3.5">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[12px] font-medium text-txt-lo">Latency · {hours}h</span>
+              <span className="text-[11px] text-txt-dim">p50 / p95</span>
+            </div>
+            {latencyTrend ? (
+              <TrendChart
+                labels={latencyTrend.labels}
+                series={[
+                  { key: 'p50', label: 'p50', color: '#8b93a1', values: latencyTrend.p50 },
+                  { key: 'p95', label: 'p95', color: STATUS.accent, values: latencyTrend.p95 },
+                ]}
+                format={(value) => `${Math.round(value)}ms`}
+                height={104}
+                className="mt-1"
+              />
+            ) : (
+              <p className="mt-6 text-center text-[12px] text-txt-dim">No latency samples yet</p>
+            )}
+            <p className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-txt-dim tabular-nums">
+              <span>now {latestCheck?.latency_ms ?? '—'}ms</span>
+              <span>avg {windowStats.avg ?? '—'}ms</span>
+              <span
+                className={
+                  windowStats.p95 != null && windowStats.p95 > latencyTarget ? 'text-warn' : undefined
+                }
+              >
+                p95 {windowStats.p95 ?? '—'}ms
+              </span>
+            </p>
           </div>
 
           <div className="mt-2">
@@ -773,7 +779,7 @@ export default function ProjectDetail() {
             <button
               onClick={handleGenerate}
               disabled={generating}
-              className="btn-accent h-7 text-[10px]"
+              className="btn-accent"
             >
               {generating ? 'Generating…' : 'Generate Report'}
             </button>
@@ -871,6 +877,44 @@ export default function ProjectDetail() {
           </div>
         )}
       </div>
+      {/* Danger zone — separated from everything above on purpose */}
+      <div className="mt-8 rounded-[16px] border border-crit/20 bg-crit/[0.03] p-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[13px] font-semibold text-txt-hi">Delete this endpoint</p>
+            <p className="mt-0.5 max-w-[46ch] text-[12px] leading-relaxed text-txt-lo">
+              Stops every check for {project?.name ?? 'this endpoint'} and removes it from the dashboard.
+              Its checks, incidents and reports go with it.
+            </p>
+          </div>
+          <HoldButton
+            doneLabel="Deleted"
+            backgroundColor="#27272a"
+            fillColor="#f85149"
+            textColor="#f5f5f5"
+            fillTextColor="#ffffff"
+            size="md"
+            radius={12}
+            fillDirection="right"
+            holdTime={2000}
+            releaseTime={200}
+            pressScale={0.97}
+            wave
+            waveAmplitude={6}
+            glow
+            resetAfter={1200}
+            disabled={deleting}
+            onHold={handleDelete}
+          >
+            Hold to delete
+          </HoldButton>
+        </div>
+        {deleteError && (
+          <Alert tone="error" className="mt-3">
+            {deleteError}
+          </Alert>
+        )}
+      </div>
     </Shell>
   )
 }
@@ -910,18 +954,3 @@ function VitalMeter({
   )
 }
 
-function LatencyCell({ label, value, warn }: { label: string; value: number | null; warn?: boolean }) {
-  return (
-    <div className="px-3 first:pl-0">
-      <span className="block text-[11.5px] text-txt-lo">{label}</span>
-      <span
-        className={`mt-0.5 block text-[16px] font-semibold tabular-nums ${
-          warn ? 'text-warn' : value == null ? 'text-txt-dim' : 'text-txt-hi'
-        }`}
-      >
-        {value != null ? value : '—'}
-        {value != null && <span className="ml-0.5 text-[10px] font-medium text-txt-lo">ms</span>}
-      </span>
-    </div>
-  )
-}
