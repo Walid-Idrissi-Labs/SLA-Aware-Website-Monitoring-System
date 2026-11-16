@@ -21,9 +21,10 @@ import {
   Radio,
 } from 'lucide-react'
 import Shell from '../components/Shell'
-import SpecularButton from '../components/SpecularButton'
 import TickerStat from '../components/TickerStat'
 import StatCard from '../components/StatCard'
+import MagicBento from '../components/MagicBento'
+import Counter from '../components/Counter'
 import LatencyChart from '../components/LatencyChart'
 import UptimeGauge from '../components/UptimeGauge'
 import StatusStrip from '../components/StatusStrip'
@@ -269,6 +270,37 @@ export default function ProjectDetail() {
   const [generating, setGenerating] = useState(false)
   const [genMsg, setGenMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null)
   const [downloadKey, setDownloadKey] = useState<string | null>(null)
+
+  // Clock for the incident-free counter. Once a minute is plenty — the readout
+  // is in days/hours/minutes, and Counter only re-animates a digit whose value
+  // actually changed.
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  /** Epoch ms of the moment the last incident resolved, or of the endpoint's
+   *  creation when it has never had one. `null` means we cannot say yet. */
+  const incidentFreeSince = useMemo(() => {
+    if (!project) return null
+    const resolved = incidents.filter((i) => i.resolved && i.end_time != null)
+    if (resolved.length === 0) {
+      const created = new Date(project.created_at).getTime()
+      return Number.isNaN(created) ? null : created
+    }
+    return Math.max(...resolved.map((i) => (i.end_time as number) * 1000))
+  }, [incidents, project])
+
+  const incidentFree = useMemo(() => {
+    if (incidentFreeSince == null || reliability?.open_incident) return null
+    const secs = Math.max(0, Math.floor((nowMs - incidentFreeSince) / 1000))
+    return {
+      days: Math.floor(secs / 86_400),
+      hours: Math.floor((secs % 86_400) / 3600),
+      mins: Math.floor((secs % 3600) / 60),
+    }
+  }, [incidentFreeSince, nowMs, reliability])
 
   const loadData = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -628,59 +660,123 @@ export default function ProjectDetail() {
         </div>
       )}
 
-      <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard
-          label="MTTR"
-          value={reliability ? reliability.mttr_sec / 60 : null}
-          decimals={1}
-          unit="min"
-          icon={<Timer className="h-4 w-4" strokeWidth={1.75} />}
-          sub={<span>mean time to recovery</span>}
-          index={0}
-        />
-        <StatCard
-          label="MTBF"
-          value={reliability && reliability.mtbf_sec != null ? reliability.mtbf_sec / 3600 : null}
-          decimals={1}
-          unit="h"
-          icon={<Activity className="h-4 w-4" strokeWidth={1.75} />}
-          sub={<span>mean time between failures</span>}
-          index={1}
-        />
-        <StatCard
-          label="Longest Outage"
-          value={reliability ? reliability.longest_outage_sec / 60 : null}
-          decimals={1}
-          unit="min"
-          icon={<Hourglass className="h-4 w-4" strokeWidth={1.75} />}
-          sub={
-            <span>
-              {reliability
-                ? `${reliability.incident_count} incident${reliability.incident_count === 1 ? '' : 's'} · ${INCIDENT_WINDOW_DAYS}d`
-                : '—'}
-            </span>
-          }
-          index={2}
-        />
-        <StatCard
-          label="Error Budget"
-          value={reliability ? reliability.error_budget.burn_pct : null}
-          decimals={1}
-          unit="%"
-          icon={<Gauge className="h-4 w-4" strokeWidth={1.75} />}
-          accent={reliability ? (reliability.error_budget.ok ? STATUS.ok : STATUS.crit) : STATUS.accent}
-          sub={
-            <span>
-              {reliability
-                ? reliability.error_budget.ok
-                  ? `${formatDowntime(reliability.error_budget.remaining_sec)} left`
-                  : `${formatDowntime(Math.abs(reliability.error_budget.remaining_sec))} over`
-                : 'burned this window'}
-            </span>
-          }
-          index={3}
-        />
+      {/* Incident-free streak — counts up since the last incident resolved */}
+      <div className="panel mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3">
+        <div className="min-w-0">
+          <span className="micro">No recorded incidents in</span>
+          <p className="mt-0.5 font-mono text-[10px] text-txt-dim">
+            {incidentFreeSince != null
+              ? `since ${new Date(incidentFreeSince).toISOString().slice(0, 16).replace('T', ' ')} UTC`
+              : 'waiting for the first check'}
+          </p>
+        </div>
+        {incidentFree ? (
+          <div className="flex items-baseline gap-2.5">
+            {[
+              { value: incidentFree.days, unit: 'd' },
+              { value: incidentFree.hours, unit: 'h' },
+              { value: incidentFree.mins, unit: 'm' },
+            ].map(({ value, unit }) => (
+              <span key={unit} className="flex items-baseline gap-0.5">
+                <Counter
+                  value={value}
+                  direction="up"
+                  duration={0.8}
+                  bounce={0.3}
+                  stagger={0.03}
+                  fade={0.22}
+                  fontSize={26}
+                  fontWeight={700}
+                  minDigits={1}
+                  tabular
+                  motionBlur
+                  className="data font-display leading-none text-txt-hi"
+                />
+                <span className="data text-[11px] font-semibold text-txt-lo">{unit}</span>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className="font-mono text-[11px] font-semibold text-crit">
+            {reliability?.open_incident ? 'incident in progress' : '—'}
+          </span>
+        )}
       </div>
+
+      <MagicBento
+        columns={4}
+        rowHeight={116}
+        gap={12}
+        radius={14}
+        minCell={150}
+        spotlightRadius={260}
+        className="mt-3"
+        items={[
+          {
+            id: 'mttr',
+            content: (
+              <StatCard
+                label="MTTR"
+                value={reliability ? reliability.mttr_sec / 60 : null}
+                decimals={1}
+                unit="min"
+                icon={<Timer className="h-4 w-4" strokeWidth={1.75} />}
+                sub="mean time to recovery"
+              />
+            ),
+          },
+          {
+            id: 'mtbf',
+            content: (
+              <StatCard
+                label="MTBF"
+                value={reliability && reliability.mtbf_sec != null ? reliability.mtbf_sec / 3600 : null}
+                decimals={1}
+                unit="h"
+                icon={<Activity className="h-4 w-4" strokeWidth={1.75} />}
+                sub="mean time between failures"
+              />
+            ),
+          },
+          {
+            id: 'longest',
+            content: (
+              <StatCard
+                label="Longest Outage"
+                value={reliability ? reliability.longest_outage_sec / 60 : null}
+                decimals={1}
+                unit="min"
+                icon={<Hourglass className="h-4 w-4" strokeWidth={1.75} />}
+                sub={
+                  reliability
+                    ? `${reliability.incident_count} incident${reliability.incident_count === 1 ? '' : 's'} · ${INCIDENT_WINDOW_DAYS}d`
+                    : '—'
+                }
+              />
+            ),
+          },
+          {
+            id: 'budget',
+            content: (
+              <StatCard
+                label="Error Budget"
+                value={reliability ? reliability.error_budget.burn_pct : null}
+                decimals={1}
+                unit="%"
+                icon={<Gauge className="h-4 w-4" strokeWidth={1.75} />}
+                accent={reliability ? (reliability.error_budget.ok ? STATUS.ok : STATUS.crit) : STATUS.accent}
+                sub={
+                  reliability
+                    ? reliability.error_budget.ok
+                      ? `${formatDowntime(reliability.error_budget.remaining_sec)} left`
+                      : `${formatDowntime(Math.abs(reliability.error_budget.remaining_sec))} over`
+                    : 'burned this window'
+                }
+              />
+            ),
+          },
+        ]}
+      />
 
       {/* Incident log */}
       <div className="mt-3">
@@ -714,18 +810,13 @@ export default function ProjectDetail() {
                 </button>
               ))}
             </div>
-            <SpecularButton
-              size="sm"
-              radius={10}
-              lineColor="#fa5c29"
-              baseColor="#fa5c29"
-              textColor="#ffffff"
-              className="transition-colors duration-150 hover:text-accent"
+            <button
               onClick={handleGenerate}
               disabled={generating}
+              className="btn-accent h-7 text-[10px]"
             >
               {generating ? 'Generating…' : 'Generate Report'}
-            </SpecularButton>
+            </button>
           </div>
           {reports.length > 0 && (
             <button onClick={exportCsv} disabled={generating} className="btn-ghost">
