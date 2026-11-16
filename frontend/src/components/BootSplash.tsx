@@ -24,7 +24,7 @@ export default function BootSplash({ title }: Props) {
         <h1 className="mt-6 text-center font-display text-[20px] font-bold tracking-tight text-txt-hi">
           SLA<span className="text-accent">://</span>MONITOR
         </h1>
-        <p className="mt-1.5 text-center font-mono text-[11px] uppercase tracking-micro text-txt-lo">{title}</p>
+        <p className="mt-1.5 text-center text-[12px] text-txt-lo">{title}</p>
 
         {/* Indeterminate progress */}
         <div className="mx-auto mt-6 h-1 w-48 overflow-hidden rounded-full bg-white/[0.06]">

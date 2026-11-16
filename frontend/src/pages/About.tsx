@@ -151,7 +151,7 @@ function SpecChip({ children }: { children: ReactNode }) {
 function PanelTitle({ children }: { children: ReactNode }) {
   return (
     <>
-      <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">{children}</span>
+      <span className="font-display text-[15px] font-semibold tracking-[-0.01em] text-txt-hi">{children}</span>
       <div className="hr-accent mt-3" />
     </>
   )

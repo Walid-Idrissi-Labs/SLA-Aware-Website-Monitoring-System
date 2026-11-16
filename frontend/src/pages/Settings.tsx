@@ -72,7 +72,7 @@ export default function Settings() {
           {/* Identity (read-only) */}
           <div className="panel mt-5 animate-fade-up p-5" style={{ animationDelay: '80ms' }}>
             <div className="flex items-center justify-between">
-              <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Identity</span>
+              <span className="font-display text-[15px] font-semibold tracking-[-0.01em] text-txt-hi">Identity</span>
               <span className="rounded border border-white/[0.08] px-1.5 py-0.5 font-mono text-[9px] text-txt-lo">Cognito</span>
             </div>
             <div className="hr-accent mt-3" />
@@ -81,14 +81,14 @@ export default function Settings() {
               <div className="rounded-md border border-white/[0.06] bg-ink-950/60 p-3">
                 <div className="flex items-center gap-1.5 text-txt-lo">
                   <Hash className="h-3.5 w-3.5" strokeWidth={1.75} />
-                  <span className="micro">User ID</span>
+                  <span className="text-[12px] font-medium text-txt-lo">User ID</span>
                 </div>
                 <p className="mt-1.5 truncate font-mono text-[12px] text-txt-mid">{user?.user_id}</p>
               </div>
               <div className="rounded-md border border-white/[0.06] bg-ink-950/60 p-3">
                 <div className="flex items-center gap-1.5 text-txt-lo">
                   <Mail className="h-3.5 w-3.5" strokeWidth={1.75} />
-                  <span className="micro">Login email</span>
+                  <span className="text-[12px] font-medium text-txt-lo">Login email</span>
                 </div>
                 <p className="mt-1.5 truncate font-mono text-[12px] text-txt-mid">{user?.email}</p>
               </div>
@@ -97,7 +97,7 @@ export default function Settings() {
 
           {/* Editable profile */}
           <form onSubmit={handleSubmit} className="panel mt-3 animate-fade-up p-5" style={{ animationDelay: '140ms' }}>
-            <span className="font-mono text-[11px] font-bold uppercase tracking-micro text-txt-hi">Profile & Notifications</span>
+            <span className="font-display text-[15px] font-semibold tracking-[-0.01em] text-txt-hi">Profile & Notifications</span>
             <div className="hr-accent mt-3" />
 
             <div className="mt-4 space-y-4">

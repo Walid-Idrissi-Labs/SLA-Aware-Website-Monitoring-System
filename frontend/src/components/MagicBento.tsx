@@ -12,6 +12,9 @@ export interface MagicBentoItem {
   label?: ReactNode
   title?: ReactNode
   description?: ReactNode
+  /** Content for the card's visual area — a figure, a chart, a list. This is
+   *  the part that carries the data; the title/description sit underneath it. */
+  visual?: ReactNode
   content?: ReactNode
   onClick?: () => void
   colSpan?: number
@@ -224,10 +227,17 @@ export default function MagicBento({
             {item.content ?? (
               <div className="mb__body">
                 {item.label && <span className="mb__label">{item.label}</span>}
-                <div className="mb__text">
-                  {item.title && <h3 className="mb__title">{item.title}</h3>}
-                  {item.description && <p className="mb__desc">{item.description}</p>}
-                </div>
+                {item.visual && (
+                  <div className="mb__visual" aria-hidden="true">
+                    {item.visual}
+                  </div>
+                )}
+                {(item.title || item.description) && (
+                  <div className="mb__text">
+                    {item.title && <h3 className="mb__title">{item.title}</h3>}
+                    {item.description && <p className="mb__desc">{item.description}</p>}
+                  </div>
+                )}
               </div>
             )}
             <span className="mb__rim" aria-hidden="true" />
