@@ -95,11 +95,11 @@ export function signIn(email: string, password: string): Promise<string> {
 /** Registers a new account. Cognito emails a verification code afterward. */
 export function signUp(email: string, password: string, name: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    // `email` is supplied as the username; do NOT also pass it as an attribute
-    // (the pool uses email as the username attribute). Only `name` is a real attribute.
-    const attributes = name.trim()
-      ? [new CognitoUserAttribute({ Name: 'name', Value: name.trim() })]
-      : []
+    // The pool uses `email` as an alias, so it has to be sent as a real
+    // attribute — otherwise the alias is never set and the account cannot be
+    // looked up by email afterwards.
+    const attributes = [new CognitoUserAttribute({ Name: 'email', Value: email.trim() })]
+    if (name.trim()) attributes.push(new CognitoUserAttribute({ Name: 'name', Value: name.trim() }))
     getPool().signUp(email, password, attributes, [], (err) => {
       if (err) return reject(err)
       resolve()
