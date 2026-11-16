@@ -18,14 +18,11 @@ import {
 } from 'lucide-react'
 import Shell from '../components/Shell'
 import TickerStat from '../components/TickerStat'
-import MagicBento from '../components/MagicBento'
-import Counter from '../components/Counter'
 import FlipClock from '../components/FlipClock'
+import IncidentReport from '../components/IncidentReport'
 import UptimeHeatmap from '../components/UptimeHeatmap'
 import RubberSegment from '../components/RubberSegment'
-import { BentoFigure, BentoArea, BentoBars, BentoMeter } from '../components/BentoVisuals'
 import LatencyChart from '../components/LatencyChart'
-import UptimeGauge from '../components/UptimeGauge'
 import IncidentTimeline from '../components/IncidentTimeline'
 import {
   getProject,
@@ -265,6 +262,7 @@ export default function ProjectDetail() {
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const [genDays, setGenDays] = useState<1 | 7 | 30>(7)
+  const [reportDays, setReportDays] = useState<7 | 30>(7)
   const [generating, setGenerating] = useState(false)
   const [genMsg, setGenMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null)
   const [downloadKey, setDownloadKey] = useState<string | null>(null)
@@ -280,30 +278,6 @@ export default function ProjectDetail() {
     }
     return Math.max(...resolved.map((i) => (i.end_time as number) * 1000))
   }, [incidents, project])
-
-  /** Incident durations in minutes, oldest first — the shape of the instability. */
-  const incidentDurations = useMemo(
-    () =>
-      incidents
-        .filter((i) => i.duration_seconds != null)
-        .slice()
-        .sort((a, b) => a.start_time - b.start_time)
-        .map((i) => Math.round(((i.duration_seconds as number) / 60) * 10) / 10),
-    [incidents],
-  )
-
-  /** Healthy gaps between consecutive resolved incidents, in hours. */
-  const incidentGaps = useMemo(() => {
-    const resolved = incidents
-      .filter((i) => i.resolved && i.end_time != null)
-      .slice()
-      .sort((a, b) => a.start_time - b.start_time)
-    const gaps: number[] = []
-    for (let i = 1; i < resolved.length; i++) {
-      gaps.push(Math.round(((resolved[i].start_time - (resolved[i - 1].end_time as number)) / 3600) * 10) / 10)
-    }
-    return gaps
-  }, [incidents])
 
   const loadData = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -646,56 +620,78 @@ export default function ProjectDetail() {
           </div>
         </div>
 
-        {/* Vitals */}
-        <div className="panel animate-fade-up p-5" style={{ animationDelay: '180ms' }}>
-          <span className="text-[13px] font-semibold text-txt-hi">Vitals</span>
+        {/* Vitals — two headline rates with meters, a latency trio, then the facts */}
+        <div className="panel self-start p-5">
+          <div className="flex items-baseline justify-between">
+            <span className="text-[13px] font-semibold text-txt-hi">Vitals</span>
+            <span className="text-[11.5px] text-txt-lo">{hours}h window</span>
+          </div>
           <div className="hr-accent mt-3" />
 
-          <div className="mt-4 flex justify-center">
-            <UptimeGauge value={uptime} label={`Uptime · ${hours}h`} />
-          </div>
-          {summary && (
-            <p className="mt-2 text-center font-mono text-[10px] text-txt-dim">
-              {summary.checks_up + summary.checks_down} of {summary.checks_expected} expected checks were conclusive
-            </p>
-          )}
-
-          <div className="mt-4">
-            <Metric label="Current Latency" value={latestCheck ? `${latestCheck.latency_ms}ms` : '—'} />
-            <Metric
-              label={`Avg · ${hours}h`}
-              value={windowStats.avg != null ? `${windowStats.avg}ms` : '—'}
-              color={windowStats.avg != null && windowStats.avg > latencyTarget ? STATUS.warn : undefined}
-            />
-            <Metric label={`P95 · ${hours}h`} value={windowStats.p95 != null ? `${windowStats.p95}ms` : '—'} />
-            <Metric label="Status" value={status ? VERDICT[verdict].short : '—'} color={status ? VERDICT[verdict].color : undefined} />
-            <Metric
-              label={`Evidence · ${hours}h`}
-              value={coverage != null ? `${coverage.toFixed(1)}%` : '—'}
-              color={coverage != null && coverage < 95 ? STATUS.warn : undefined}
-            />
-            <Metric label="HTTP Code" value={latestCheck ? latestCheck.http_status_code || 'ERR' : '—'} />
-            <Metric
-              label="Checks · window"
-              value={summary ? `${summary.checks_total} / ${summary.checks_expected}` : checks.length}
-            />
-            <Metric label="Last Check" value={latestCheck ? fmtUtcTime(latestCheck.timestamp) : '—'} />
-            <Metric
-              label="Cert Expires"
-              value={project?.cert_expiry_days != null ? `${project.cert_expiry_days}d` : '—'}
+          <div className="mt-4 space-y-4">
+            <VitalMeter
+              label="Uptime"
+              value={uptime}
               color={
-                project?.cert_expiry_days == null
-                  ? undefined
-                  : project.cert_expiry_days < 7
+                uptime == null
+                  ? STATUS.neutral
+                  : uptime >= 99.9
+                    ? STATUS.ok
+                    : uptime >= 99
+                      ? STATUS.warn
+                      : STATUS.crit
+              }
+              caption={
+                summary
+                  ? `${summary.checks_up} up · ${summary.checks_down} down of ${summary.checks_expected} expected`
+                  : `${checks.length} checks recorded`
+              }
+            />
+            <VitalMeter
+              label="Evidence"
+              value={coverage}
+              color={coverage == null ? STATUS.neutral : coverage >= 95 ? STATUS.ok : STATUS.warn}
+              caption={
+                summary
+                  ? `${summary.checks_up + summary.checks_down} conclusive · ${summary.checks_inconclusive} gave no answer`
+                  : 'share of checks that produced a verdict'
+              }
+            />
+          </div>
+
+          <div className="mt-5 grid grid-cols-3 divide-x divide-white/[0.06] border-y border-white/[0.06] py-3">
+            <LatencyCell label="Now" value={latestCheck?.latency_ms ?? null} />
+            <LatencyCell label="Avg" value={windowStats.avg} />
+            <LatencyCell
+              label="P95"
+              value={windowStats.p95}
+              warn={windowStats.p95 != null && windowStats.p95 > latencyTarget}
+            />
+          </div>
+
+          <div className="mt-2">
+            <Metric
+              label="Status"
+              value={status ? VERDICT[verdict].label : '—'}
+              color={status ? VERDICT[verdict].color : undefined}
+            />
+            <Metric label="HTTP" value={latestCheck ? String(latestCheck.http_status_code || 'ERR') : '—'} />
+            <Metric label="Accepted" value={project?.accepted_status || '200-399'} />
+            <Metric label="Last check" value={latestCheck ? fmtUtcTime(latestCheck.timestamp) : '—'} />
+            {project?.cert_expiry_days != null && (
+              <Metric
+                label="Certificate"
+                value={`${project.cert_expiry_days}d${project.cert_issuer ? ` · ${project.cert_issuer}` : ''}`}
+                color={
+                  project.cert_expiry_days < 7
                     ? STATUS.crit
                     : project.cert_expiry_days < 30
                       ? STATUS.warn
                       : undefined
-              }
-            />
-            <Metric label="Cert Issuer" value={project?.cert_issuer || '—'} />
+                }
+              />
+            )}
           </div>
-
         </div>
       </div>
 
@@ -717,15 +713,6 @@ export default function ProjectDetail() {
         </div>
       </div>
 
-      {/* Reliability */}
-      <div className="mt-8 flex items-center gap-3 animate-fade-up" style={{ animationDelay: '250ms' }}>
-        <h2 className="font-display text-[15px] font-semibold tracking-[-0.01em] text-txt-hi">Reliability</h2>
-        <span className="rounded-md border border-white/[0.08] bg-white/[0.02] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-txt-mid">
-          {INCIDENT_WINDOW_DAYS}d
-        </span>
-        <span className="hr-accent flex-1" />
-      </div>
-
       {reliability?.open_incident && (
         <div className="mt-3 flex items-center gap-2.5 rounded-lg border border-crit/25 bg-crit/[0.05] px-4 py-3 animate-fade-up">
           <Radio className="h-4 w-4 animate-pulse text-crit" strokeWidth={2} />
@@ -735,157 +722,12 @@ export default function ProjectDetail() {
         </div>
       )}
 
-      <MagicBento
-        columns={4}
-        rowHeight={176}
-        gap={12}
-        radius={18}
-        minCell={190}
-        spotlightRadius={260}
-        className="mt-3"
-        items={[
-          {
-            id: 'mttr',
-            title: 'MTTR',
-            description: 'Mean time to recovery, per incident.',
-            visual: (
-              <>
-                <BentoFigure
-                  value={
-                    reliability ? (
-                      <Counter
-                        value={reliability.mttr_sec / 60}
-                        decimals={1}
-                        suffix="min"
-                        direction="up"
-                        duration={0.9}
-                        bounce={0.28}
-                        stagger={0.03}
-                        fade={0.24}
-                        fontSize={24}
-                        fontWeight={600}
-                        tabular
-                        motionBlur
-                      />
-                    ) : (
-                      '—'
-                    )
-                  }
-                  note={incidentDurations.length > 1 ? `${incidentDurations.length} incidents` : undefined}
-                />
-                <BentoArea values={incidentDurations} color={STATUS.warn} />
-              </>
-            ),
-          },
-          {
-            id: 'mtbf',
-            title: 'MTBF',
-            description: 'Healthy time between failures.',
-            visual: (
-              <>
-                <BentoFigure
-                  value={
-                    reliability && reliability.mtbf_sec != null ? (
-                      <Counter
-                        value={reliability.mtbf_sec / 3600}
-                        decimals={1}
-                        suffix="h"
-                        direction="up"
-                        duration={0.9}
-                        bounce={0.28}
-                        stagger={0.03}
-                        fade={0.24}
-                        fontSize={24}
-                        fontWeight={600}
-                        tabular
-                        motionBlur
-                      />
-                    ) : (
-                      '—'
-                    )
-                  }
-                  note={incidentGaps.length >= 2 ? 'per gap' : undefined}
-                />
-                <BentoBars values={incidentGaps.length ? incidentGaps : [0]} color={STATUS.ok} />
-              </>
-            ),
-          },
-          {
-            id: 'longest',
-            title: 'Longest outage',
-            description: `Worst single incident in ${INCIDENT_WINDOW_DAYS} days.`,
-            visual: (
-              <>
-                <BentoFigure
-                  value={
-                    reliability ? (
-                      <Counter
-                        value={reliability.longest_outage_sec / 60}
-                        decimals={1}
-                        suffix="min"
-                        direction="up"
-                        duration={0.9}
-                        bounce={0.28}
-                        stagger={0.03}
-                        fade={0.24}
-                        fontSize={24}
-                        fontWeight={600}
-                        tabular
-                        motionBlur
-                      />
-                    ) : (
-                      '—'
-                    )
-                  }
-                  note={reliability ? `${reliability.incident_count} total` : undefined}
-                />
-                <BentoBars values={incidentDurations.length ? incidentDurations : [0]} color={STATUS.crit} />
-              </>
-            ),
-          },
-          {
-            id: 'budget',
-            title: 'Error budget',
-            description: 'Share of the allowed downtime already spent.',
-            visual: (
-              <>
-                <BentoFigure
-                  value={
-                    reliability ? (
-                      <Counter
-                        value={reliability.error_budget.burn_pct}
-                        decimals={1}
-                        suffix="%"
-                        direction="up"
-                        duration={0.9}
-                        bounce={0.28}
-                        stagger={0.03}
-                        fade={0.24}
-                        fontSize={24}
-                        fontWeight={600}
-                        tabular
-                        motionBlur
-                      />
-                    ) : (
-                      '—'
-                    )
-                  }
-                  note={
-                    reliability
-                      ? reliability.error_budget.ok
-                        ? `${formatDowntime(reliability.error_budget.remaining_sec)} left`
-                        : `${formatDowntime(Math.abs(reliability.error_budget.remaining_sec))} over`
-                      : undefined
-                  }
-                />
-                <BentoMeter
-                  pct={reliability ? reliability.error_budget.burn_pct : 0}
-                  color={reliability?.error_budget.ok ? STATUS.ok : STATUS.crit}
-                />
-              </>
-            ),
-          },
-        ]}
+      <IncidentReport
+        incidents={incidents}
+        reliability={reliability}
+        windowDays={reportDays}
+        onWindowChange={setReportDays}
+        comparisonAvailable={reportDays * 2 <= INCIDENT_WINDOW_DAYS}
       />
 
       {/* Streak + incident log, side by side once there is room for both */}
@@ -1030,5 +872,56 @@ export default function ProjectDetail() {
         )}
       </div>
     </Shell>
+  )
+}
+
+/** Label, big percentage, thin meter, and a caption that says what the number
+ *  is counting. Replaces the uptime ring. */
+function VitalMeter({
+  label,
+  value,
+  color,
+  caption,
+}: {
+  label: string
+  value: number | null
+  color: string
+  caption?: string | null
+}) {
+  const shown = value == null ? null : Math.min(100, Math.max(0, value))
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[12px] font-medium text-txt-lo">{label}</span>
+        <span
+          className={`text-[17px] font-semibold tabular-nums ${shown == null ? 'text-txt-dim' : 'text-txt-hi'}`}
+        >
+          {shown == null ? '—' : `${shown.toFixed(1)}%`}
+        </span>
+      </div>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+        <div
+          className="h-full rounded-full transition-[width] duration-500"
+          style={{ width: `${shown ?? 0}%`, backgroundColor: color }}
+        />
+      </div>
+      {caption && <p className="mt-1.5 text-[11px] leading-snug text-txt-dim">{caption}</p>}
+    </div>
+  )
+}
+
+function LatencyCell({ label, value, warn }: { label: string; value: number | null; warn?: boolean }) {
+  return (
+    <div className="px-3 first:pl-0">
+      <span className="block text-[11.5px] text-txt-lo">{label}</span>
+      <span
+        className={`mt-0.5 block text-[16px] font-semibold tabular-nums ${
+          warn ? 'text-warn' : value == null ? 'text-txt-dim' : 'text-txt-hi'
+        }`}
+      >
+        {value != null ? value : '—'}
+        {value != null && <span className="ml-0.5 text-[10px] font-medium text-txt-lo">ms</span>}
+      </span>
+    </div>
   )
 }
