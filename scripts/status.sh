@@ -114,6 +114,16 @@ if [ -n "$POOL" ] && [ "$POOL" != "None" ]; then
     --query 'UserPool.[CreationDate,EstimatedNumberOfUsers]' --output text)
   IFS=$'\t' read -r created users <<< "$row"
   ok "$(printf '%-24s %-22s created %-25s users %s' "$POOL" "$PREFIX-user-pool" "$(trim "$created")" "$users")"
+  # Federated sign-in breaks on the second login if `email` is immutable, and
+  # Cognito can only set that at pool creation — so a rebuilt pool silently
+  # regresses it. Assert it here rather than find out weeks later.
+  mutable=$(aws_ cognito-idp describe-user-pool --user-pool-id "$POOL" \
+    --query 'UserPool.SchemaAttributes[?Name==`email`].Mutable' --output text)
+  if [ "$mutable" = "True" ]; then
+    ok "$(printf '%-24s                      email attribute is mutable' "")"
+  else
+    bad "email attribute is NOT mutable (reported: '$mutable') — Google sign-in will work once, then fail"
+  fi
 else
   bad "user pool $PREFIX-user-pool not found"
 fi
