@@ -55,7 +55,10 @@ resource "aws_cognito_user_pool" "main" {
     name                = "email"
     attribute_data_type = "String"
     required            = true
-    mutable             = false
+    // Must stay mutable. An IdP attribute mapping that writes an immutable
+    // attribute only succeeds on the sign-in that creates the user; every later
+    // sign-in fails with "user.email: Attribute cannot be updated".
+    mutable = true
   }
 
   schema {
@@ -70,7 +73,10 @@ resource "aws_cognito_user_pool" "main" {
   }
 
   lifecycle {
-    ignore_changes = [schema]
+    // `schema` used to be ignored because Terraform reported perpetual drift on
+    // it. It has to be managed now: the email attribute's mutability is what
+    // decides whether federated sign-in can work more than once.
+    ignore_changes = []
   }
 
 }
@@ -105,9 +111,10 @@ resource "aws_cognito_identity_provider" "google" {
 
 
   attribute_mapping = {
-    email    = "email"
-    name     = "name"
-    username = "sub"
+    email          = "email"
+    email_verified = "email_verified"
+    name           = "name"
+    username       = "sub"
   }
 
 }

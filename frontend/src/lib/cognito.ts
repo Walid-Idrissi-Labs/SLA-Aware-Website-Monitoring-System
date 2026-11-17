@@ -92,6 +92,24 @@ export function signIn(email: string, password: string): Promise<string> {
   })
 }
 
+/**
+ * The pool uses `email` as an alias, and Cognito rejects a sign-up whose
+ * username is an email address in that configuration. The username is therefore
+ * derived from the address: deterministic, so the confirm step can recompute it
+ * from the email alone and no extra state has to survive a page reload.
+ */
+export function usernameFor(email: string): string {
+  const s = email.trim().toLowerCase()
+  let a = 0x811c9dc5
+  let b = 0x01000193
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    a = Math.imul(a ^ c, 0x01000193) >>> 0
+    b = Math.imul(b + c, 0x85ebca6b) >>> 0
+  }
+  return `u${a.toString(16).padStart(8, '0')}${b.toString(16).padStart(8, '0')}`
+}
+
 /** Registers a new account. Cognito emails a verification code afterward. */
 export function signUp(email: string, password: string, name: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -100,7 +118,7 @@ export function signUp(email: string, password: string, name: string): Promise<v
     // looked up by email afterwards.
     const attributes = [new CognitoUserAttribute({ Name: 'email', Value: email.trim() })]
     if (name.trim()) attributes.push(new CognitoUserAttribute({ Name: 'name', Value: name.trim() }))
-    getPool().signUp(email, password, attributes, [], (err) => {
+    getPool().signUp(usernameFor(email), password, attributes, [], (err) => {
       if (err) return reject(err)
       resolve()
     })
@@ -110,7 +128,7 @@ export function signUp(email: string, password: string, name: string): Promise<v
 /** Confirms a new account with the 6-digit code Cognito emailed. */
 export function confirmSignUp(email: string, code: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    cognitoUser(email).confirmRegistration(code.trim(), true, (err) => {
+    cognitoUser(usernameFor(email)).confirmRegistration(code.trim(), true, (err) => {
       if (err) return reject(err)
       resolve()
     })
@@ -120,7 +138,7 @@ export function confirmSignUp(email: string, code: string): Promise<void> {
 /** Re-sends the verification code for an unconfirmed account. */
 export function resendConfirmationCode(email: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    cognitoUser(email).resendConfirmationCode((err) => {
+    cognitoUser(usernameFor(email)).resendConfirmationCode((err) => {
       if (err) return reject(err)
       resolve()
     })
