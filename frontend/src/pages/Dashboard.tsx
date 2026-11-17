@@ -68,7 +68,11 @@ export default function Dashboard() {
   }, [loadProjects])
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => loadProjects(), POLL_INTERVAL_MS)
+    // A hidden tab gets refetched by the visibility listener below, so polling
+    // it in the background is a fetch plus a full re-render for nobody.
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') loadProjects()
+    }, POLL_INTERVAL_MS)
     return () => window.clearInterval(intervalId)
   }, [loadProjects])
 

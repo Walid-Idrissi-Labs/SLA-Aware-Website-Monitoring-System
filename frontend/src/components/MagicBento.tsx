@@ -149,10 +149,9 @@ export default function MagicBento({
 
     const onScroll = () => {
       dirty = true
-      if (!pointer.inside) {
-        paint()
-        return
-      }
+      // With the pointer outside, every card is already dark, so a scroll changes
+      // nothing. Bailing here avoids one forced layout read per scroll event.
+      if (!pointer.inside) return
       wake()
     }
 
