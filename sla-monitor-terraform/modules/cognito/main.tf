@@ -1,20 +1,11 @@
 resource "aws_cognito_user_pool" "main" {
   name = "${var.name_prefix}-user-pool"
 
-  # Email-based sign-in via an ALIAS, not as the username attribute.
-  #
-  # With `username_attributes = ["email"]` Cognito freezes the user's email at
-  # creation, because the email *is* the username. Federated sign-in re-applies
-  # the IdP attribute mapping (email -> email) on every login, which is an
-  # update, so the second Google sign-in of any account fails with:
-  #   invalid_request: user.email: Attribute cannot be updated.
-  # `username_attributes` is create-only, so this cannot be corrected in place.
-  #
-  # As an alias the attribute stays writable, federated sign-in keeps working,
-  # and Cognito can link a Google identity to an email/password account that
-  # uses the same verified address. Sign-up must then send `email` as a real
-  # attribute — see signUp() in frontend/src/lib/cognito.ts.
-  alias_attributes = ["email"]
+  # The email is the sign-in name, not an alias. With an alias, only the last
+  # account to verify an address can sign in with it, so a Google account and a
+  # password account on the same address could lock each other out.
+  # Create-only: changing this replaces the pool.
+  username_attributes = ["email"]
 
   #*tells cognito to auto send email (and to treat the email as verified)
   auto_verified_attributes = ["email"]
@@ -103,10 +94,9 @@ resource "aws_cognito_identity_provider" "google" {
 
 
   attribute_mapping = {
-    email          = "email"
-    email_verified = "email_verified"
-    name           = "name"
-    username       = "sub"
+    email    = "email"
+    name     = "name"
+    username = "sub"
   }
 
 }
