@@ -7,6 +7,7 @@ import ProjectCard from '../components/ProjectCard'
 import AddProjectModal from '../components/AddProjectModal'
 import MagicBento, { type MagicBentoItem } from '../components/MagicBento'
 import Counter from '../components/Counter'
+import HowCalculated from '../components/HowCalculated'
 import { BentoFigure, BentoArea, BentoBars, BentoTiles, BentoSteps } from '../components/BentoVisuals'
 import ActionButton from '../components/ActionButton'
 import { Alert } from '../components/ui'
@@ -177,7 +178,19 @@ export default function Dashboard() {
     return [
       {
         id: 'health',
-        title: 'System Health',
+        title: (
+          <HowCalculated
+            label="System Health"
+            topic="system health"
+            empty={due === 0 ? 'No endpoint has been checked yet' : false}
+            rows={[
+              { label: 'Up now', value: healthy },
+              { label: 'Due an answer', value: due },
+            ]}
+            result={healthPct != null && `${healthy} ÷ ${due} = ${healthPct.toFixed(1)}%`}
+            caveat="A new endpoint is not due yet; a stale or unanswered one counts against health without being called a failure."
+          />
+        ),
         description: 'Minute-by-minute pass rate across every endpoint.',
         visual: (
           <>
@@ -214,7 +227,16 @@ export default function Dashboard() {
       },
       {
         id: 'latency',
-        title: 'Avg Latency',
+        title: (
+          <HowCalculated
+            label="Avg Latency"
+            topic="average latency"
+            empty={avgLatency == null ? 'No endpoint is up right now' : false}
+            rows={[{ label: 'Endpoints up', value: withLatency.length }]}
+            result={`mean of their latest latency = ${avgLatency} ms`}
+            caveat="Down, stale or unanswered endpoints are left out: a timeout is not a latency."
+          />
+        ),
         description: 'Mean response time, bucketed by minute.',
         visual: (
           <>
@@ -246,8 +268,19 @@ export default function Dashboard() {
       },
       {
         id: 'incidents',
-        title: 'Active Incidents',
-        description: 'Endpoints that have tripped their failure threshold.',
+        title: (
+          <HowCalculated
+            label="Active Incidents"
+            topic="active incidents"
+            rows={[
+              { label: 'Failing now', value: incidents },
+              { label: 'Unverified', value: unverified },
+            ]}
+            result={`${incidents} endpoint${incidents === 1 ? '' : 's'} whose latest check failed`}
+            caveat="Stale and no-evidence endpoints are unverified, not failing. The incident log needs failures in a row."
+          />
+        ),
+        description: 'Endpoints whose latest check failed.',
         visual: (
           <>
             <BentoFigure
@@ -290,7 +323,15 @@ export default function Dashboard() {
       },
       {
         id: 'endpoints',
-        title: 'Endpoints',
+        title: (
+          <HowCalculated
+            label="Endpoints"
+            topic="the endpoint count"
+            rows={[{ label: 'Active', value: total }]}
+            result={`${total} endpoint${total === 1 ? '' : 's'}, each checked every minute`}
+            caveat="Deleted endpoints are not counted."
+          />
+        ),
         description: 'Probed once a minute, around the clock.',
         visual: (
           <>
@@ -306,7 +347,7 @@ export default function Dashboard() {
         ),
       },
     ]
-  }, [healthPct, avgLatency, incidents, unverified, total, healthy, due, timeline, failing, activeProjects, verdicts])
+  }, [healthPct, avgLatency, withLatency.length, incidents, unverified, total, healthy, due, timeline, failing, activeProjects, verdicts])
 
   const cards: MagicBentoItem[] = useMemo(
     () =>
