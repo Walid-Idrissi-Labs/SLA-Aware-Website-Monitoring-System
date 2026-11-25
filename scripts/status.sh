@@ -2,11 +2,13 @@
 # Read-only snapshot of the deployed SLA Monitor stack: what exists, what state
 # it is in, and since when.
 #
-# Nothing here writes: only list/describe/get calls, plus one unauthenticated
-# GET /health. Safe to run at any time, including while someone else is applying.
+# Nothing here writes: only list/describe/get calls, plus unauthenticated GETs of
+# /health, the public site, and the first two redirects of Google sign-in (no
+# account is used). Safe to run at any time, including while someone else is applying.
 #
 #   ./scripts/status.sh
 #   AWS_REGION=eu-west-1 ./scripts/status.sh
+#   SITE=https://preview.example.vercel.app ./scripts/status.sh
 #
 # Exits 1 if anything expected is missing, so it can gate a demo.
 set -uo pipefail
@@ -128,6 +130,83 @@ else
   bad "user pool $PREFIX-user-pool not found"
 fi
 
+section "Frontend wiring"
+# Vite inlines the VITE_* values at build time, so the live site only talks to
+# this stack if it was deployed after the stack was created.
+SITE="${SITE:-https://sla-aware-website-monitoring-system.vercel.app}"
+if [ -z "$POOL" ] || [ "$POOL" = "None" ]; then
+  printf '  %s–%s skipped: no user pool to compare the site against\n' "$B" "$N"
+else
+  CLIENT=$(aws_ cognito-idp list-user-pool-clients --user-pool-id "$POOL" \
+    --query "UserPoolClients[?ClientName=='$PREFIX-app-client'].ClientId" --output text)
+  HOSTED="https://$(aws_ cognito-idp describe-user-pool --user-pool-id "$POOL" \
+    --query 'UserPool.Domain' --output text).auth.$REGION.amazoncognito.com"
+
+  entry=$(curl -s --max-time 15 "$SITE/" | grep -oE 'assets/index-[^"]+\.js' | head -1)
+  BUNDLE=$([ -n "$entry" ] && curl -s --max-time 15 "$SITE/$entry")
+  # in_site <label> <value this stack expects> [regex for what the build has instead]
+  in_site() {
+    # A substring test, not `printf | grep -q`: under pipefail an early grep exit
+    # SIGPIPEs the writer and reads as "not found".
+    if [[ "$BUNDLE" == *"$2"* ]]; then
+      ok "$(printf '%-15s %s' "$1" "$2")"
+      return
+    fi
+    local found=""
+    [ -n "${3:-}" ] && found=$(grep -oE "$3" <<< "$BUNDLE" | head -1)
+    bad "$(printf '%-15s site is built with %s, stack has %s — redeploy: ./scripts/demo-up.sh' \
+      "$1" "${found:-a different value}" "$2")"
+  }
+  if [ -z "$BUNDLE" ]; then
+    bad "cannot read the deployed build from $SITE"
+  else
+    in_site "API URL" "$API" 'https://[a-z0-9]{10}\.execute-api\.[a-z0-9-]+\.amazonaws\.com'
+    in_site "user pool" "$POOL" "${REGION}_[A-Za-z0-9]{9}"
+    in_site "app client" "$CLIENT"
+    in_site "sign-in domain" "$HOSTED" 'https://[a-z0-9-]+\.auth\.[a-z0-9-]+\.amazoncognito\.com'
+  fi
+
+  # The API rejects every token whose issuer or audience it doesn't trust (401).
+  API_ID=$(aws_ apigatewayv2 get-apis --query "Items[?Name=='$PREFIX-api'].ApiId" --output text)
+  jwt=$(aws_ apigatewayv2 get-authorizers --api-id "$API_ID" \
+    --query 'Items[0].JwtConfiguration.[Issuer, join(`,`, Audience)]' --output text)
+  IFS=$'\t' read -r iss aud <<< "$jwt"
+  if [ "$iss" = "https://cognito-idp.$REGION.amazonaws.com/$POOL" ] && [[ ",$aud," == *",$CLIENT,"* ]]; then
+    ok "$(printf '%-15s accepts tokens from this pool and app client' "API authorizer")"
+  else
+    bad "$(printf '%-15s trusts issuer %s, audience %s' "API authorizer" "${iss:-none}" "${aud:-none}")"
+  fi
+
+  # Walk the first two hops of "Continue with Google" without signing in. Both
+  # refusals are 302s to an error page, so the redirect target is all this reads.
+  # The client secret is only used after a real sign-in, so it can't be checked here.
+  hop1=$(curl -s -o /dev/null -w '%{redirect_url}' --max-time 15 \
+    "$HOSTED/oauth2/authorize?identity_provider=Google&response_type=code&client_id=$CLIENT&redirect_uri=$SITE/callback&scope=openid+email+profile")
+  case "$hop1" in
+    https://accounts.google.com/*)
+      ok "$(printf '%-15s Cognito accepts %s/callback and hands off to Google' "Google sign-in" "$SITE")"
+      hop2=$(curl -s -o /dev/null -w '%{redirect_url}' --max-time 15 "$hop1")
+      gclient=$(printf '%s' "$hop1" | sed -nE 's/.*[?&]client_id=([^&]+).*/\1/p')
+      case "$hop2" in
+        *"/signin/oauth/error"*)
+          # Google's reason (redirect_uri_mismatch, invalid_client, ...) is the first
+          # plain token in authError, a base64url-encoded protobuf.
+          a=$(printf '%s' "$hop2" | sed -nE 's/.*authError=([^&]+).*/\1/p' | sed 's/%3D/=/g' | tr '_-' '/+')
+          while [ $(( ${#a} % 4 )) -ne 0 ]; do a="$a="; done
+          reason=$(printf '%s' "$a" | base64 -d 2>/dev/null | LC_ALL=C tr -c 'a-z_' '\n' | grep -m1 -E '^[a-z_]{6,}$')
+          bad "$(printf '%-15s Google refuses client %s: %s' "Google sign-in" "${gclient%%-*}…" "${reason:-unknown reason}")" ;;
+        https://accounts.google.com/*)
+          ok "$(printf '%-15s Google accepts client %s and the Cognito redirect URI' "Google sign-in" "${gclient%%-*}…")" ;;
+        *)
+          bad "$(printf '%-15s unexpected reply from Google: %s' "Google sign-in" "${hop2:-no redirect}")" ;;
+      esac ;;
+    *error=*)
+      bad "$(printf '%-15s Cognito refuses it: %s' "Google sign-in" "$(printf '%s' "$hop1" | sed -nE 's/.*[?&]error=([^&]+).*/\1/p')")" ;;
+    *)
+      bad "$(printf '%-15s Cognito did not hand off to Google (got: %s)' "Google sign-in" "${hop1:-no redirect}")" ;;
+  esac
+fi
+
 section "SSM"
 env_name="${PREFIX##*-}"
 param="/sla-monitor/$env_name/ses/sender-email"
@@ -158,5 +237,5 @@ if [ "$MISSING" -eq 0 ]; then
   exit 0
 fi
 
-printf '  %s%s resource group(s) missing.%s See the ✗ lines above.\n\n' "$R" "$MISSING" "$N"
+printf '  %s%s check(s) failed.%s See the ✗ lines above.\n\n' "$R" "$MISSING" "$N"
 exit 1
