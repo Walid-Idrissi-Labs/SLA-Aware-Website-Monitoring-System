@@ -67,7 +67,7 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fade-in"
       onClick={(e) => e.target === e.currentTarget && !saving && onClose()}
     >
-      <div className="w-full max-w-[480px] animate-scale-in">
+      <div role="dialog" aria-modal="true" aria-label="New endpoint" className="w-full max-w-[480px] animate-scale-in">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-[12.5px] text-txt-lo">New endpoint</span>
           <button

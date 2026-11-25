@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { RefreshCw, Plus, Radar } from 'lucide-react'
 import Shell from '../components/Shell'
 import TickerStat from '../components/TickerStat'
@@ -48,6 +48,15 @@ export default function Dashboard() {
   const [now, setNow] = useState(Date.now)
   const requestSeq = useRef(0)
   const navigate = useNavigate()
+  const location = useLocation()
+
+  // "Add endpoint" from the command palette arrives as a one-off navigation flag.
+  useEffect(() => {
+    if ((location.state as { addEndpoint?: boolean } | null)?.addEndpoint) {
+      setShowAddModal(true)
+      navigate(location.pathname, { replace: true, state: null }) // so a refresh does not reopen it
+    }
+  }, [location.state, location.pathname, navigate])
 
   const loadProjects = useCallback(async () => {
     const seq = ++requestSeq.current
