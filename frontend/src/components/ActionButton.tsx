@@ -121,7 +121,10 @@ export default function ActionButton({
         className={`${STACK} col-start-1 justify-center ${current === 'loading' ? 'opacity-100' : 'opacity-0'}`}
         aria-hidden
       >
-        <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.6px] border-current border-t-transparent" />
+        {/* Spin only while shown: at opacity 0 the animation still wakes the GPU every frame. */}
+        <span
+          className={`h-3.5 w-3.5 rounded-full border-[1.6px] border-current border-t-transparent ${current === 'loading' ? 'animate-spin' : ''}`}
+        />
       </span>
       <span
         className={`${STACK} col-start-1 justify-center ${current === 'success' ? 'opacity-100' : 'opacity-0'}`}
