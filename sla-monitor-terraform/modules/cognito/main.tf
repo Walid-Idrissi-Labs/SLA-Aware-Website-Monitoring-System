@@ -61,22 +61,12 @@ resource "aws_cognito_user_pool" "main" {
     mutable = true
   }
 
-  schema {
-    name                = "name"
-    attribute_data_type = "String"
-    required            = false
-    mutable             = true
-  }
+  # No `name` block: it is a standard attribute and already optional + mutable.
+  # Declaring those defaults makes the provider drop it from state, then try to
+  # add it back as a custom attribute on every apply.
 
   tags = {
     Name = "${var.name_prefix}-user-pool"
-  }
-
-  lifecycle {
-    // `schema` used to be ignored because Terraform reported perpetual drift on
-    // it. It has to be managed now: the email attribute's mutability is what
-    // decides whether federated sign-in can work more than once.
-    ignore_changes = []
   }
 
 }
@@ -105,7 +95,9 @@ resource "aws_cognito_identity_provider" "google" {
     authorize_url                 = "https://accounts.google.com/o/oauth2/v2/auth"
     oidc_issuer                   = "https://accounts.google.com"
     token_request_method          = "POST"
-    token_url                     = "https://oauth2.googleapis.com/token"
+    # Cognito pins Google's endpoints and returns this value whatever is sent;
+    # anything else shows up as a change on every plan.
+    token_url = "https://www.googleapis.com/oauth2/v4/token"
 
   }
 
