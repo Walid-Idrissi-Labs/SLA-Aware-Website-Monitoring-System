@@ -32,6 +32,9 @@ interface Props {
   spotlightRadius?: number
   /** Narrowest a cell may get before the grid drops a column. */
   minCell?: number
+  /** When the full column count does not fit, two columns are used if each is at
+   *  least `minCell * pairRatio` wide; otherwise the grid goes to one column. */
+  pairRatio?: number
   className?: string
 }
 
@@ -56,6 +59,7 @@ export default function MagicBento({
   glow = '250 92 41',
   spotlightRadius = 330,
   minCell = 158,
+  pairRatio = MIN_PAIR_RATIO,
   className = '',
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -64,8 +68,8 @@ export default function MagicBento({
   const [cols, setCols] = useState(Math.max(1, columns))
 
   // Read by the engine without re-subscribing it on every render.
-  const live = useRef({ columns, gap, spotlightRadius, minCell })
-  live.current = { columns, gap, spotlightRadius, minCell }
+  const live = useRef({ columns, gap, spotlightRadius, minCell, pairRatio })
+  live.current = { columns, gap, spotlightRadius, minCell, pairRatio }
 
   useEffect(() => {
     const root = rootRef.current
@@ -157,9 +161,9 @@ export default function MagicBento({
 
     const resize = new ResizeObserver(() => {
       const width = root.clientWidth
-      const { columns: want, gap: space, minCell: floor } = live.current
+      const { columns: want, gap: space, minCell: floor, pairRatio: pair } = live.current
       const cell = (count: number) => (width - space * (count - 1)) / count
-      const next = cell(want) >= floor ? want : want >= 2 && cell(2) >= floor * MIN_PAIR_RATIO ? 2 : 1
+      const next = cell(want) >= floor ? want : want >= 2 && cell(2) >= floor * pair ? 2 : 1
       setCols(next)
       dirty = true
       if (pointer.inside) wake()

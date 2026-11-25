@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -23,7 +23,10 @@ import checkCircle from 'react-useanimations/lib/checkCircle'
 import alertOctagon from 'react-useanimations/lib/alertOctagon'
 import alertTriangle from 'react-useanimations/lib/alertTriangle'
 import ActionButton from '../components/ActionButton'
-import TrendChart from '../components/TrendChart'
+import MagicBento, { type MagicBentoItem } from '../components/MagicBento'
+import Counter from '../components/Counter'
+import StatusStrip from '../components/StatusStrip'
+import { BentoFigure, BentoComposition, BentoBand, BentoGauge } from '../components/BentoVisuals'
 import HoldButton from '../components/HoldButton'
 import LatencyChart from '../components/LatencyChart'
 import IncidentTimeline from '../components/IncidentTimeline'
@@ -178,18 +181,6 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
   )
 }
 
-// ─── Delete Modal ───────────────────────────────────────────────────────────
-function Metric({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) {
-  return (
-    <div className="flex items-center justify-between border-b border-white/[0.05] py-2 last:border-0">
-      <span className="text-[12px] font-medium text-txt-lo">{label}</span>
-      <span className="data max-w-[60%] truncate text-[13px] font-semibold" style={{ color: color ?? '#eceef0' }}>
-        {value}
-      </span>
-    </div>
-  )
-}
-
 function percentile(sorted: number[], p: number): number | null {
   if (sorted.length === 0) return null
   const index = (sorted.length - 1) * p
@@ -200,6 +191,28 @@ function percentile(sorted: number[], p: number): number | null {
 
 const REDUCED_MOTION =
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/** Body of one vitals tile: figure on top, instrument centred in the middle, a
+ *  mono caption row at the bottom, so all four tiles line up with each other. */
+function VitalBody({ figure, caption, children }: { figure: ReactNode; caption: ReactNode[]; children: ReactNode }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+      {figure}
+      <div className="flex min-h-0 flex-1 flex-col justify-center">{children}</div>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 whitespace-nowrap font-mono text-[11px] tabular-nums text-txt-lo">
+        {caption}
+      </div>
+    </div>
+  )
+}
+
+/** Verdict names short enough to sit in a vitals figure beside their note. */
+const FIGURE_LABEL: Record<keyof typeof VERDICT, string> = {
+  up: 'Operational',
+  down: 'Down',
+  inconclusive: 'No evidence',
+  pending: 'Pending',
+}
 
 // ─── Main Page ──────────────────────────────────────────────────────────────
 export default function ProjectDetail() {
@@ -313,10 +326,13 @@ export default function ProjectDetail() {
       .filter((c) => c.status === 'success')
       .map((c) => c.latency_ms)
       .sort((a, b) => a - b)
-    if (okLatencies.length === 0) return { avg: null as number | null, p95: null as number | null }
+    if (okLatencies.length === 0) {
+      return { avg: null as number | null, p50: null as number | null, p95: null as number | null }
+    }
     const avg = Math.round(okLatencies.reduce((s, v) => s + v, 0) / okLatencies.length)
+    const p50 = Math.round(percentile(okLatencies, 0.5) as number)
     const p95 = okLatencies[Math.min(Math.floor(okLatencies.length * 0.95), okLatencies.length - 1)]
-    return { avg, p95 }
+    return { avg, p50, p95 }
   }, [status])
   const latencyTarget = project?.thresholds?.max_avg_latency_ms ?? PROJECT_DEFAULTS.max_avg_latency_ms
 
@@ -393,7 +409,9 @@ export default function ProjectDetail() {
       } else if (check.status === 'failure') {
         bucket.conclusive += 1
       }
-      if (check.status !== 'inconclusive' && check.latency_ms != null) {
+      // Successful checks only, like windowStats: a timeout records a synthetic
+      // latency that would flatten every real value in the band.
+      if (check.status === 'success' && check.latency_ms != null) {
         bucket.latencies.push(check.latency_ms)
       }
       map.set(key, bucket)
@@ -481,6 +499,194 @@ export default function ProjectDetail() {
       />
     </>
   )
+
+  // ─── Vitals: four instruments for the selected window ──────────────────────
+  const uptimeValue = summary ? summary.uptime_pct : uptime
+  const expected = summary?.checks_expected ?? checks.length
+  const recorded = summary ? summary.checks_up + summary.checks_down + summary.checks_inconclusive : checks.length
+  const budget = reliability?.error_budget
+  // Floored, so a budget that has lost anything never reads as a full 100%.
+  const budgetLeft = budget ? Math.floor(Math.max(0, 100 - budget.burn_pct)) : null
+  const budgetColor =
+    !budget || budgetLeft == null
+      ? STATUS.neutral
+      : !budget.ok
+        ? STATUS.crit
+        : budgetLeft >= 50
+          ? STATUS.ok
+          : STATUS.warn
+  const certColor =
+    project?.cert_expiry_days == null
+      ? undefined
+      : project.cert_expiry_days < 7
+        ? STATUS.crit
+        : project.cert_expiry_days < 30
+          ? STATUS.warn
+          : undefined
+  const odometer = {
+    direction: 'up',
+    duration: 0.9,
+    bounce: 0.28,
+    stagger: 0.03,
+    fade: 0.24,
+    fontSize: 24,
+    fontWeight: 600,
+    tabular: true,
+    motionBlur: true,
+  } as const
+  const fmtCount = (n: number) => n.toLocaleString('en-US')
+
+  const vitals: MagicBentoItem[] = [
+    {
+      id: 'status',
+      title: 'Status',
+      description: (
+        <>
+          Accepts {project?.accepted_status || '200-399'}
+          {project?.cert_expiry_days != null && (
+            <>
+              {' · '}
+              <span style={{ color: certColor }}>TLS {project.cert_expiry_days}d</span>
+            </>
+          )}
+        </>
+      ),
+      visual: (
+        <VitalBody
+          figure={
+            <BentoFigure
+              value={status ? <span style={{ color: VERDICT[verdict].color }}>{FIGURE_LABEL[verdict]}</span> : '—'}
+              muted={!status}
+              note={
+                latestCheck
+                  ? latestCheck.http_status_code
+                    ? `HTTP ${latestCheck.http_status_code}`
+                    : 'no response'
+                  : undefined
+              }
+            />
+          }
+          caption={[
+            <span key="n">{checks.length ? `last ${Math.min(30, checks.length)} checks` : 'no checks yet'}</span>,
+            <span key="t">{latestCheck ? fmtUtcTime(latestCheck.timestamp) : '—'}</span>,
+          ]}
+        >
+          <StatusStrip checks={checks} bars={30} />
+        </VitalBody>
+      ),
+    },
+    {
+      id: 'uptime',
+      title: 'Uptime & evidence',
+      description: `Conclusive checks · last ${hours}h`,
+      visual: (
+        <VitalBody
+          figure={
+            <BentoFigure
+              value={uptimeValue == null ? '—' : <Counter value={uptimeValue} decimals={2} suffix="%" {...odometer} />}
+              muted={uptimeValue == null}
+              note={
+                !recorded
+                  ? 'no checks yet'
+                  : summary && summary.checks_down > 0
+                    ? `${fmtCount(summary.checks_down)} down`
+                    : 'no failures'
+              }
+            />
+          }
+          caption={[
+            <span key="n" className="text-txt-mid">
+              {fmtCount(recorded)} / {fmtCount(expected)} checks
+            </span>,
+            <span key="e" style={{ color: coverage == null ? STATUS.neutral : coverage >= 95 ? STATUS.ok : STATUS.warn }}>
+              {coverage == null ? '—' : `${coverage.toFixed(1)}%`} evidence
+            </span>,
+          ]}
+        >
+          <BentoComposition
+            expected={expected}
+            parts={[
+              { key: 'up', label: 'Up', value: summary?.checks_up ?? 0, color: STATUS.ok },
+              { key: 'down', label: 'Down', value: summary?.checks_down ?? 0, color: STATUS.crit },
+              { key: 'none', label: 'No answer', value: summary?.checks_inconclusive ?? 0, color: STATUS.neutral },
+            ]}
+          />
+        </VitalBody>
+      ),
+    },
+    {
+      id: 'latency',
+      title: 'Latency',
+      description:
+        windowStats.avg == null ? (
+          `No samples yet · target ${latencyTarget}ms`
+        ) : (
+          <>
+            Avg <span style={{ color: windowStats.avg > latencyTarget ? STATUS.warn : undefined }}>{windowStats.avg}ms</span>
+            {' · '}target {latencyTarget}ms
+          </>
+        ),
+      visual: (
+        <VitalBody
+          figure={
+            <BentoFigure
+              value={windowStats.p50 == null ? '—' : <Counter value={windowStats.p50} suffix="ms" {...odometer} />}
+              muted={windowStats.p50 == null}
+              note={
+                windowStats.p95 != null ? (
+                  <span style={{ color: windowStats.p95 > latencyTarget ? STATUS.warn : undefined }}>
+                    p95 {windowStats.p95}ms
+                  </span>
+                ) : undefined
+              }
+            />
+          }
+          caption={[
+            <span key="l">p50 / p95</span>,
+            <span key="b">{hours <= 1 ? 'per 5 min' : 'per hour'}</span>,
+          ]}
+        >
+          <BentoBand p50={latencyTrend?.p50 ?? []} p95={latencyTrend?.p95 ?? []} target={latencyTarget} />
+        </VitalBody>
+      ),
+    },
+    {
+      id: 'budget',
+      title: 'Error budget',
+      description: `${INCIDENT_WINDOW_DAYS}-day window · SLO ${budget?.min_uptime_pct ?? project?.thresholds?.min_uptime_pct ?? PROJECT_DEFAULTS.min_uptime_pct}%`,
+      visual: (
+        <VitalBody
+          figure={
+            <BentoFigure
+              value={
+                budgetLeft == null ? (
+                  '—'
+                ) : budget?.ok ? (
+                  <Counter value={budgetLeft} suffix="%" {...odometer} />
+                ) : (
+                  <span style={{ color: STATUS.crit }}>Spent</span>
+                )
+              }
+              muted={budgetLeft == null}
+              note={
+                budget
+                  ? budget.ok
+                    ? `${formatDowntime(budget.remaining_sec)} left`
+                    : `${formatDowntime(-budget.remaining_sec)} over`
+                  : undefined
+              }
+            />
+          }
+          caption={[
+            <span key="u">{budget ? `${formatDowntime(budget.consumed_downtime_sec)} used` : '—'}</span>,
+            <span key="a">{budget ? `${formatDowntime(budget.allowed_downtime_sec)} allowed` : ''}</span>,
+          ]}
+        >
+          <BentoGauge remaining={budgetLeft} color={budgetColor} />
+        </VitalBody>
+      ),
+    },
+  ]
 
   // Initial load failed and there is nothing to show — a clean error state
   // beats an eternal "Loading…" header.
@@ -585,119 +791,33 @@ export default function ProjectDetail() {
         )}
       </div>
 
-      {/* Chart + Vitals */}
-      <div className="mt-5 grid grid-cols-1 items-start gap-3 lg:grid-cols-3">
-        {/* Chart */}
-        <div className="panel-flush self-start lg:col-span-2 animate-fade-up" style={{ animationDelay: '120ms' }}>
-          <div className="panel-head">
-            <span className="text-[13px] font-semibold text-txt-hi">Latency</span>
-            <span className="text-[11.5px] text-txt-lo">per check · {hours}h</span>
-          </div>
-          <div className="grid-overlay p-2">
-            {loading ? (
-              <div className="grid h-[260px] place-items-center text-accent">
-                <Spinner size={24} />
-              </div>
-            ) : (
-              <LatencyChart checks={checks} />
-            )}
-          </div>
+      {/* Vitals — four instruments for the selected window */}
+      <MagicBento
+        items={vitals}
+        columns={4}
+        rowHeight={204}
+        gap={10}
+        radius={18}
+        minCell={244}
+        pairRatio={1.2}
+        spotlightRadius={280}
+        className="mt-5 animate-fade-up"
+      />
+
+      {/* Latency chart, full width under the instruments */}
+      <div className="panel-flush mt-3 animate-fade-up" style={{ animationDelay: '120ms' }}>
+        <div className="panel-head">
+          <span className="text-[13px] font-semibold text-txt-hi">Latency</span>
+          <span className="text-[11.5px] text-txt-lo">per check · {hours}h</span>
         </div>
-
-        {/* Vitals — two headline rates with meters, a latency trio, then the facts */}
-        <div className="panel self-start p-5">
-          <div className="flex items-baseline justify-between">
-            <span className="text-[13px] font-semibold text-txt-hi">Vitals</span>
-            <span className="text-[11.5px] text-txt-lo">{hours}h window</span>
-          </div>
-          <div className="hr-accent mt-3" />
-
-          <div className="mt-4 space-y-4">
-            <VitalMeter
-              label="Uptime"
-              value={uptime}
-              color={
-                uptime == null
-                  ? STATUS.neutral
-                  : uptime >= 99.9
-                    ? STATUS.ok
-                    : uptime >= 99
-                      ? STATUS.warn
-                      : STATUS.crit
-              }
-              caption={
-                summary
-                  ? `${summary.checks_up} up · ${summary.checks_down} down of ${summary.checks_expected} expected`
-                  : `${checks.length} checks recorded`
-              }
-            />
-            <VitalMeter
-              label="Evidence"
-              value={coverage}
-              color={coverage == null ? STATUS.neutral : coverage >= 95 ? STATUS.ok : STATUS.warn}
-              caption={
-                summary
-                  ? `${summary.checks_up + summary.checks_down} conclusive · ${summary.checks_inconclusive} gave no answer`
-                  : 'share of checks that produced a verdict'
-              }
-            />
-          </div>
-
-          <div className="mt-5 border-t border-white/[0.06] pt-3.5">
-            <div className="flex items-baseline justify-between">
-              <span className="text-[12px] font-medium text-txt-lo">Latency · {hours}h</span>
-              <span className="text-[11px] text-txt-dim">p50 / p95</span>
+        <div className="grid-overlay p-2">
+          {loading ? (
+            <div className="grid h-[260px] place-items-center text-accent">
+              <Spinner size={24} />
             </div>
-            {latencyTrend ? (
-              <TrendChart
-                labels={latencyTrend.labels}
-                series={[
-                  { key: 'p50', label: 'p50', color: '#8b93a1', values: latencyTrend.p50 },
-                  { key: 'p95', label: 'p95', color: STATUS.accent, values: latencyTrend.p95 },
-                ]}
-                format={(value) => `${Math.round(value)}ms`}
-                height={104}
-                className="mt-1"
-              />
-            ) : (
-              <p className="mt-6 text-center text-[12px] text-txt-dim">No latency samples yet</p>
-            )}
-            <p className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-txt-dim tabular-nums">
-              <span>now {latestCheck?.latency_ms ?? '—'}ms</span>
-              <span>avg {windowStats.avg ?? '—'}ms</span>
-              <span
-                className={
-                  windowStats.p95 != null && windowStats.p95 > latencyTarget ? 'text-warn' : undefined
-                }
-              >
-                p95 {windowStats.p95 ?? '—'}ms
-              </span>
-            </p>
-          </div>
-
-          <div className="mt-2">
-            <Metric
-              label="Status"
-              value={status ? VERDICT[verdict].label : '—'}
-              color={status ? VERDICT[verdict].color : undefined}
-            />
-            <Metric label="HTTP" value={latestCheck ? String(latestCheck.http_status_code || 'ERR') : '—'} />
-            <Metric label="Accepted" value={project?.accepted_status || '200-399'} />
-            <Metric label="Last check" value={latestCheck ? fmtUtcTime(latestCheck.timestamp) : '—'} />
-            {project?.cert_expiry_days != null && (
-              <Metric
-                label="Certificate"
-                value={`${project.cert_expiry_days}d${project.cert_issuer ? ` · ${project.cert_issuer}` : ''}`}
-                color={
-                  project.cert_expiry_days < 7
-                    ? STATUS.crit
-                    : project.cert_expiry_days < 30
-                      ? STATUS.warn
-                      : undefined
-                }
-              />
-            )}
-          </div>
+          ) : (
+            <LatencyChart checks={checks} />
+          )}
         </div>
       </div>
 
@@ -919,39 +1039,3 @@ export default function ProjectDetail() {
     </Shell>
   )
 }
-
-/** Label, big percentage, thin meter, and a caption that says what the number
- *  is counting. Replaces the uptime ring. */
-function VitalMeter({
-  label,
-  value,
-  color,
-  caption,
-}: {
-  label: string
-  value: number | null
-  color: string
-  caption?: string | null
-}) {
-  const shown = value == null ? null : Math.min(100, Math.max(0, value))
-  return (
-    <div>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[12px] font-medium text-txt-lo">{label}</span>
-        <span
-          className={`text-[17px] font-semibold tabular-nums ${shown == null ? 'text-txt-dim' : 'text-txt-hi'}`}
-        >
-          {shown == null ? '—' : `${shown.toFixed(1)}%`}
-        </span>
-      </div>
-      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-        <div
-          className="h-full rounded-full transition-[width] duration-500"
-          style={{ width: `${shown ?? 0}%`, backgroundColor: color }}
-        />
-      </div>
-      {caption && <p className="mt-1.5 text-[11px] leading-snug text-txt-dim">{caption}</p>}
-    </div>
-  )
-}
-
