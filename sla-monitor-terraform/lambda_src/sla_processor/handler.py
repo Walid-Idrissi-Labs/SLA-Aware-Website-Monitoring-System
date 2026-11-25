@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from datetime import datetime
 import logging
 
 import boto3
@@ -102,31 +103,33 @@ def open_incident(project_id: str, start_time_sec: int, cause: str | None = None
     )
 
 
-def close_incident(project_id: str, start_time_sec: int, end_time_sec: int) -> bool:
+def close_incident(project_id: str, start_time_sec: int, end_time_sec: int, reason: str | None = None) -> bool:
     duration = end_time_sec - start_time_sec
+    update = "SET #et = :et, #ds = :ds, #res = :res"
+    values = {":et": end_time_sec, ":ds": duration, ":res": True, ":false": False}
+    if reason:
+        # resolved=true alone would claim a recovery nobody observed.
+        update += ", closed_reason = :reason"
+        values[":reason"] = reason
     try:
         incidents_table.update_item(
             Key={
                 "project_id": project_id,
                 "start_time": start_time_sec,
             },
-            UpdateExpression="SET #et = :et, #ds = :ds, #res = :res",
+            UpdateExpression=update,
             ConditionExpression="#res = :false",
             ExpressionAttributeNames={
                 "#et": "end_time",
                 "#ds": "duration_seconds",
                 "#res": "resolved",
             },
-            ExpressionAttributeValues={
-                ":et": end_time_sec,
-                ":ds": duration,
-                ":res": True,
-                ":false": False,
-            },
+            ExpressionAttributeValues=values,
         )
         logger.info(
             f"Closed incident for project {project_id}, "
             f"start={start_time_sec}, end={end_time_sec}, duration={duration}s"
+            + (f", reason={reason}" if reason else "")
         )
         return True
 
@@ -195,12 +198,28 @@ def query_window_checks(project_id: str, from_ms: int, to_ms: int) -> list[dict]
         query_kwargs["ExclusiveStartKey"] = last_key
 
 
-def load_active_projects() -> list[dict]:
+def last_check_sec(project_id: str) -> int | None:
+    response = checks_table.query(
+        KeyConditionExpression="project_id = :pid",
+        ExpressionAttributeValues={":pid": project_id},
+        ScanIndexForward=False,  # newest first
+        Limit=1,
+    )
+    items = response.get("Items", [])
+    return int(items[0]["timestamp"]) // 1000 if items else None
+
+
+def iso_to_sec(value) -> int | None:
+    try:
+        return int(datetime.fromisoformat(str(value)).timestamp())
+    except (TypeError, ValueError):
+        return None
+
+
+def load_projects() -> list[dict]:
+    """Every project, active or not: inactive ones may still hold an open incident."""
     projects = []
-    scan_kwargs = {
-        "FilterExpression": "active = :active",
-        "ExpressionAttributeValues": {":active": True},
-    }
+    scan_kwargs = {}
     while True:
         response = projects_table.scan(**scan_kwargs)
         projects.extend(response.get("Items", []))
@@ -269,22 +288,47 @@ def process_project(project: dict) -> None:
 
 
 
+def settle_inactive_project(project: dict) -> None:
+    """Close the open incident of a deleted or paused project: no check will ever close it.
+
+    shortcut: every inactive project costs a few small queries per hour, forever;
+    fine until roughly a thousand of them, then skip the long-settled ones.
+    """
+    # The normal pass first: a recovery seen before deactivation still closes the
+    # incident as a recovery, and a failure run in its last hour still opens one.
+    process_project(project)
+
+    project_id = project["project_id"]
+    record = get_open_incident(project_id)
+    if record is None:
+        return
+    start_sec = int(record["start_time"])
+    # The last evidence of the outage; once the checks have expired (90-day TTL),
+    # the moment the project was deactivated.
+    end_sec = last_check_sec(project_id) or iso_to_sec(project.get("updated_at")) or start_sec
+    close_incident(project_id, start_sec, max(end_sec, start_sec), reason="monitoring_stopped")
+
+
 #invoked by EventBridge rule every 1hour
 def lambda_handler(event: dict, context) -> dict:
 
     logger.info("SLA Processor Lambda invoked")
 
-    projects = load_active_projects()
+    projects = load_projects()
 
     if not projects:
-        logger.info("No active projects — exiting")
-        return {"statusCode": 200, "body": json.dumps({"message": "No active projects"})}
+        logger.info("No projects — exiting")
+        return {"statusCode": 200, "body": json.dumps({"message": "No projects"})}
 
-    logger.info(f"Processing {len(projects)} active project(s)")
+    logger.info(f"Processing {len(projects)} project(s)")
 
     for project in projects:
         try:
-            process_project(project)
+            # `is` on purpose: a record without the attribute is neither monitored nor deleted.
+            if project.get("active") is True:
+                process_project(project)
+            elif project.get("active") is False:
+                settle_inactive_project(project)
         except Exception as e:
             # Isolate failures so one project's bad data can't stall incident
             # detection for every other tenant.

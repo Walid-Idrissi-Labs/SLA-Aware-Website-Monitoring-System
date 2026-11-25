@@ -83,7 +83,8 @@ function summarise(incidents: Incident[], fromSec: number, toSec: number) {
     const seconds = incident.duration_seconds ?? (incident.resolved ? 0 : Date.now() / 1000 - incident.start_time)
     downtime += seconds
     longest = Math.max(longest, seconds)
-    if (incident.resolved && incident.duration_seconds != null) {
+    // Cut off when monitoring stopped, not repaired: downtime, but no recovery time.
+    if (incident.resolved && incident.duration_seconds != null && !incident.closed_reason) {
       resolvedDuration += incident.duration_seconds
       resolvedCount += 1
     }

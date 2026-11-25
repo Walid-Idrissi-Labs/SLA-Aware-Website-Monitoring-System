@@ -1,4 +1,4 @@
-import { CircleCheck, Radio } from 'lucide-react'
+import { CircleCheck, CircleOff, Radio } from 'lucide-react'
 import type { Incident } from '../types'
 import { ERROR_TYPE, fmtUtcTime, formatDowntime } from '../lib/format'
 
@@ -67,7 +67,15 @@ export default function IncidentTimeline({ incidents }: { incidents: Incident[] 
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {inc.resolved ? (
+                      {inc.closed_reason === 'monitoring_stopped' ? (
+                        <span
+                          title="Closed when monitoring stopped; no recovery was observed"
+                          className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-txt-lo"
+                        >
+                          <CircleOff className="h-3 w-3" strokeWidth={2} />
+                          Not monitored
+                        </span>
+                      ) : inc.resolved ? (
                         <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-ok">
                           <CircleCheck className="h-3 w-3" strokeWidth={2} />
                           Resolved
