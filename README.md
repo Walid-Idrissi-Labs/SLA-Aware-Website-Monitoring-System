@@ -107,6 +107,8 @@ Views:
 - **Project Detail** : a single 1 h / 24 h / 72 h selector drives three panels — a per-check latency chart, an uptime heatmap (one cell per time bucket, coloured on a green → yellow → orange → red ramp, grey where no check produced a verdict), and Vitals (uptime and evidence meters, a p50/p95 percentile chart, and the endpoint's status, HTTP code, accepted statuses, last check and certificate expiry). Below that: an incident report with a downtime-per-day trend, period-over-period deltas and reliability rows; the incident log; the SLA report table with on-demand generation and HTML/JSON downloads; and a hold-to-confirm delete zone.
 - **Settings** : profile and notification email
 
+An endpoint's verdict (Operational, Down, No evidence) comes from its latest check only while that check is fresh. With no check for 130 s it reads **Stale** instead of repeating the last verdict: one missed one-minute cycle is tolerated, two are not. An inactive endpoint reads **Not monitored** unless it left an incident open. Missing evidence never shows as up.
+
 All charts are hand-rolled SVG — no chart library. API calls carry the Cognito ID token in the Authorization header; a 401 clears the session and returns the user to login.
 
 The interface is dark-only by design — monitoring surfaces are read for long stretches, and the instrument aesthetic depends on it. Surfaces are opaque panels with hairline borders; there is no backdrop blur, no ambient animation and no WebGL, so an idle dashboard tab costs essentially nothing. Animation is limited to short, self-terminating transitions and is disabled under `prefers-reduced-motion`.

@@ -11,6 +11,8 @@ import {
   Download,
   Sheet,
   Radio,
+  ClockAlert,
+  CircleOff,
 } from 'lucide-react'
 import Shell from '../components/Shell'
 import TickerStat from '../components/TickerStat'
@@ -41,8 +43,8 @@ import {
   getReportDownloadUrl,
 } from '../lib/api'
 import { Alert, Spinner } from '../components/ui'
-import type { ProjectStatus, ProjectReport, Project, UpdateProjectInput, Incident, ReliabilityMetrics } from '../types'
-import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, evidenceFromChecks, verdictFromStatus, VERDICT, bareUrl, fmtUtcTime, formatDowntime } from '../lib/format'
+import type { Check, ProjectStatus, ProjectReport, Project, UpdateProjectInput, Incident, ReliabilityMetrics } from '../types'
+import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, evidenceFromChecks, verdictFor, VERDICT, bareUrl, fmtUtcTime, formatDowntime, timeAgo, type Verdict } from '../lib/format'
 
 /** Incident/reliability window is fixed (independent of the latency chart toggle). */
 const INCIDENT_WINDOW_DAYS = 30
@@ -211,7 +213,19 @@ const FIGURE_LABEL: Record<keyof typeof VERDICT, string> = {
   up: 'Operational',
   down: 'Down',
   inconclusive: 'No evidence',
+  stale: 'Stale',
+  off: 'Not monitored',
   pending: 'Pending',
+}
+
+/** The Status figure's note: the latest response while it is current, its age once it is not. */
+function statusNote(verdict: Verdict, latest: Check | undefined, monitored: boolean): string | undefined {
+  if (!latest) return verdict === 'stale' ? 'no recent checks' : undefined
+  if (verdict === 'stale' || !monitored) {
+    const ago = timeAgo(latest.timestamp)
+    return `last check ${ago === 'now' ? 'just now' : `${ago} ago`}`
+  }
+  return latest.http_status_code ? `HTTP ${latest.http_status_code}` : 'no response'
 }
 
 // ─── Main Page ──────────────────────────────────────────────────────────────
@@ -226,6 +240,8 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [hours, setHours] = useState(24)
+  // Captured on every poll, failed ones too, so data that stops changing ages into STALE.
+  const [now, setNow] = useState(Date.now)
   const requestSeq = useRef(0)
 
   const [showEdit, setShowEdit] = useState(false)
@@ -275,7 +291,10 @@ export default function ProjectDetail() {
         if (seq !== requestSeq.current) return
         setLoadError(e instanceof Error ? e.message : 'Failed to load endpoint')
       } finally {
-        if (seq === requestSeq.current) setLoading(false)
+        if (seq === requestSeq.current) {
+          setLoading(false)
+          setNow(Date.now())
+        }
       }
     },
     [hours, id]
@@ -309,7 +328,19 @@ export default function ProjectDetail() {
 
   const checks = status?.checks || []
   const latestCheck = checks[checks.length - 1]
-  const verdict = verdictFromStatus(status?.current_status)
+  const verdict: Verdict =
+    project && status
+      ? verdictFor(
+          {
+            ...project,
+            current_status: status.current_status,
+            // The window's newest check; an empty window falls back to created_at.
+            last_checked_at: latestCheck?.timestamp ?? null,
+            open_incident: reliability?.open_incident,
+          },
+          now,
+        )
+      : 'pending'
   const isUp = verdict === 'up'
   const isDownState = verdict === 'down'
   const summary = status?.summary
@@ -557,17 +588,13 @@ export default function ProjectDetail() {
             <BentoFigure
               value={status ? <span style={{ color: VERDICT[verdict].color }}>{FIGURE_LABEL[verdict]}</span> : '—'}
               muted={!status}
-              note={
-                latestCheck
-                  ? latestCheck.http_status_code
-                    ? `HTTP ${latestCheck.http_status_code}`
-                    : 'no response'
-                  : undefined
-              }
+              note={statusNote(verdict, latestCheck, project?.active !== false)}
             />
           }
           caption={[
-            <span key="n">{checks.length ? `last ${Math.min(30, checks.length)} checks` : 'no checks yet'}</span>,
+            <span key="n">
+              {checks.length ? `last ${Math.min(30, checks.length)} checks` : verdict === 'pending' ? 'no checks yet' : 'none in window'}
+            </span>,
             <span key="t">{latestCheck ? fmtUtcTime(latestCheck.timestamp) : '—'}</span>,
           ]}
         >
@@ -730,16 +757,23 @@ export default function ProjectDetail() {
                 tooltip — colour and icon alone are not an accessible state. */}
             {project && (
               <span title={VERDICT[verdict].label} className="inline-grid place-items-center">
-                <UseAnimations
-                  key={verdict}
-                  animation={isUp ? checkCircle : isDownState ? alertOctagon : alertTriangle}
-                  size={22}
-                  strokeColor={VERDICT[verdict].color}
-                  autoplay={!REDUCED_MOTION}
-                  loop={isDownState}
-                  interaction={isDownState ? 'loop' : 'click-replay'}
-                  speed={isDownState ? 1 : 1.4}
-                />
+                {/* Stale and off are about the monitor, not the site: a still icon, no alarm. */}
+                {verdict === 'stale' ? (
+                  <ClockAlert size={22} strokeWidth={1.75} color={VERDICT.stale.color} aria-hidden="true" />
+                ) : verdict === 'off' ? (
+                  <CircleOff size={22} strokeWidth={1.75} color={VERDICT.off.color} aria-hidden="true" />
+                ) : (
+                  <UseAnimations
+                    key={verdict}
+                    animation={isUp ? checkCircle : isDownState ? alertOctagon : alertTriangle}
+                    size={22}
+                    strokeColor={VERDICT[verdict].color}
+                    autoplay={!REDUCED_MOTION}
+                    loop={isDownState}
+                    interaction={isDownState ? 'loop' : 'click-replay'}
+                    speed={isDownState ? 1 : 1.4}
+                  />
+                )}
                 <span className="sr-only">{VERDICT[verdict].label}</span>
               </span>
             )}

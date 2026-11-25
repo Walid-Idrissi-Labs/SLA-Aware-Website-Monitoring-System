@@ -11,7 +11,7 @@ import { BentoFigure, BentoArea, BentoBars, BentoTiles, BentoSteps } from '../co
 import ActionButton from '../components/ActionButton'
 import { Alert } from '../components/ui'
 import { getProjects, getProjectStatus } from '../lib/api'
-import { POLL_INTERVAL_MS, STATUS } from '../lib/format'
+import { POLL_INTERVAL_MS, STATUS, verdictFor, type Verdict } from '../lib/format'
 import type { Check, Project, ProjectStatus } from '../types'
 
 /** Consecutive failures at the end of the check list, newest first. */
@@ -26,6 +26,15 @@ function failureStreak(checks: Check[]): number {
   return streak
 }
 
+const TILE_TONE: Record<Verdict, 'ok' | 'crit' | 'warn' | 'neutral'> = {
+  up: 'ok',
+  down: 'crit',
+  stale: 'warn',
+  inconclusive: 'neutral',
+  off: 'neutral',
+  pending: 'neutral',
+}
+
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
   const [statuses, setStatuses] = useState<Record<string, ProjectStatus>>({})
@@ -33,6 +42,9 @@ export default function Dashboard() {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
+  // Captured on every poll, failed ones too, so a stopped monitor or a dead API
+  // ages the data into STALE instead of leaving the last verdict up forever.
+  const [now, setNow] = useState(Date.now)
   const requestSeq = useRef(0)
   const navigate = useNavigate()
 
@@ -56,7 +68,10 @@ export default function Dashboard() {
       // shouldn't wipe a working dashboard.
       setError(e instanceof Error ? e.message : 'Failed to load projects')
     } finally {
-      if (seq === requestSeq.current) setLoading(false)
+      if (seq === requestSeq.current) {
+        setLoading(false)
+        setNow(Date.now())
+      }
     }
   }, [])
 
@@ -82,17 +97,26 @@ export default function Dashboard() {
   }, [loadProjects])
 
   const activeProjects = useMemo(() => projects.filter((p) => p.active), [projects])
+  const verdicts = useMemo(
+    () => Object.fromEntries(activeProjects.map((p) => [p.project_id, verdictFor(p, now)])),
+    [activeProjects, now],
+  )
+  const tally = (...wanted: Verdict[]) => activeProjects.filter((p) => wanted.includes(verdicts[p.project_id])).length
   const total = activeProjects.length
-  // A project with no checks yet is "pending", not down.
-  const checked = activeProjects.filter((p) => p.current_status === 'success' || p.current_status === 'failure')
-  const healthy = checked.filter((p) => p.current_status === 'success').length
-  const withLatency = activeProjects.filter((p) => p.last_latency_ms != null)
+  const healthy = tally('up')
+  // Every endpoint past its first check owes an answer: stale or unanswered
+  // ones count against health without being called failures.
+  const due = total - tally('pending')
+  const unverified = tally('stale', 'inconclusive')
+  // Only an endpoint that is up right now has a current, real latency: a stale one
+  // is old, and a down or unanswered one may carry the synthetic timeout value.
+  const withLatency = activeProjects.filter((p) => p.last_latency_ms != null && verdicts[p.project_id] === 'up')
   const avgLatency =
     withLatency.length > 0
       ? Math.round(withLatency.reduce((sum, p) => sum + (p.last_latency_ms || 0), 0) / withLatency.length)
       : null
-  const incidents = checked.filter((p) => p.current_status === 'failure').length
-  const healthPct = checked.length > 0 ? (healthy / checked.length) * 100 : null
+  const incidents = tally('down')
+  const healthPct = due > 0 ? (healthy / due) * 100 : null
 
   /** One bucket per minute across every endpoint: the pass rate and the mean
    *  latency for that minute. Inconclusive checks are excluded from both — an
@@ -142,8 +166,8 @@ export default function Dashboard() {
           project,
           streak: failureStreak(statuses[project.project_id]?.checks ?? []),
         }))
-        .filter((entry) => entry.project.current_status === 'failure'),
-    [activeProjects, statuses],
+        .filter((entry) => verdicts[entry.project.project_id] === 'down'),
+    [activeProjects, statuses, verdicts],
   )
 
   const kpis: MagicBentoItem[] = useMemo(() => {
@@ -178,7 +202,7 @@ export default function Dashboard() {
                   />
                 )
               }
-              note={checked.length > 0 ? `${healthy} of ${checked.length} responding` : 'no checks yet'}
+              note={due > 0 ? `${healthy} of ${due} up` : 'no checks yet'}
             />
             <BentoArea
               values={healthSeries}
@@ -241,7 +265,15 @@ export default function Dashboard() {
                   motionBlur
                 />
               }
-              note={incidents > 0 ? 'failing now' : 'all clear'}
+              note={
+                incidents > 0 ? (
+                  'failing now'
+                ) : unverified > 0 ? (
+                  <span style={{ color: STATUS.warn }}>{unverified} unverified</span>
+                ) : (
+                  'all clear'
+                )
+              }
             />
             <BentoSteps
               steps={
@@ -267,28 +299,29 @@ export default function Dashboard() {
               items={activeProjects.map((project) => ({
                 key: project.project_id,
                 label: project.name,
-                tone:
-                  project.current_status === 'success'
-                    ? ('ok' as const)
-                    : project.current_status === 'failure'
-                      ? ('crit' as const)
-                      : ('neutral' as const),
+                tone: TILE_TONE[verdicts[project.project_id]],
               }))}
             />
           </>
         ),
       },
     ]
-  }, [healthPct, avgLatency, incidents, total, healthy, checked.length, timeline, failing, activeProjects])
+  }, [healthPct, avgLatency, incidents, unverified, total, healthy, due, timeline, failing, activeProjects, verdicts])
 
   const cards: MagicBentoItem[] = useMemo(
     () =>
       activeProjects.map((project) => ({
         id: project.project_id,
         onClick: () => navigate(`/projects/${project.project_id}`),
-        content: <ProjectCard project={project} checks={statuses[project.project_id]?.checks || []} />,
+        content: (
+          <ProjectCard
+            project={project}
+            checks={statuses[project.project_id]?.checks || []}
+            verdict={verdicts[project.project_id]}
+          />
+        ),
       })),
-    [activeProjects, statuses, navigate],
+    [activeProjects, statuses, verdicts, navigate],
   )
 
   const ticker = (
