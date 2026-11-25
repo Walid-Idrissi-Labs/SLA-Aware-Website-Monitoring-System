@@ -19,6 +19,7 @@ import TickerStat from '../components/TickerStat'
 import FlipClock from '../components/FlipClock'
 import IncidentReport from '../components/IncidentReport'
 import HourHeatmap from '../components/HourHeatmap'
+import HowCalculated from '../components/HowCalculated'
 import DayStrip from '../components/DayStrip'
 import RubberSegment from '../components/RubberSegment'
 import UseAnimations from 'react-useanimations'
@@ -45,7 +46,7 @@ import {
 } from '../lib/api'
 import { Alert, Spinner } from '../components/ui'
 import type { Check, ProjectStatus, ProjectReport, Project, UpdateProjectInput, Incident, ReliabilityMetrics } from '../types'
-import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, evidenceFromChecks, verdictFor, VERDICT, bareUrl, fmtUtcTime, fmtUtcDay, formatDowntime, timeAgo, type Verdict } from '../lib/format'
+import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, evidenceFromChecks, verdictFor, VERDICT, bareUrl, fmtUtcTime, fmtUtcDay, formatDowntime, timeAgo, STALE_AFTER_MS, type Verdict } from '../lib/format'
 
 /** Incident/reliability window is fixed (independent of the latency chart toggle). */
 const INCIDENT_WINDOW_DAYS = 30
@@ -218,6 +219,8 @@ const FIGURE_LABEL: Record<keyof typeof VERDICT, string> = {
   off: 'Not monitored',
   pending: 'Pending',
 }
+
+const CHECK_WORD = { success: 'up', failure: 'down', inconclusive: 'no evidence' } as const
 
 const DAY_LEGEND = [
   ['Operational', 'bg-ok/70'],
@@ -574,11 +577,29 @@ export default function ProjectDetail() {
     motionBlur: true,
   } as const
   const fmtCount = (n: number) => n.toLocaleString('en-US')
+  const latestAgo = latestCheck ? timeAgo(latestCheck.timestamp) : null
+  const budgetShare = budget ? +(100 - budget.min_uptime_pct).toFixed(4) : null
 
   const vitals: MagicBentoItem[] = [
     {
       id: 'status',
-      title: 'Status',
+      title: (
+        <HowCalculated
+          label="Status"
+          topic="the status"
+          rows={[
+            {
+              label: 'Latest check',
+              value: latestCheck
+                ? `${CHECK_WORD[latestCheck.status]} · ${latestAgo === 'now' ? 'just now' : `${latestAgo} ago`}`
+                : 'none in this window',
+            },
+            { label: 'Stale after', value: `${STALE_AFTER_MS / 1000} s` },
+          ]}
+          result={`= ${FIGURE_LABEL[verdict]}`}
+          caveat={`No check for ${STALE_AFTER_MS / 1000} s reads Stale, so a monitor that stopped never stays green.`}
+        />
+      ),
       description: (
         <>
           Accepts {project?.accepted_status || '200-399'}
@@ -612,7 +633,37 @@ export default function ProjectDetail() {
     },
     {
       id: 'uptime',
-      title: 'Uptime & evidence',
+      title: (
+        <HowCalculated
+          label="Uptime & evidence"
+          topic="uptime"
+          empty={!summary || summary.checks_total === 0 ? 'No checks in this window yet' : false}
+          rows={
+            summary
+              ? [
+                  { label: 'Up', value: fmtCount(summary.checks_up) },
+                  { label: 'Down', value: fmtCount(summary.checks_down) },
+                  { label: 'No evidence', value: fmtCount(summary.checks_inconclusive) },
+                  { label: 'Expected', value: fmtCount(summary.checks_expected) },
+                ]
+              : []
+          }
+          result={
+            summary && (
+              <>
+                uptime = {fmtCount(summary.checks_up)} ÷ {fmtCount(summary.checks_up + summary.checks_down)} ={' '}
+                {uptimeValue == null ? '—' : `${uptimeValue.toFixed(2)}%`}
+                {/* A line break is silent to a screen reader; this keeps the two formulas apart. */}
+                <span className="sr-only">; </span>
+                <br />
+                evidence = {fmtCount(summary.checks_up + summary.checks_down)} ÷ {fmtCount(summary.checks_expected)} ={' '}
+                {coverage == null ? '—' : `${coverage.toFixed(1)}%`}
+              </>
+            )
+          }
+          caveat="Checks with no evidence (a block page, a probe-side error) count toward neither side of uptime."
+        />
+      ),
       description: `Conclusive checks · last ${hours}h`,
       visual: (
         <VitalBody
@@ -651,7 +702,22 @@ export default function ProjectDetail() {
     },
     {
       id: 'latency',
-      title: 'Latency',
+      title: (
+        <HowCalculated
+          label="Latency"
+          topic="latency"
+          empty={windowStats.avg == null ? 'No successful checks in this window' : false}
+          rows={[
+            { label: 'Successful checks', value: fmtCount(summary?.checks_up ?? 0) },
+            { label: 'p50 · p95', value: `${windowStats.p50} · ${windowStats.p95} ms` },
+          ]}
+          result={
+            windowStats.avg != null &&
+            `avg ${windowStats.avg} ms ${windowStats.avg > latencyTarget ? '>' : '≤'} ${latencyTarget} ms target`
+          }
+          caveat="Only successful checks count: a timeout records 10 s, which was never measured."
+        />
+      ),
       description:
         windowStats.avg == null ? (
           `No samples yet · target ${latencyTarget}ms`
@@ -687,7 +753,29 @@ export default function ProjectDetail() {
     },
     {
       id: 'budget',
-      title: 'Error budget',
+      title: (
+        <HowCalculated
+          label="Error budget"
+          topic="the error budget"
+          empty={!budget ? 'No incident data yet' : false}
+          rows={
+            budget
+              ? [
+                  { label: 'SLO', value: `${budget.min_uptime_pct}% over ${INCIDENT_WINDOW_DAYS} d` },
+                  { label: 'Allowed', value: `${formatDowntime(budget.allowed_downtime_sec)} · ${budgetShare}%` },
+                  { label: 'Used', value: formatDowntime(budget.consumed_downtime_sec) },
+                ]
+              : []
+          }
+          result={
+            budget &&
+            (budget.ok
+              ? `left = allowed − used = ${formatDowntime(budget.remaining_sec)}`
+              : `over by ${formatDowntime(-budget.remaining_sec)}`)
+          }
+          caveat={`Used is incident downtime, and an incident takes ${project?.failure_threshold ?? PROJECT_DEFAULTS.failure_threshold} failed checks in a row.`}
+        />
+      ),
       description: `${INCIDENT_WINDOW_DAYS}-day window · SLO ${budget?.min_uptime_pct ?? project?.thresholds?.min_uptime_pct ?? PROJECT_DEFAULTS.min_uptime_pct}%`,
       visual: (
         <VitalBody
