@@ -109,6 +109,8 @@ Views:
 
 An endpoint's verdict (Operational, Down, No evidence) comes from its latest check only while that check is fresh. With no check for 130 s it reads **Stale** instead of repeating the last verdict: one missed one-minute cycle is tolerated, two are not. An inactive endpoint reads **Not monitored** unless it left an incident open. Missing evidence never shows as up.
 
+Keyboard: ⌘K (Ctrl K elsewhere, or the search chip in the header) opens a command palette to jump to any endpoint or page or add an endpoint; `?` lists the shortcuts; `j`/`k` move between the overview's endpoint cards and Enter opens one.
+
 All charts are hand-rolled SVG — no chart library. API calls carry the Cognito ID token in the Authorization header; a 401 clears the session and returns the user to login.
 
 The interface is dark-only by design — monitoring surfaces are read for long stretches, and the instrument aesthetic depends on it. Surfaces are opaque panels with hairline borders; there is no backdrop blur, no ambient animation and no WebGL, so an idle dashboard tab costs essentially nothing. Animation is limited to short, self-terminating transitions and is disabled under `prefers-reduced-motion`.
