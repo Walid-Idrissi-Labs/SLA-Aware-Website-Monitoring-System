@@ -6,6 +6,16 @@ const GAP = 8
 /** Keeps the caret off the card's rounded corners when it is clamped at a screen edge. */
 const CARET_INSET = 12
 
+/** One label and value line of a hover card; put them inside a <dl>. */
+export function HoverRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="text-txt-lo">{label}</dt>
+      <dd className="min-w-0 truncate text-right font-mono tabular-nums text-txt-hi">{children}</dd>
+    </div>
+  )
+}
+
 /**
  * Floating card that grows out of an anchor element. Rendered into <body> so
  * no `overflow: hidden` ancestor can clip it, positioned with a transform so

@@ -19,6 +19,7 @@ import TickerStat from '../components/TickerStat'
 import FlipClock from '../components/FlipClock'
 import IncidentReport from '../components/IncidentReport'
 import UptimeHeatmap from '../components/UptimeHeatmap'
+import DayStrip from '../components/DayStrip'
 import RubberSegment from '../components/RubberSegment'
 import UseAnimations from 'react-useanimations'
 import checkCircle from 'react-useanimations/lib/checkCircle'
@@ -44,7 +45,7 @@ import {
 } from '../lib/api'
 import { Alert, Spinner } from '../components/ui'
 import type { Check, ProjectStatus, ProjectReport, Project, UpdateProjectInput, Incident, ReliabilityMetrics } from '../types'
-import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, evidenceFromChecks, verdictFor, VERDICT, bareUrl, fmtUtcTime, formatDowntime, timeAgo, type Verdict } from '../lib/format'
+import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, evidenceFromChecks, verdictFor, VERDICT, bareUrl, fmtUtcTime, fmtUtcDay, formatDowntime, timeAgo, type Verdict } from '../lib/format'
 
 /** Incident/reliability window is fixed (independent of the latency chart toggle). */
 const INCIDENT_WINDOW_DAYS = 30
@@ -217,6 +218,13 @@ const FIGURE_LABEL: Record<keyof typeof VERDICT, string> = {
   off: 'Not monitored',
   pending: 'Pending',
 }
+
+const DAY_LEGEND = [
+  ['Operational', 'bg-ok/70'],
+  ['Outage', 'bg-crit/80'],
+  ['No data', 'bg-white/20'],
+  ['Not tracked', 'shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]'],
+] as const
 
 /** The Status figure's note: the latest response while it is current, its age once it is not. */
 function statusNote(verdict: Verdict, latest: Check | undefined, monitored: boolean): string | undefined {
@@ -854,6 +862,35 @@ export default function ProjectDetail() {
           )}
         </div>
       </div>
+
+      {/* Daily history: one bar per UTC day, from the monitor's per-day tallies */}
+      {status?.daily && (
+        <div className="panel-flush mt-3">
+          <div className="panel-head">
+            <div className="flex items-center gap-2.5">
+              <span className="text-[13px] font-semibold text-txt-hi">Daily</span>
+              <span className="rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[11px] font-medium text-txt-mid">
+                {status.daily.days.length}d
+              </span>
+            </div>
+            <span className="text-[11.5px] text-txt-lo">UTC days · an incident marks the day as an outage</span>
+          </div>
+          <div className="px-4 pb-4 pt-3">
+            <DayStrip daily={status.daily} createdAt={project?.created_at} now={now} interactive size="h-7 gap-[3px]" />
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-txt-lo">
+              {DAY_LEGEND.map(([label, swatch]) => (
+                <span key={label} className="inline-flex items-center gap-1.5">
+                  <span className={`h-2 w-2 rounded-[1px] ${swatch}`} />
+                  {label}
+                </span>
+              ))}
+              <span className="ml-auto font-mono text-[10.5px]">
+                {status.daily.since ? `tracked since ${fmtUtcDay(status.daily.since)}` : 'not tracked yet'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Uptime heatmap */}
       <div className="panel-flush mt-3">
