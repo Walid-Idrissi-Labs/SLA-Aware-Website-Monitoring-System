@@ -31,6 +31,11 @@ test('a full past day with under half its expected checks is thin', () => {
   assert.equal(judge(day('2026-11-20', { up: 1400 })).thin, false)
 })
 
+test('the first tracked day of an older monitor has no denominator', () => {
+  assert.equal(judge(day('2026-11-10', { up: 360 })).expected, null)
+  assert.equal(judge(day('2026-11-10', { up: 360 }), '2026-11-10', '2026-11-10T09:30:00Z').expected, 870)
+})
+
 test('today, the creation day and the first tracked day are partial, never thin', () => {
   const today = judge(day('2026-11-25', { up: 100 }))
   assert.equal(today.partial, true)

@@ -30,7 +30,8 @@ function DayCard({ day, since, now, anchor, leaving }: { day: Day; since: string
   const meta = DAY_VERDICT[day.verdict]
   const today = now < Date.parse(`${day.date}T00:00:00Z`) + 86_400_000
   // One short line, so the card never changes height while gliding along the strip.
-  const parts = [today ? 'today so far' : null, day.thin ? 'thin coverage' : null].filter(Boolean)
+  const began = day.expected == null && day.verdict !== 'untracked'
+  const parts = [today ? 'today so far' : began ? 'tracking began' : null, day.thin ? 'thin coverage' : null].filter(Boolean)
   const note = parts.length ? `${parts.join(' · ')} · UTC` : 'UTC day'
 
   return (
@@ -51,7 +52,8 @@ function DayCard({ day, since, now, anchor, leaving }: { day: Day; since: string
           <>
             <Row label="Uptime">{day.uptime != null ? `${day.uptime.toFixed(2)}%` : <span className="text-txt-lo">—</span>}</Row>
             <Row label="Checks">
-              {(day.up + day.down).toLocaleString('en-US')} / {day.expected.toLocaleString('en-US')}
+              {(day.up + day.down).toLocaleString('en-US')}
+              {day.expected != null && ` / ${day.expected.toLocaleString('en-US')}`}
             </Row>
             {day.down > 0 && <Row label="Failed">{day.down.toLocaleString('en-US')}</Row>}
             {day.inconclusive > 0 && <Row label="No evidence">{day.inconclusive.toLocaleString('en-US')}</Row>}

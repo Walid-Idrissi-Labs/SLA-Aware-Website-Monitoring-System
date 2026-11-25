@@ -147,7 +147,9 @@ export function dayVerdict(day: DailyTally, since: string | null, createdAt: str
   const created = createdAt ? Date.parse(createdAt) : NaN
   const born = Number.isNaN(created) ? start : Math.max(start, created)
   const conclusive = day.up + day.down
-  const expected = Math.max(1, Math.floor((Math.min(end, now) - born) / CHECK_INTERVAL_MS))
+  // A monitor older than its tally began counting mid-day, at a time we do not
+  // know, so that first day has no honest denominator.
+  const expected = day.date === since && born === start ? null : Math.max(1, Math.floor((Math.min(end, now) - born) / CHECK_INTERVAL_MS))
   const partial = now < end || born > start || day.date === since
   const verdict: DayVerdict =
     day.outage_sec > 0
@@ -162,7 +164,7 @@ export function dayVerdict(day: DailyTally, since: string | null, createdAt: str
     expected,
     uptime: conclusive > 0 ? (day.up / conclusive) * 100 : null,
     partial,
-    thin: verdict === 'operational' && !partial && conclusive / expected < 0.5,
+    thin: verdict === 'operational' && !partial && expected != null && conclusive / expected < 0.5,
   }
 }
 
