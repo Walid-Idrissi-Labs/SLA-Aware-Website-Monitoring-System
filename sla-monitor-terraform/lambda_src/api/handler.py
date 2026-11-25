@@ -139,79 +139,19 @@ def handle_get_me(event: dict) -> dict:
     return success(200, user)
 
 
-def handle_get_projects(event: dict) -> dict:
-    user_id = get_user_id(event)
-    _, projects_table, checks_table, _, PROJECT_GSI_NAME = _get_tables()
-
-
-    projects = []
-    query_kwargs = {
-        "IndexName": PROJECT_GSI_NAME,
-        "KeyConditionExpression": "user_id = :uid",
-        "ExpressionAttributeValues": {":uid": user_id},
-    }
-    while True:
-        response = projects_table.query(**query_kwargs)
-        projects.extend(response.get("Items", []))
-        last_key = response.get("LastEvaluatedKey")
-        if not last_key:
-            break
-        query_kwargs["ExclusiveStartKey"] = last_key
-
-
-    enriched = []
-    for project in projects:
-        checks_response = checks_table.query(
-            KeyConditionExpression="project_id = :pid",
-            ExpressionAttributeValues={":pid": project["project_id"]},
-            ScanIndexForward=False, #newest
-            Limit=1,
-        )
-        checks = checks_response.get("Items", [])
-
-        enriched_project = {
-            "project_id": project["project_id"],
-            "name": project["name"],
-            "url": project["url"],
-            "active": project["active"],
-            "created_at": project["created_at"],
-        }
-
-        if checks:
-            last_check = checks[0]
-            enriched_project["current_status"] = last_check["status"]
-            enriched_project["last_latency_ms"] = last_check["latency_ms"]
-            enriched_project["last_checked_at"] = last_check.get("timestamp")
-        else:
-            enriched_project["current_status"] = "unknown"
-            enriched_project["last_latency_ms"] = None
-            enriched_project["last_checked_at"] = None
-
-        enriched.append(enriched_project)
-
-    return success(200, enriched)
-
-
-def handle_get_projects_status(event: dict) -> dict:
-    user_id = get_user_id(event)
-    project_id = event["pathParameters"]["project_id"]
-    _, _, checks_table, _, _ = _get_tables()
-
-    project = get_project_or_403(project_id, user_id)
-    if not project:
-        return error_response(403, "Forbidden")
-
-
-    query_params = event.get("queryStringParameters") or {}
+def _parse_hours(query_params: dict) -> int | None:
+    """The `hours` query parameter clamped to 1-72, or None when it is not an integer."""
     try:
         hours = int(query_params.get("hours", 24))
     except (TypeError, ValueError):
-        return error_response(400, "hours must be an integer")
-    hours = min(max(hours, 1), 72)
+        return None
+    return min(max(hours, 1), 72)
 
+
+def _status_window(checks_table, project_id: str, hours: int) -> dict:
+    """A project's checks over the last `hours` and their summary: the /status payload."""
     now_ms = int(time.time() * 1000)
     from_ms = now_ms - (hours * 3600 * 1000)
-
 
     checks = []
     query_kwargs = {
@@ -253,12 +193,97 @@ def handle_get_projects_status(event: dict) -> dict:
         "coverage_pct": round(min(conclusive / expected, 1) * 100, 2),
     }
 
-    return success(200, {
+    return {
         "project_id": project_id,
         "current_status": current_status,
         "summary": summary,
         "checks": checks,
-    })
+    }
+
+
+def handle_get_projects(event: dict) -> dict:
+    user_id = get_user_id(event)
+    _, projects_table, checks_table, _, PROJECT_GSI_NAME = _get_tables()
+
+    # ?include=status embeds each project's /status payload, so the dashboard
+    # needs one request per poll instead of one per project.
+    query_params = event.get("queryStringParameters") or {}
+    include_status = query_params.get("include") == "status"
+    hours = _parse_hours(query_params) if include_status else None
+    if include_status and hours is None:
+        return error_response(400, "hours must be an integer")
+
+    projects = []
+    query_kwargs = {
+        "IndexName": PROJECT_GSI_NAME,
+        "KeyConditionExpression": "user_id = :uid",
+        "ExpressionAttributeValues": {":uid": user_id},
+    }
+    while True:
+        response = projects_table.query(**query_kwargs)
+        projects.extend(response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_kwargs["ExclusiveStartKey"] = last_key
+
+
+    enriched = []
+    for project in projects:
+        status = _status_window(checks_table, project["project_id"], hours) if include_status else None
+        if status and status["checks"]:
+            # The window ends now, so its newest check is the newest check overall.
+            checks = status["checks"][-1:]
+        else:
+            checks_response = checks_table.query(
+                KeyConditionExpression="project_id = :pid",
+                ExpressionAttributeValues={":pid": project["project_id"]},
+                ScanIndexForward=False, #newest
+                Limit=1,
+            )
+            checks = checks_response.get("Items", [])
+
+        enriched_project = {
+            "project_id": project["project_id"],
+            "name": project["name"],
+            "url": project["url"],
+            "active": project["active"],
+            "created_at": project["created_at"],
+        }
+
+        if checks:
+            last_check = checks[0]
+            enriched_project["current_status"] = last_check["status"]
+            enriched_project["last_latency_ms"] = last_check["latency_ms"]
+            enriched_project["last_checked_at"] = last_check.get("timestamp")
+        else:
+            enriched_project["current_status"] = "unknown"
+            enriched_project["last_latency_ms"] = None
+            enriched_project["last_checked_at"] = None
+
+        if status:
+            enriched_project["status"] = status
+
+        enriched.append(enriched_project)
+
+    return success(200, enriched)
+
+
+def handle_get_projects_status(event: dict) -> dict:
+    user_id = get_user_id(event)
+    project_id = event["pathParameters"]["project_id"]
+    _, _, checks_table, _, _ = _get_tables()
+
+    project = get_project_or_403(project_id, user_id)
+    if not project:
+        return error_response(403, "Forbidden")
+
+
+    hours = _parse_hours(event.get("queryStringParameters") or {})
+    if hours is None:
+        return error_response(400, "hours must be an integer")
+
+    return success(200, _status_window(checks_table, project_id, hours))
 
 
 def handle_get_project(event: dict) -> dict:

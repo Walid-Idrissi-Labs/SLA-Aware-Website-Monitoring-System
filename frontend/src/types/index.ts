@@ -37,6 +37,8 @@ export interface Project {
   cert_expiry_days?: number | null;
   cert_issuer?: string | null;
   cert_checked_at?: number | null;
+  /** Only when fetched with getProjects(statusHours). */
+  status?: ProjectStatus;
 }
 
 export interface Check {

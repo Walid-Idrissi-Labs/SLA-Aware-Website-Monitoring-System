@@ -86,8 +86,9 @@ export function getProject(projectId: string): Promise<Project> {
   return request<Project>('GET', `/projects/${projectId}`)
 }
 
-export function getProjects(): Promise<Project[]> {
-  return request<Project[]>('GET', '/projects')
+/** With `statusHours`, each project also carries its /status payload for that window. */
+export function getProjects(statusHours?: number): Promise<Project[]> {
+  return request<Project[]>('GET', statusHours ? `/projects?include=status&hours=${statusHours}` : '/projects')
 }
 
 export function createProject(data: CreateProjectInput): Promise<Project> {
