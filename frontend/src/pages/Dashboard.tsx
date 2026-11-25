@@ -41,19 +41,10 @@ export default function Dashboard() {
     setLoading(true)
     try {
       const data = await getProjects(1)
-      // shortcut: one /status call per project the API returned without `status`, i.e. an
-      // API Lambda deployed before ?include=status. Delete once every stack has re-applied.
-      const missing = data.filter((p) => !p.status)
-      const results = await Promise.allSettled(missing.map((p) => getProjectStatus(p.project_id, 1)))
       if (seq !== requestSeq.current) return // a newer request superseded this one
       const statusMap: Record<string, ProjectStatus> = {}
       data.forEach((p) => {
         if (p.status) statusMap[p.project_id] = p.status
-      })
-      results.forEach((res, i) => {
-        if (res.status === 'fulfilled') {
-          statusMap[missing[i].project_id] = res.value
-        }
       })
       setProjects(data)
       setStatuses(statusMap)
