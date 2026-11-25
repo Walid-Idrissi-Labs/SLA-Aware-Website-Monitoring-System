@@ -18,7 +18,7 @@ import Shell from '../components/Shell'
 import TickerStat from '../components/TickerStat'
 import FlipClock from '../components/FlipClock'
 import IncidentReport from '../components/IncidentReport'
-import UptimeHeatmap from '../components/UptimeHeatmap'
+import HourHeatmap from '../components/HourHeatmap'
 import DayStrip from '../components/DayStrip'
 import RubberSegment from '../components/RubberSegment'
 import UseAnimations from 'react-useanimations'
@@ -249,6 +249,7 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [hours, setHours] = useState(24)
+  const [heatMetric, setHeatMetric] = useState('Uptime')
   // Captured on every poll, failed ones too, so data that stops changing ages into STALE.
   const [now, setNow] = useState(Date.now)
   const requestSeq = useRef(0)
@@ -472,8 +473,6 @@ export default function ProjectDetail() {
         }
       })
   }, [checks, hours])
-
-  const uptimeBuckets = windowBuckets
 
   /** Percentile bands for the vitals chart. Buckets with no measured check
    *  carry the previous value forward, so a gap does not plunge the line to 0. */
@@ -893,21 +892,42 @@ export default function ProjectDetail() {
         </div>
       )}
 
-      {/* Uptime heatmap */}
+      {/* Hourly heatmap: uptime or latency, a column per UTC hour of the day */}
       <div className="panel-flush mt-3">
-        <div className="panel-head">
-          <div className="flex items-center gap-2.5">
-            <span className="text-[13px] font-semibold text-txt-hi">Uptime</span>
+        {/* Wraps on phones rather than squeezing the metric switch. */}
+        <div className="panel-head flex-wrap gap-y-1.5">
+          <div className="flex flex-none items-center gap-2.5">
+            <RubberSegment
+              items={['Uptime', 'Latency']}
+              value={heatMetric}
+              onChange={setHeatMetric}
+              size="sm"
+              radius={9}
+              inset={2}
+              trackColor="rgba(255,255,255,0.05)"
+              thumbColor="#eceef0"
+              textColor="#9aa2ab"
+              activeTextColor="#0e1115"
+              aria-label="Heatmap metric"
+            />
             <span className="rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[11px] font-medium text-txt-mid">
               {hours}h
             </span>
           </div>
           <span className="text-[11.5px] text-txt-lo">
-            {hours <= 1 ? '5-minute buckets' : 'hourly buckets'} · conclusive checks only
+            {hours <= 1 ? '5-minute buckets' : 'UTC hours'} ·{' '}
+            {heatMetric === 'Uptime' ? 'conclusive checks only' : 'p50 of successful checks'}
           </span>
         </div>
         <div className="px-4 pb-4 pt-3">
-          <UptimeHeatmap buckets={uptimeBuckets} columns={hours <= 1 ? 12 : 24} />
+          <HourHeatmap
+            buckets={windowBuckets}
+            metric={heatMetric === 'Uptime' ? 'uptime' : 'latency'}
+            from={now - hours * 3_600_000}
+            now={now}
+            target={latencyTarget}
+            fine={hours <= 1}
+          />
         </div>
       </div>
 
