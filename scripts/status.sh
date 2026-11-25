@@ -135,6 +135,7 @@ section "Frontend wiring"
 # this stack if it was deployed after the stack was created. Every check prints
 # both sides, so a mismatch can be read straight off the screen.
 SITE="${SITE:-https://sla-aware-website-monitoring-system.vercel.app}"
+SITE="${SITE%/}" # a trailing slash would send //callback, which Cognito refuses
 row() { printf '      %-13s %s\n' "$1" "${2:-(none)}"; }
 # same <title> <label A> <value A> <label B> <value B>: ✓ only when A equals B.
 same() {
