@@ -12,7 +12,7 @@ The system is event-driven and serverless. No persistent compute runs outside of
 
 ### Workflow
 
-- **Monitoring** : EventBridge triggers the [Monitor Lambda](sla-monitor-terraform/lambda_src/monitor/handler.py) every minute. It scans the projects table for active targets, sends HTTP requests, and writes results (status, latency, HTTP code) to the checks table. On status change (UP→DOWN or DOWN→UP), it sends an alert via SES.
+- **Monitoring** : EventBridge triggers the [Monitor Lambda](sla-monitor-terraform/lambda_src/monitor/handler.py) every minute. It scans the projects table for active targets, probes them in parallel (eight at a time, so a few slow sites cannot starve the rest), and writes results (status, latency, HTTP code) to the checks table. On status change (UP→DOWN or DOWN→UP), it sends an alert via SES.
 
 - **Incident Detection** : EventBridge triggers the [SLA Processor Lambda](sla-monitor-terraform/lambda_src/sla_processor/handler.py) every hour. It reads recent checks and counts consecutive failures per project. When the count hits the project's configured threshold, it creates an incident record. On recovery, it closes the incident and records the duration.
 
