@@ -571,7 +571,7 @@ export default function ProjectDetail() {
             <span key="t">{latestCheck ? fmtUtcTime(latestCheck.timestamp) : '—'}</span>,
           ]}
         >
-          <StatusStrip checks={checks} bars={30} />
+          <StatusStrip checks={checks} bars={30} latencyTarget={latencyTarget} interactive />
         </VitalBody>
       ),
     },
