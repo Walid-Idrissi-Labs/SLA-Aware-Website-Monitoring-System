@@ -152,7 +152,7 @@ export default function HourHeatmap({ buckets, metric, from, now, target, fine =
     return (
       <span
         key={cell.start}
-        className={`${fine ? 'h-9' : 'aspect-square'} rounded-[3px] transition-[outline-color] duration-100`}
+        className={`${fine ? 'h-9' : 'aspect-square'} rounded-[2px] transition-[outline-color] duration-100 sm:rounded-[3px]`}
         style={{
           backgroundColor: cell.inWindow ? fill(cell, metric, target) : 'transparent',
           boxShadow: cell.inWindow ? undefined : OUTSIDE,
@@ -192,13 +192,17 @@ export default function HourHeatmap({ buckets, metric, from, now, target, fine =
         >
           <span />
           {HOURS.map((hour) => (
-            <span key={hour} className="text-center font-mono text-[9.5px] leading-none text-txt-dim">
+            <span key={hour} className="text-center font-mono text-[9.5px] leading-none text-txt-lo">
               {hour % 6 === 0 ? String(hour).padStart(2, '0') : ''}
             </span>
           ))}
           {hourGrid(buckets, from, now).map((row) => (
             <Fragment key={row.date}>
-              <span className="whitespace-nowrap pr-1.5 text-right font-mono text-[10px] text-txt-dim">{shortDay(row.date)}</span>
+              {/* Day number only on phones, where the label would eat the cells. */}
+              <span className="whitespace-nowrap pr-1.5 text-right font-mono text-[10px] text-txt-lo">
+                <span className="sm:hidden">{Number(row.date.slice(8))}</span>
+                <span className="hidden sm:inline">{shortDay(row.date)}</span>
+              </span>
               {row.cells.map(square)}
             </Fragment>
           ))}
@@ -209,7 +213,7 @@ export default function HourHeatmap({ buckets, metric, from, now, target, fine =
 
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11.5px] text-txt-lo">
         {metric === 'latency' && (
-          <span className="text-txt-dim">
+          <span className="text-txt-lo">
             {fine ? '5-minute' : 'Hourly'} p50 vs {target} ms avg target
           </span>
         )}
