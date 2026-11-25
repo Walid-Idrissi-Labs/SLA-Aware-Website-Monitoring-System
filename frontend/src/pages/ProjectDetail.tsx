@@ -595,6 +595,7 @@ export default function ProjectDetail() {
                 : 'none in this window',
             },
             { label: 'Stale after', value: `${STALE_AFTER_MS / 1000} s` },
+            ...(project?.active === false ? [{ label: 'Monitoring', value: 'stopped (deleted or paused)' }] : []),
           ]}
           result={`= ${FIGURE_LABEL[verdict]}`}
           caveat={`No check for ${STALE_AFTER_MS / 1000} s reads Stale, so a monitor that stopped never stays green.`}
@@ -651,8 +652,14 @@ export default function ProjectDetail() {
           result={
             summary && (
               <>
-                uptime = {fmtCount(summary.checks_up)} ÷ {fmtCount(summary.checks_up + summary.checks_down)} ={' '}
-                {uptimeValue == null ? '—' : `${uptimeValue.toFixed(2)}%`}
+                {summary.checks_up + summary.checks_down === 0 ? (
+                  'uptime: no conclusive checks'
+                ) : (
+                  <>
+                    uptime = {fmtCount(summary.checks_up)} ÷ {fmtCount(summary.checks_up + summary.checks_down)} ={' '}
+                    {uptimeValue == null ? '—' : `${uptimeValue.toFixed(2)}%`}
+                  </>
+                )}
                 {/* A line break is silent to a screen reader; this keeps the two formulas apart. */}
                 <span className="sr-only">; </span>
                 <br />

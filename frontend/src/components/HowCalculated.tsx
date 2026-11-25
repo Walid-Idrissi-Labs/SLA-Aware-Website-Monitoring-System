@@ -28,6 +28,7 @@ export default function HowCalculated({ label, topic, rows = [], result, caveat,
   const button = useRef<HTMLButtonElement>(null)
   const [hovered, setHovered] = useState(false)
   const [pinned, setPinned] = useState(false)
+  const [, follow] = useState(0)
   const shown = hovered || pinned
   // Read at render time so the card follows the button if the tile re-lays out.
   const anchor = shown ? button.current?.getBoundingClientRect() : undefined
@@ -42,16 +43,25 @@ export default function HowCalculated({ label, topic, rows = [], result, caveat,
     const outside = (e: PointerEvent) => {
       if (!button.current?.contains(e.target as Node)) close()
     }
-    // The card sits in viewport coordinates, which any scroll or resize makes stale.
+    // Follow the button through a scroll or resize instead of closing: tabbing
+    // to a "?" below the fold scrolls the page the moment the card opens.
+    let frame = 0
+    const reposition = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => follow((n) => n + 1))
+    }
     window.addEventListener('keydown', onKey)
-    window.addEventListener('scroll', close, true)
-    window.addEventListener('resize', close)
-    document.addEventListener('pointerdown', outside)
+    window.addEventListener('scroll', reposition, true)
+    window.addEventListener('resize', reposition)
+    // Capture phase: every "?" stops its own pointerdown, which would otherwise
+    // keep another pinned card from ever hearing the outside click.
+    document.addEventListener('pointerdown', outside, true)
     return () => {
+      cancelAnimationFrame(frame)
       window.removeEventListener('keydown', onKey)
-      window.removeEventListener('scroll', close, true)
-      window.removeEventListener('resize', close)
-      document.removeEventListener('pointerdown', outside)
+      window.removeEventListener('scroll', reposition, true)
+      window.removeEventListener('resize', reposition)
+      document.removeEventListener('pointerdown', outside, true)
     }
   }, [shown])
 
@@ -80,8 +90,9 @@ export default function HowCalculated({ label, topic, rows = [], result, caveat,
       >
         <CircleHelp className="h-3.5 w-3.5" strokeWidth={2} />
       </button>
-      {/* Phrasing content only: this usually sits inside a heading. */}
-      <span id={id} className="sr-only">
+      {/* Hidden, not sr-only: inside a heading, visible-to-readers text would
+          become part of the heading's name. aria-describedby still reads it. */}
+      <span id={id} hidden>
         {empty ? `${empty}. ` : rows.map((row) => <span key={row.label}>{row.label}: {row.value}. </span>)}
         {!empty && result && <span>{result}. </span>}
         {caveat}
