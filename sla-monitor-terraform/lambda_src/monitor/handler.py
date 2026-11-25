@@ -1,12 +1,14 @@
 import json
 import os
 import random
+import re
 import ssl
 import socket
 import time
 import logging
 import decimal
 from concurrent.futures import ThreadPoolExecutor, wait
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 import boto3
@@ -48,6 +50,11 @@ CHECK_WORKERS = 8
 # written and alerted on: a run killed mid-way is retried by the async invoke and
 # would write its checks twice. An alert alone costs an SSM and an SES call.
 WRITE_RESERVE_SECONDS = 12
+# Each check is also tallied per UTC day on its project row (d20261125_up, …), so
+# day verdicts never have to read a month of checks. Older days are pruned.
+DAILY_KEEP_DAYS = 45
+DAY_KEY = re.compile(r"^d(\d{8})_(up|down|inconclusive)$")
+DAY_STATUS = {"success": "up", "failure": "down"}
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -341,6 +348,32 @@ def write_check(project: dict, check_result: dict) -> None:
     )
 
 
+def count_check(project: dict, check_result: dict) -> None:
+    """Add the check to its UTC day's tally on the project row; ADD creates the counter."""
+    day = datetime.fromtimestamp(check_result["timestamp"] / 1000, timezone.utc)
+    names = {
+        "#pid": "project_id",
+        "#count": f"d{day:%Y%m%d}_{DAY_STATUS.get(check_result['status'], 'inconclusive')}",
+        "#since": "daily_since",
+    }
+    expression = "ADD #count :one SET #since = if_not_exists(#since, :day)"
+    # Prune the old days this row actually holds; deleting one fixed day would
+    # leave behind any day the monitor happened to skip.
+    cutoff = f"{day - timedelta(days=DAILY_KEEP_DAYS):%Y%m%d}"
+    old = [key for key in project if (match := DAY_KEY.match(key)) and match.group(1) < cutoff]
+    if old:
+        names.update({f"#old{i}": key for i, key in enumerate(old)})
+        expression += " REMOVE " + ", ".join(f"#old{i}" for i in range(len(old)))
+    projects_table.update_item(
+        Key={"project_id": project["project_id"]},
+        UpdateExpression=expression,
+        # Never create a row for a project that no longer exists.
+        ConditionExpression="attribute_exists(#pid)",
+        ExpressionAttributeNames=names,
+        ExpressionAttributeValues={":one": 1, ":day": f"{day:%Y-%m-%d}"},
+    )
+
+
 def alert_on_transition(project: dict, check_result: dict) -> None:
     project_id = project["project_id"]
     failure_threshold = int(project.get("failure_threshold", FAILURE_THRESHOLD_DEFAULT))
@@ -441,6 +474,11 @@ def lambda_handler(event: dict, context) -> dict:
             # take down monitoring for every other tenant.
             logger.error(f"Check failed for project {project.get('project_id')}: {e}")
             continue
+        try:
+            count_check(project, result)
+        except Exception as exc:
+            # The check is already stored; a failed rollup only lets the day's count drift.
+            logger.warning(f"Daily rollup failed for {project['project_id']}: {exc}")
         # Slow-moving cert state on its own cadence; a failure here never touches the check.
         if finished(cert) and cert.result():
             try:

@@ -39,7 +39,7 @@ Since the workload is time-based and bursty :
 
 The access patterns are well-defined and do not require complex joins. The checks table writes at high frequency (one record per project per minute), so on-demand billing avoids provisioned capacity waste. TTL is set to 90 days on checks. Point-in-time recovery is enabled on configuration and report tables where data loss would be problematic.
 
-The checks table uses a composite key (project ID partition, timestamp sort) for efficient time-range queries. The projects table has a GSI on user ID so the dashboard can list a user's projects without scanning the full table.
+The checks table uses a composite key (project ID partition, timestamp sort) for efficient time-range queries. The projects table has a GSI on user ID so the dashboard can list a user's projects without scanning the full table. Each project row also carries a per-day tally of its checks (up, down, no evidence), kept for 45 days and added to by the monitor on every check, so day-by-day history never has to read a month of raw checks.
 
 
 ### Why split the API across two Lambdas ?

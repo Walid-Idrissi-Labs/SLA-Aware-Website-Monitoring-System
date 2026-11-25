@@ -21,6 +21,8 @@ projects_table = dynamodb.Table(os.environ["PROJECTS_TABLE_NAME"])
 
 lambda_client = boto3.client("lambda")
 REPORT_GENERATOR_FUNCTION_NAME = os.environ.get("REPORT_GENERATOR_FUNCTION_NAME", "")
+# The monitor tallies every check per UTC day on the project row (d20261125_up, …).
+DAY_KEY = re.compile(r"^d(\d{8})_(up|down|inconclusive)$")
 
 def floats_to_decimal(obj):
     """Recursively convert floats to Decimal for DynamoDB compatibility."""
@@ -343,7 +345,8 @@ def handle_put_projects_id(event: dict) -> dict:
         ReturnValues="ALL_NEW",
     )
 
-    return success(200, result["Attributes"])
+    # The monitor's per-day counters (d20261125_up, …) live on this row but are internal.
+    return success(200, {k: v for k, v in result["Attributes"].items() if not DAY_KEY.match(k)})
 
 
 def handle_delete_projects_id(event: dict) -> dict:
