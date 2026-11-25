@@ -132,8 +132,16 @@ fi
 
 section "Frontend wiring"
 # Vite inlines the VITE_* values at build time, so the live site only talks to
-# this stack if it was deployed after the stack was created.
+# this stack if it was deployed after the stack was created. Every check prints
+# both sides, so a mismatch can be read straight off the screen.
 SITE="${SITE:-https://sla-aware-website-monitoring-system.vercel.app}"
+row() { printf '      %-13s %s\n' "$1" "${2:-(none)}"; }
+# same <title> <label A> <value A> <label B> <value B>: ✓ only when A equals B.
+same() {
+  if [ -n "$3" ] && [ "$3" = "$5" ]; then ok "$1"; else bad "$1"; fi
+  row "$2" "$3"
+  row "$4" "$5"
+}
 if [ -z "$POOL" ] || [ "$POOL" = "None" ]; then
   printf '  %s–%s skipped: no user pool to compare the site against\n' "$B" "$N"
 else
@@ -144,26 +152,25 @@ else
 
   entry=$(curl -s --max-time 15 "$SITE/" | grep -oE 'assets/index-[^"]+\.js' | head -1)
   BUNDLE=$([ -n "$entry" ] && curl -s --max-time 15 "$SITE/$entry")
-  # in_site <label> <value this stack expects> [regex for what the build has instead]
-  in_site() {
-    # A substring test, not `printf | grep -q`: under pipefail an early grep exit
-    # SIGPIPEs the writer and reads as "not found".
-    if [[ "$BUNDLE" == *"$2"* ]]; then
-      ok "$(printf '%-15s %s' "$1" "$2")"
-      return
-    fi
-    local found=""
-    [ -n "${3:-}" ] && found=$(grep -oE "$3" <<< "$BUNDLE" | head -1)
-    bad "$(printf '%-15s site is built with %s, stack has %s — redeploy: ./scripts/demo-up.sh' \
-      "$1" "${found:-a different value}" "$2")"
-  }
+  # Every distinct value of one shape found in the build, comma-separated.
+  in_build() { grep -oE "$1" <<< "$BUNDLE" | tr -d '"' | sort -u | paste -sd, - | sed 's/,/, /g'; }
+  printf '  site %s · build %s\n' "$SITE" "${entry:-unreadable}"
   if [ -z "$BUNDLE" ]; then
     bad "cannot read the deployed build from $SITE"
   else
-    in_site "API URL" "$API" 'https://[a-z0-9]{10}\.execute-api\.[a-z0-9-]+\.amazonaws\.com'
-    in_site "user pool" "$POOL" "${REGION}_[A-Za-z0-9]{9}"
-    in_site "app client" "$CLIENT"
-    in_site "sign-in domain" "$HOSTED" 'https://[a-z0-9-]+\.auth\.[a-z0-9-]+\.amazoncognito\.com'
+    same "API URL" \
+      "site build" "$(in_build 'https://[a-z0-9]{10}\.execute-api\.[a-z0-9-]+\.amazonaws\.com')" \
+      "API Gateway" "$API"
+    same "user pool" "site build" "$(in_build "${REGION}_[A-Za-z0-9]{9}")" "Cognito" "$POOL"
+    # shortcut: the client ID has no prefix to anchor on, so this takes every
+    # 25–26 character lowercase string literal (only the client ID today); anchor
+    # it if extra values start showing up here.
+    # In a variable: bash 3.2 (macOS) misparses '"…"' nested inside "$(…)".
+    client_re='"[a-z0-9]{25,26}"'
+    same "app client" "site build" "$(in_build "$client_re")" "Cognito" "$CLIENT"
+    same "sign-in domain" \
+      "site build" "$(in_build 'https://[a-z0-9-]+\.auth\.[a-z0-9-]+\.amazoncognito\.com')" \
+      "Cognito" "$HOSTED"
   fi
 
   # The API rejects every token whose issuer or audience it doesn't trust (401).
@@ -171,40 +178,50 @@ else
   jwt=$(aws_ apigatewayv2 get-authorizers --api-id "$API_ID" \
     --query 'Items[0].JwtConfiguration.[Issuer, join(`,`, Audience)]' --output text)
   IFS=$'\t' read -r iss aud <<< "$jwt"
-  if [ "$iss" = "https://cognito-idp.$REGION.amazonaws.com/$POOL" ] && [[ ",$aud," == *",$CLIENT,"* ]]; then
-    ok "$(printf '%-15s accepts tokens from this pool and app client' "API authorizer")"
-  else
-    bad "$(printf '%-15s trusts issuer %s, audience %s' "API authorizer" "${iss:-none}" "${aud:-none}")"
-  fi
+  same "API accepts tokens issued by" "authorizer" "$iss" \
+    "user pool" "https://cognito-idp.$REGION.amazonaws.com/$POOL"
+  same "API accepts tokens meant for" "authorizer" "${aud//,/, }" "app client" "$CLIENT"
 
   # Walk the first two hops of "Continue with Google" without signing in. Both
   # refusals are 302s to an error page, so the redirect target is all this reads.
-  # The client secret is only used after a real sign-in, so it can't be checked here.
+  # The client secret is not checked: it only comes into play after a real sign-in.
+  callbacks=$(aws_ cognito-idp describe-user-pool-client --user-pool-id "$POOL" --client-id "$CLIENT" \
+    --query 'UserPoolClient.CallbackURLs' --output text)
   hop1=$(curl -s -o /dev/null -w '%{redirect_url}' --max-time 15 \
     "$HOSTED/oauth2/authorize?identity_provider=Google&response_type=code&client_id=$CLIENT&redirect_uri=$SITE/callback&scope=openid+email+profile")
   case "$hop1" in
     https://accounts.google.com/*)
-      ok "$(printf '%-15s Cognito accepts %s/callback and hands off to Google' "Google sign-in" "$SITE")"
-      hop2=$(curl -s -o /dev/null -w '%{redirect_url}' --max-time 15 "$hop1")
-      gclient=$(printf '%s' "$hop1" | sed -nE 's/.*[?&]client_id=([^&]+).*/\1/p')
-      case "$hop2" in
-        *"/signin/oauth/error"*)
-          # Google's reason (redirect_uri_mismatch, invalid_client, ...) is the first
-          # plain token in authError, a base64url-encoded protobuf.
-          a=$(printf '%s' "$hop2" | sed -nE 's/.*authError=([^&]+).*/\1/p' | sed 's/%3D/=/g' | tr '_-' '/+')
-          while [ $(( ${#a} % 4 )) -ne 0 ]; do a="$a="; done
-          reason=$(printf '%s' "$a" | base64 -d 2>/dev/null | LC_ALL=C tr -c 'a-z_' '\n' | grep -m1 -E '^[a-z_]{6,}$')
-          bad "$(printf '%-15s Google refuses client %s: %s' "Google sign-in" "${gclient%%-*}…" "${reason:-unknown reason}")" ;;
-        https://accounts.google.com/*)
-          ok "$(printf '%-15s Google accepts client %s and the Cognito redirect URI' "Google sign-in" "${gclient%%-*}…")" ;;
-        *)
-          bad "$(printf '%-15s unexpected reply from Google: %s' "Google sign-in" "${hop2:-no redirect}")" ;;
-      esac ;;
+      ok "Google sign-in, step 1: Cognito accepts the callback and hands off to Google" ;;
     *error=*)
-      bad "$(printf '%-15s Cognito refuses it: %s' "Google sign-in" "$(printf '%s' "$hop1" | sed -nE 's/.*[?&]error=([^&]+).*/\1/p')")" ;;
+      bad "Google sign-in, step 1: Cognito refuses it ($(sed -nE 's/.*[?&]error=([^&]+).*/\1/p' <<< "$hop1"))" ;;
     *)
-      bad "$(printf '%-15s Cognito did not hand off to Google (got: %s)' "Google sign-in" "${hop1:-no redirect}")" ;;
+      bad "Google sign-in, step 1: Cognito did not hand off to Google" ;;
   esac
+  row "site sends" "$SITE/callback"
+  row "app client" "${callbacks//$'\t'/, }"
+
+  if [[ "$hop1" == https://accounts.google.com/* ]]; then
+    hop2=$(curl -s -o /dev/null -w '%{redirect_url}' --max-time 15 "$hop1")
+    case "$hop2" in
+      *"/signin/oauth/error"*)
+        # Google's reason (redirect_uri_mismatch, invalid_client, ...) is the first
+        # plain token in authError, a base64url-encoded protobuf.
+        a=$(sed -nE 's/.*authError=([^&]+).*/\1/p' <<< "$hop2" | sed 's/%3D/=/g' | tr '_-' '/+')
+        while [ $(( ${#a} % 4 )) -ne 0 ]; do a="$a="; done
+        reason=$(printf '%s' "$a" | base64 -d 2>/dev/null | LC_ALL=C tr -c 'a-z_' '\n' | grep -m1 -E '^[a-z_]{6,}$')
+        bad "Google sign-in, step 2: Google refuses Cognito's request"
+        verdict="refused: ${reason:-unknown reason}" ;;
+      https://accounts.google.com/*)
+        ok "Google sign-in, step 2: Google accepts Cognito's client ID and redirect URI"
+        verdict="accepted, shows its sign-in page" ;;
+      *)
+        bad "Google sign-in, step 2: unexpected reply from Google"
+        verdict="${hop2:-no redirect}" ;;
+    esac
+    row "client ID" "$(sed -nE 's/.*[?&]client_id=([^&]+).*/\1/p' <<< "$hop1")"
+    row "redirect URI" "$(sed -nE 's/.*[?&]redirect_uri=([^&]+).*/\1/p' <<< "$hop1" | sed 's/%3A/:/g; s#%2F#/#g')"
+    row "Google says" "$verdict"
+  fi
 fi
 
 section "SSM"
