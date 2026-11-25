@@ -41,7 +41,8 @@ data "aws_iam_policy_document" "monitor_lambda_policy" {
     ]
   }
 
-  # Cache each project's TLS cert expiry/issuer on its own row (throttled refresh).
+  # Cache each project's TLS cert expiry/issuer (throttled refresh) and its per-day
+  # check tallies on its own row. The Sid predates the tallies; rename it with the next IAM change.
   statement {
     sid    = "UpdateProjectCert"
     effect = "Allow"

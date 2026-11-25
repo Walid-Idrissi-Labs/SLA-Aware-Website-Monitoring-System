@@ -263,10 +263,13 @@ class ProjectListStatusTest(unittest.TestCase):
             "get_item": lambda self, Key: {"Item": next(r for r in rows if r["project_id"] == Key["project_id"])},
         })()
         self._real_get_tables = api._get_tables
+        self._real_incidents = api._get_incidents_table
         api._get_tables = lambda: (None, projects_table, self.checks, None, "UserProjectsIndex")
+        api._get_incidents_table = lambda: FakeIncidentsTable([])
 
     def tearDown(self):
         api._get_tables = self._real_get_tables
+        api._get_incidents_table = self._real_incidents
 
     def get(self, params=None):
         event = {"requestContext": {"authorizer": {"jwt": {"claims": {"sub": "u1"}}}}, "queryStringParameters": params}
@@ -304,12 +307,13 @@ class ProjectListStatusTest(unittest.TestCase):
 class MonitorScanTest(unittest.TestCase):
     """Slow targets cannot starve the projects scanned after them (board #27)."""
 
-    PATCHED = ("load_active_projects", "run_check", "write_check", "alert_on_transition", "certificate_due", "WRITE_RESERVE_SECONDS")
+    PATCHED = ("load_active_projects", "run_check", "write_check", "count_check", "alert_on_transition", "certificate_due", "WRITE_RESERVE_SECONDS")
 
     def setUp(self):
         self.saved = {name: getattr(monitor, name) for name in self.PATCHED}
         self.calls = []
         monitor.write_check = lambda project, result: self.calls.append(("write", project["project_id"]))
+        monitor.count_check = lambda project, result: self.calls.append(("count", project["project_id"]))
         monitor.alert_on_transition = lambda project, result: self.calls.append(("alert", project["project_id"]))
         monitor.certificate_due = lambda project: False
         monitor.WRITE_RESERVE_SECONDS = 5
@@ -356,7 +360,16 @@ class MonitorScanTest(unittest.TestCase):
     def test_every_check_is_stored_before_any_alert(self):
         self.scan({"a": 0.01, "b": 0.01, "c": 0.01})
         kinds = [kind for kind, _ in self.calls]
-        self.assertEqual(kinds, ["write"] * 3 + ["alert"] * 3)
+        self.assertEqual(kinds, ["write", "count"] * 3 + ["alert"] * 3)
+
+    def test_a_failed_rollup_costs_no_check_and_no_alert(self):
+        def broken(project, result):
+            raise RuntimeError("throttled")
+
+        monitor.count_check = broken
+        self.scan({"a": 0.01, "b": 0.01})
+        self.assertEqual(sorted(pid for kind, pid in self.calls if kind == "alert"), ["a", "b"])
+        self.assertEqual(sorted(self.written()), ["a", "b"])
 
 
 class FakeIncidentsTable:
@@ -367,7 +380,12 @@ class FakeIncidentsTable:
 
     def query(self, **kw):
         values = kw["ExpressionAttributeValues"]
-        return {"Items": [r for r in self.rows if r["project_id"] == values[":pid"] and r["resolved"] == values[":resolved"]]}
+        rows = sorted((r for r in self.rows if r["project_id"] == values[":pid"]), key=lambda r: -r["start_time"])
+        if ":resolved" in values:
+            return {"Items": [r for r in rows if r["resolved"] == values[":resolved"]]}
+        if ":now_ts" in values:
+            return {"Items": [r for r in rows if values[":from_ts"] <= r["start_time"] <= values[":now_ts"]]}
+        return {"Items": [r for r in rows if r["start_time"] < values[":from_ts"]][: kw.get("Limit")]}
 
     def put_item(self, Item):
         self.rows.append(dict(Item))
@@ -433,6 +451,78 @@ class MttrTest(unittest.TestCase):
         ]
         metrics = api._reliability_metrics(incidents, {}, 0, 86400)
         self.assertEqual((metrics["mttr_sec"], metrics["total_downtime_sec"]), (600, 3600))
+
+
+class DailyRollupTest(unittest.TestCase):
+    """The monitor tallies each check per UTC day on the project row (board #5)."""
+
+    def count(self, project, status="success", when="2026-11-25T23:59:30+00:00"):
+        from datetime import datetime
+
+        calls = []
+        saved = monitor.projects_table
+        monitor.projects_table = type("Projects", (), {"update_item": lambda self, **kw: calls.append(kw)})()
+        try:
+            monitor.count_check(project, {"status": status, "timestamp": int(datetime.fromisoformat(when).timestamp() * 1000)})
+        finally:
+            monitor.projects_table = saved
+        return calls[0]
+
+    def test_adds_to_the_utc_day_and_records_the_first_day(self):
+        kw = self.count({"project_id": "p1"})
+        self.assertEqual(kw["ExpressionAttributeNames"]["#count"], "d20261125_up")
+        self.assertEqual(kw["UpdateExpression"], "ADD #count :one SET #since = if_not_exists(#since, :day)")
+        self.assertEqual(kw["ExpressionAttributeValues"], {":one": 1, ":day": "2026-11-25"})
+        self.assertEqual(kw["ConditionExpression"], "attribute_exists(#pid)")
+
+    def test_status_names(self):
+        self.assertEqual(self.count({"project_id": "p1"}, "failure")["ExpressionAttributeNames"]["#count"], "d20261125_down")
+        self.assertEqual(self.count({"project_id": "p1"}, "inconclusive")["ExpressionAttributeNames"]["#count"], "d20261125_inconclusive")
+
+    def test_prunes_only_the_days_past_the_window(self):
+        project = {"project_id": "p1", "d20261001_up": 5, "d20261009_down": 2, "d20261020_up": 9, "daily_since": "2026-10-01"}
+        kw = self.count(project)
+        removed = sorted(v for k, v in kw["ExpressionAttributeNames"].items() if k.startswith("#old"))
+        self.assertEqual(removed, ["d20261001_up", "d20261009_down"])  # 45 days before 2026-11-25 is 2026-10-11
+        self.assertIn(" REMOVE ", kw["UpdateExpression"])
+
+
+class DailyApiTest(unittest.TestCase):
+    """GET /status and the dashboard list carry a per-day payload (board #5)."""
+
+    NOW = 1_764_115_200 + 12 * 3600  # 2025-11-26 12:00 UTC
+
+    def daily(self, project, incidents, days=3):
+        saved = api._get_incidents_table
+        api._get_incidents_table = lambda: FakeIncidentsTable(incidents)
+        try:
+            return api._daily(project, days, self.NOW)
+        finally:
+            api._get_incidents_table = saved
+
+    @staticmethod
+    def incident(start, end=None):
+        return {"project_id": "p1", "start_time": start, "end_time": end, "resolved": end is not None}
+
+    def test_tallies_zero_filled_oldest_first(self):
+        result = self.daily({"project_id": "p1", "daily_since": "2025-11-25", "d20251125_up": 1400, "d20251125_down": 3, "d20251126_inconclusive": 2}, [])
+        self.assertEqual(result["since"], "2025-11-25")
+        self.assertEqual([d["date"] for d in result["days"]], ["2025-11-24", "2025-11-25", "2025-11-26"])
+        self.assertEqual([(d["up"], d["down"], d["inconclusive"]) for d in result["days"]], [(0, 0, 0), (1400, 3, 0), (0, 0, 2)])
+
+    def test_outage_seconds_split_at_midnight_and_open_incidents_run_to_now(self):
+        midnight = 1_764_115_200  # 2025-11-26 00:00 UTC
+        result = self.daily({"project_id": "p1"}, [self.incident(midnight - 600, midnight + 300), self.incident(self.NOW - 120)])
+        self.assertEqual([d["outage_sec"] for d in result["days"]], [0, 600, 300 + 120])
+
+    def test_an_incident_from_before_the_window_still_counts(self):
+        window_start = 1_764_115_200 - 2 * 86400  # 2025-11-24 00:00 UTC
+        result = self.daily({"project_id": "p1"}, [self.incident(window_start - 3600, window_start + 60)])
+        self.assertEqual(result["days"][0]["outage_sec"], 60)
+
+    def test_counters_never_leave_the_api(self):
+        row = {"project_id": "p1", "name": "x", "daily_since": "2025-11-25", "d20251125_up": 5}
+        self.assertEqual(api._without_rollup(row), {"project_id": "p1", "name": "x", "daily_since": "2025-11-25"})
 
 
 if __name__ == "__main__":

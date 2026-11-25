@@ -1,8 +1,10 @@
 import json
 import logging
 import os
+import re
 import time
 import decimal
+from datetime import datetime, timedelta, timezone
 
 import boto3
 from botocore.exceptions import ClientError
@@ -54,6 +56,10 @@ class DecimalEncoder(json.JSONEncoder):
 # The monitor rule runs at rate(1 minute); used to say how many checks a window
 # should have contained, so missing evidence is visible instead of implied.
 CHECK_INTERVAL_SECONDS = 60
+# The monitor tallies every check per UTC day on its project row (d20261125_up, …).
+DAY_KEY = re.compile(r"^d(\d{8})_(up|down|inconclusive)$")
+DAILY_LIST_DAYS = 14
+DAILY_DETAIL_DAYS = 30
 
 
 def _get_tables():
@@ -113,6 +119,11 @@ def get_user_id(event: dict) -> str:
 def handle_get_health() -> dict:
     return success(200, {"status": "ok"})
 
+
+
+def _without_rollup(item: dict) -> dict:
+    """A project row minus the monitor's per-day counters, which are internal."""
+    return {key: value for key, value in item.items() if not DAY_KEY.match(key)}
 
 
 def get_project_or_403(project_id: str, user_id: str) -> dict | None:
@@ -201,6 +212,63 @@ def _status_window(checks_table, project_id: str, hours: int) -> dict:
     }
 
 
+def _incidents_between(project_id: str, from_sec: int, to_sec: int) -> list[dict]:
+    """Incidents that started inside [from_sec, to_sec], newest first."""
+    incidents = []
+    query_kwargs = {
+        "KeyConditionExpression": "project_id = :pid AND start_time BETWEEN :from_ts AND :now_ts",
+        "ExpressionAttributeValues": {":pid": project_id, ":from_ts": from_sec, ":now_ts": to_sec},
+        "ScanIndexForward": False,
+    }
+    while True:
+        response = _get_incidents_table().query(**query_kwargs)
+        incidents.extend(response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            return incidents
+        query_kwargs["ExclusiveStartKey"] = last_key
+
+
+def _daily(project: dict, days: int, now_sec: int) -> dict:
+    """The project's last `days` UTC days, oldest first: the monitor's check
+    tallies, and the seconds of confirmed outage (incidents) inside each day."""
+    tallies: dict[str, dict] = {}
+    for key, value in project.items():
+        match = DAY_KEY.match(key)
+        if match:
+            tallies.setdefault(match.group(1), {})[match.group(2)] = int(value)
+
+    first = datetime.fromtimestamp(now_sec, timezone.utc).date() - timedelta(days=days - 1)
+    from_sec = int(datetime(first.year, first.month, first.day, tzinfo=timezone.utc).timestamp())
+    incidents = _incidents_between(project["project_id"], from_sec, now_sec)
+    # An incident that began before the window can still run into it.
+    earlier = _get_incidents_table().query(
+        KeyConditionExpression="project_id = :pid AND start_time < :from_ts",
+        ExpressionAttributeValues={":pid": project["project_id"], ":from_ts": from_sec},
+        ScanIndexForward=False,
+        Limit=1,
+    )
+    spans = [
+        (int(i["start_time"]), int(i["end_time"]) if i.get("end_time") is not None else now_sec)
+        for i in incidents + earlier.get("Items", [])
+    ]
+
+    out = []
+    for offset in range(days):
+        day = first + timedelta(days=offset)
+        start = from_sec + offset * 86400
+        end = min(start + 86400, now_sec)
+        counts = tallies.get(f"{day:%Y%m%d}", {})
+        out.append({
+            "date": day.isoformat(),
+            "up": counts.get("up", 0),
+            "down": counts.get("down", 0),
+            "inconclusive": counts.get("inconclusive", 0),
+            "outage_sec": sum(max(0, min(span_end, end) - max(span_start, start)) for span_start, span_end in spans),
+        })
+    return {"since": project.get("daily_since"), "days": out}
+
+
 def handle_get_projects(event: dict) -> dict:
     user_id = get_user_id(event)
     _, projects_table, checks_table, _, PROJECT_GSI_NAME = _get_tables()
@@ -265,6 +333,7 @@ def handle_get_projects(event: dict) -> dict:
             enriched_project["last_checked_at"] = None
 
         if status:
+            status["daily"] = _daily(project, DAILY_LIST_DAYS, int(time.time()))
             enriched_project["status"] = status
 
         enriched.append(enriched_project)
@@ -286,7 +355,9 @@ def handle_get_projects_status(event: dict) -> dict:
     if hours is None:
         return error_response(400, "hours must be an integer")
 
-    return success(200, _status_window(checks_table, project_id, hours))
+    status = _status_window(checks_table, project_id, hours)
+    status["daily"] = _daily(project, DAILY_DETAIL_DAYS, int(time.time()))
+    return success(200, status)
 
 
 def handle_get_project(event: dict) -> dict:
@@ -298,7 +369,7 @@ def handle_get_project(event: dict) -> dict:
     if not project:
         return error_response(403, "Forbidden")
 
-    return success(200, project)
+    return success(200, _without_rollup(project))
 
 
 def handle_get_projects_reports(event: dict) -> dict:
@@ -414,25 +485,7 @@ def handle_get_projects_incidents(event: dict) -> dict:
     now_sec = int(time.time())
     from_sec = now_sec - (days * 86400)
 
-    incidents_table = _get_incidents_table()
-    incidents = []
-    # start_time is the numeric sort key (epoch seconds); range-query the window.
-    query_kwargs = {
-        "KeyConditionExpression": "project_id = :pid AND start_time BETWEEN :from_ts AND :now_ts",
-        "ExpressionAttributeValues": {
-            ":pid": project_id,
-            ":from_ts": from_sec,
-            ":now_ts": now_sec,
-        },
-        "ScanIndexForward": False,  # newest first
-    }
-    while True:
-        response = incidents_table.query(**query_kwargs)
-        incidents.extend(response.get("Items", []))
-        last_key = response.get("LastEvaluatedKey")
-        if not last_key:
-            break
-        query_kwargs["ExclusiveStartKey"] = last_key
+    incidents = _incidents_between(project_id, from_sec, now_sec)
 
     metrics = _reliability_metrics(incidents, project.get("thresholds", {}), from_sec, now_sec)
 
