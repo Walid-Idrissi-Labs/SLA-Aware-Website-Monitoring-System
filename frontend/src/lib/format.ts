@@ -1,4 +1,4 @@
-import type { Check } from '../types'
+import type { Check, DailyTally } from '../types'
 
 /** Status palette — the single source for status hexes used in inline SVG/styles.
  *  Mirrors the `ok`/`warn`/`crit`/`accent` tokens in tailwind.config.js. */
@@ -31,6 +31,16 @@ export const PROJECT_DEFAULTS = {
 /** Epoch ms → "HH:MM:SS UTC". All SLA windows are UTC; display follows. */
 export function fmtUtcTime(tsMs: number): string {
   return new Date(tsMs).toISOString().slice(11, 19) + ' UTC'
+}
+
+/** "YYYY-MM-DD" (a UTC day) → "Tue 25 Nov". */
+export function fmtUtcDay(date: string): string {
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  })
 }
 
 /** Compact "time since" label, e.g. now / 4m / 2h / 3d. */
@@ -119,6 +129,50 @@ export const VERDICT = {
   /** Inactive (paused or deleted): nothing is checking it. */
   off: { label: 'Not monitored', short: 'OFF', textClass: 'text-txt-lo', color: STATUS.neutral },
   pending: { label: 'Pending first check', short: '—', textClass: 'text-txt-lo', color: STATUS.neutral },
+} as const
+
+export type DayVerdict = 'operational' | 'outage' | 'no_data' | 'untracked'
+
+/**
+ * A UTC day's verdict. Any confirmed outage makes it an outage. A day before
+ * tracking began (or before the monitor existed) is untracked, which is not the
+ * same claim as "no data". Otherwise it takes conclusive checks to count as
+ * operational. `thin` marks a full past day with under half its expected
+ * checks, so it does not look as solid as a covered one; today, the creation
+ * day and the first tracked day are partial by nature and never thin.
+ */
+export function dayVerdict(day: DailyTally, since: string | null, createdAt: string | undefined, now: number) {
+  const start = Date.parse(`${day.date}T00:00:00Z`)
+  const end = start + 86_400_000
+  const created = createdAt ? Date.parse(createdAt) : NaN
+  const born = Number.isNaN(created) ? start : Math.max(start, created)
+  const conclusive = day.up + day.down
+  // A monitor older than its tally began counting mid-day, at a time we do not
+  // know, so that first day has no honest denominator.
+  const expected = day.date === since && born === start ? null : Math.max(1, Math.floor((Math.min(end, now) - born) / CHECK_INTERVAL_MS))
+  const partial = now < end || born > start || day.date === since
+  const verdict: DayVerdict =
+    day.outage_sec > 0
+      ? 'outage'
+      : since == null || day.date < since || created >= end
+        ? 'untracked'
+        : conclusive === 0
+          ? 'no_data'
+          : 'operational'
+  return {
+    verdict,
+    expected,
+    uptime: conclusive > 0 ? (day.up / conclusive) * 100 : null,
+    partial,
+    thin: verdict === 'operational' && !partial && expected != null && conclusive / expected < 0.5,
+  }
+}
+
+export const DAY_VERDICT = {
+  operational: { label: 'Operational', color: STATUS.ok },
+  outage: { label: 'Outage', color: STATUS.crit },
+  no_data: { label: 'No data', color: STATUS.neutral },
+  untracked: { label: 'Not tracked', color: STATUS.neutral },
 } as const
 
 /** Severity → display metadata (label + tailwind-friendly hex). */

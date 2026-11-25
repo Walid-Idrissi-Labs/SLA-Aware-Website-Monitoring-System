@@ -1,7 +1,6 @@
-import type { ReactNode } from 'react'
 import type { Check } from '../types'
 import { ERROR_TYPE, STATUS, fmtUtcTime, timeAgo } from '../lib/format'
-import HoverCard from './HoverCard'
+import HoverCard, { HoverRow as Row } from './HoverCard'
 
 const TONE = {
   success: { label: 'UP', color: STATUS.ok },
@@ -14,15 +13,6 @@ const TONE = {
 export function measuredLatency(check: Check): number | null {
   if (check.status === 'inconclusive' || !check.http_status_code || check.error_type === 'timeout') return null
   return check.latency_ms
-}
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-txt-lo">{label}</dt>
-      <dd className="min-w-0 truncate text-right font-mono tabular-nums text-txt-hi">{children}</dd>
-    </div>
-  )
 }
 
 /** Hover card content for one check of the strip. */

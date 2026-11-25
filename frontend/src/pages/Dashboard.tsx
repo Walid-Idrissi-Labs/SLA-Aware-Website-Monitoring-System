@@ -318,10 +318,12 @@ export default function Dashboard() {
             project={project}
             checks={statuses[project.project_id]?.checks || []}
             verdict={verdicts[project.project_id]}
+            daily={statuses[project.project_id]?.daily}
+            now={now}
           />
         ),
       })),
-    [activeProjects, statuses, verdicts, navigate],
+    [activeProjects, statuses, verdicts, now, navigate],
   )
 
   const ticker = (
