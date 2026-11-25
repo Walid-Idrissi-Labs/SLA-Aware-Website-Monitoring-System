@@ -62,6 +62,9 @@ export interface Incident {
   duration_seconds: number | null;
   resolved: boolean;
   cause?: ErrorType | null;
+  /** Set when it was closed without an observed recovery: the project stopped
+   *  being monitored (deleted or paused) while it was still down. */
+  closed_reason?: 'monitoring_stopped' | null;
 }
 
 export interface ErrorBudget {

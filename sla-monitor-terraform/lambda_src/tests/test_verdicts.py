@@ -62,6 +62,7 @@ monitor = load_handler("monitor", "monitor_handler")
 reports = load_handler("report_generator", "report_generator_handler")
 projects = load_handler("project_manager", "project_manager_handler")
 api = load_handler("api", "api_handler")
+processor = load_handler("sla_processor", "sla_processor_handler")
 
 
 class AcceptedStatusParsingTest(unittest.TestCase):
@@ -227,7 +228,7 @@ class AcceptedStatusValidationTest(unittest.TestCase):
 
 
 class FakeChecksTable:
-    """Answers the two query shapes GET /projects uses: a time window, or Limit=1 newest."""
+    """Answers the query shapes used here: a time window, Limit=1 newest, or the first success after a time."""
 
     def __init__(self, rows):
         self.rows = rows
@@ -239,6 +240,8 @@ class FakeChecksTable:
         items = sorted((r for r in self.rows if r["project_id"] == values[":pid"]), key=lambda r: r["timestamp"])
         if ":from_ts" in values:
             items = [r for r in items if values[":from_ts"] <= r["timestamp"] <= values[":now_ts"]]
+        if ":after_ms" in values:
+            items = [r for r in items if r["timestamp"] > values[":after_ms"] and r["status"] == values[":success"]]
         if kw.get("ScanIndexForward") is False:
             items = items[::-1]
         return {"Items": items[: kw["Limit"]] if "Limit" in kw else items}
@@ -354,6 +357,82 @@ class MonitorScanTest(unittest.TestCase):
         self.scan({"a": 0.01, "b": 0.01, "c": 0.01})
         kinds = [kind for kind, _ in self.calls]
         self.assertEqual(kinds, ["write"] * 3 + ["alert"] * 3)
+
+
+class FakeIncidentsTable:
+    """Open-incident lookups, puts, and the closing update_item."""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def query(self, **kw):
+        values = kw["ExpressionAttributeValues"]
+        return {"Items": [r for r in self.rows if r["project_id"] == values[":pid"] and r["resolved"] == values[":resolved"]]}
+
+    def put_item(self, Item):
+        self.rows.append(dict(Item))
+
+    def update_item(self, Key, ExpressionAttributeValues, **kw):
+        row = next(r for r in self.rows if r["project_id"] == Key["project_id"] and r["start_time"] == Key["start_time"])
+        values = ExpressionAttributeValues
+        row.update(end_time=values[":et"], duration_seconds=values[":ds"], resolved=values[":res"])
+        if ":reason" in values:
+            row["closed_reason"] = values[":reason"]
+
+
+class InactiveIncidentTest(unittest.TestCase):
+    """An incident left open on a deleted or paused project gets closed (board #28)."""
+
+    START = int(time.time()) - 7200
+
+    def run_processor(self, project, checks, start=START):
+        incidents = FakeIncidentsTable([{"project_id": "p1", "start_time": start, "end_time": None, "duration_seconds": None, "resolved": False}])
+        saved = (processor.incidents_table, processor.checks_table, processor.load_projects)
+        processor.incidents_table, processor.checks_table = incidents, FakeChecksTable(checks)
+        processor.load_projects = lambda: [project]
+        try:
+            processor.lambda_handler({}, None)
+        finally:
+            processor.incidents_table, processor.checks_table, processor.load_projects = saved
+        return incidents.rows[0]
+
+    @staticmethod
+    def check(sec, status):
+        return {"project_id": "p1", "timestamp": sec * 1000, "status": status}
+
+    def test_closed_at_the_last_check_and_marked(self):
+        row = self.run_processor({"project_id": "p1", "active": False},
+                                 [self.check(self.START, "failure"), self.check(self.START + 600, "failure")])
+        self.assertEqual((row["resolved"], row["end_time"], row["closed_reason"]), (True, self.START + 600, "monitoring_stopped"))
+
+    def test_a_recovery_before_deactivation_still_closes_it_as_a_recovery(self):
+        row = self.run_processor({"project_id": "p1", "active": False},
+                                 [self.check(self.START, "failure"), self.check(self.START + 300, "success")])
+        self.assertEqual((row["resolved"], row["end_time"]), (True, self.START + 300))
+        self.assertNotIn("closed_reason", row)
+
+    def test_expired_checks_fall_back_to_the_deactivation_time(self):
+        from datetime import datetime, timezone
+
+        start = int(time.time()) - 100 * 86400
+        deactivated = datetime.fromtimestamp(start + 3600, tz=timezone.utc).isoformat()
+        row = self.run_processor({"project_id": "p1", "active": False, "updated_at": deactivated}, [], start=start)
+        self.assertEqual((row["end_time"], row["closed_reason"]), (start + 3600, "monitoring_stopped"))
+
+    def test_active_or_unknown_projects_keep_an_ongoing_incident_open(self):
+        for project in ({"project_id": "p1", "active": True}, {"project_id": "p1"}):
+            row = self.run_processor(project, [self.check(self.START, "failure"), self.check(self.START + 600, "failure")])
+            self.assertFalse(row["resolved"], project)
+
+
+class MttrTest(unittest.TestCase):
+    def test_cut_off_incidents_count_as_downtime_but_not_repair_time(self):
+        incidents = [
+            {"start_time": 1000, "duration_seconds": 600, "resolved": True},
+            {"start_time": 5000, "duration_seconds": 3000, "resolved": True, "closed_reason": "monitoring_stopped"},
+        ]
+        metrics = api._reliability_metrics(incidents, {}, 0, 86400)
+        self.assertEqual((metrics["mttr_sec"], metrics["total_downtime_sec"]), (600, 3600))
 
 
 if __name__ == "__main__":

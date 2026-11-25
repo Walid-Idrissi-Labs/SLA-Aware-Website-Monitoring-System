@@ -348,7 +348,13 @@ def _reliability_metrics(incidents: list[dict], thresholds: dict, from_sec: int,
         open_downtime = max(now_sec - open_start, 0)
 
     total_downtime = sum(durations) + open_downtime
-    mttr_sec = round(sum(durations) / len(durations)) if durations else 0
+    # An incident closed because monitoring stopped was cut off, not repaired:
+    # it still counts as downtime, but not toward the time to recover.
+    repairs = [
+        int(i["duration_seconds"]) for i in resolved
+        if i.get("duration_seconds") is not None and not i.get("closed_reason")
+    ]
+    mttr_sec = round(sum(repairs) / len(repairs)) if repairs else 0
 
     longest_candidates = list(durations)
     if open_incidents:
