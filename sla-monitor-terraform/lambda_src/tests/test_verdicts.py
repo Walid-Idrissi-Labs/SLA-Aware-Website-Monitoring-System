@@ -298,5 +298,63 @@ class ProjectListStatusTest(unittest.TestCase):
         self.assertEqual(body["current_status"], "failure")
 
 
+class MonitorScanTest(unittest.TestCase):
+    """Slow targets cannot starve the projects scanned after them (board #27)."""
+
+    PATCHED = ("load_active_projects", "run_check", "write_check", "alert_on_transition", "certificate_due", "WRITE_RESERVE_SECONDS")
+
+    def setUp(self):
+        self.saved = {name: getattr(monitor, name) for name in self.PATCHED}
+        self.calls = []
+        monitor.write_check = lambda project, result: self.calls.append(("write", project["project_id"]))
+        monitor.alert_on_transition = lambda project, result: self.calls.append(("alert", project["project_id"]))
+        monitor.certificate_due = lambda project: False
+        monitor.WRITE_RESERVE_SECONDS = 5
+
+    def tearDown(self):
+        for name, value in self.saved.items():
+            setattr(monitor, name, value)
+
+    def scan(self, delays, probe_window=0.6):
+        """Run the handler over projects whose checks take `delays` seconds (None raises)."""
+        monitor.load_active_projects = lambda: [{"project_id": pid} for pid in delays]
+
+        def run_check(project):
+            delay = delays[project["project_id"]]
+            if delay is None:
+                raise RuntimeError("unreachable target")
+            time.sleep(delay)
+            return {}
+
+        monitor.run_check = run_check
+        end = time.monotonic() + monitor.WRITE_RESERVE_SECONDS + probe_window
+        context = type("Context", (), {"get_remaining_time_in_millis": lambda self: int((end - time.monotonic()) * 1000)})()
+        started = time.monotonic()
+        monitor.lambda_handler({}, context)
+        return time.monotonic() - started
+
+    def written(self):
+        return [pid for kind, pid in self.calls if kind == "write"]
+
+    def test_a_slow_first_target_does_not_starve_the_rest(self):
+        elapsed = self.scan({"slow": 1.5, "a": 0.05, "b": 0.05})
+        self.assertEqual(sorted(self.written()), ["a", "b"])
+        self.assertLess(elapsed, 1.2)  # the straggler was abandoned, not waited for
+
+    def test_targets_are_probed_in_parallel(self):
+        # Sequentially these would need 1.2 s; the probe window is 0.6 s.
+        self.scan({"a": 0.3, "b": 0.3, "c": 0.3, "d": 0.3})
+        self.assertEqual(sorted(self.written()), ["a", "b", "c", "d"])
+
+    def test_a_broken_target_does_not_stop_the_others(self):
+        self.scan({"bad": None, "a": 0.01})
+        self.assertEqual(self.written(), ["a"])
+
+    def test_every_check_is_stored_before_any_alert(self):
+        self.scan({"a": 0.01, "b": 0.01, "c": 0.01})
+        kinds = [kind for kind, _ in self.calls]
+        self.assertEqual(kinds, ["write"] * 3 + ["alert"] * 3)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
