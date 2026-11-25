@@ -6,8 +6,10 @@ Stdlib only, no AWS calls, no dependencies:
     python3 sla-monitor-terraform/lambda_src/tests/test_verdicts.py
 """
 import importlib.util
+import json
 import os
 import sys
+import time
 import unittest
 
 # The handlers are imported from inside the Lambda source directories. Writing
@@ -59,6 +61,7 @@ def load_handler(subdir: str, module_name: str):
 monitor = load_handler("monitor", "monitor_handler")
 reports = load_handler("report_generator", "report_generator_handler")
 projects = load_handler("project_manager", "project_manager_handler")
+api = load_handler("api", "api_handler")
 
 
 class AcceptedStatusParsingTest(unittest.TestCase):
@@ -220,6 +223,79 @@ class AcceptedStatusValidationTest(unittest.TestCase):
     def test_rejects_unusable_specs(self):
         for spec in (None, "", "abc", "99-200", "400-300", "200-", [], 200):
             self.assertIsNone(projects.validate_accepted_status(spec), spec)
+
+
+
+class FakeChecksTable:
+    """Answers the two query shapes GET /projects uses: a time window, or Limit=1 newest."""
+
+    def __init__(self, rows):
+        self.rows = rows
+        self.queries = []
+
+    def query(self, **kw):
+        self.queries.append(kw)
+        values = kw["ExpressionAttributeValues"]
+        items = sorted((r for r in self.rows if r["project_id"] == values[":pid"]), key=lambda r: r["timestamp"])
+        if ":from_ts" in values:
+            items = [r for r in items if values[":from_ts"] <= r["timestamp"] <= values[":now_ts"]]
+        if kw.get("ScanIndexForward") is False:
+            items = items[::-1]
+        return {"Items": items[: kw["Limit"]] if "Limit" in kw else items}
+
+
+class ProjectListStatusTest(unittest.TestCase):
+    """GET /projects?include=status replaces one /status request per project."""
+
+    def setUp(self):
+        now = int(time.time() * 1000)
+        self.checks = FakeChecksTable([
+            {"project_id": "p1", "timestamp": now - 120_000, "status": "success", "latency_ms": 100},
+            {"project_id": "p1", "timestamp": now - 60_000, "status": "failure", "latency_ms": 900},
+            {"project_id": "p2", "timestamp": now - 5 * 3_600_000, "status": "success", "latency_ms": 80},
+        ])
+        rows = [{"project_id": p, "user_id": "u1", "name": p, "url": "https://example.com", "active": True, "created_at": "2026-11-25"} for p in ("p1", "p2")]
+        projects_table = type("FakeProjects", (), {
+            "query": lambda self, **kw: {"Items": rows},
+            "get_item": lambda self, Key: {"Item": next(r for r in rows if r["project_id"] == Key["project_id"])},
+        })()
+        self._real_get_tables = api._get_tables
+        api._get_tables = lambda: (None, projects_table, self.checks, None, "UserProjectsIndex")
+
+    def tearDown(self):
+        api._get_tables = self._real_get_tables
+
+    def get(self, params=None):
+        event = {"requestContext": {"authorizer": {"jwt": {"claims": {"sub": "u1"}}}}, "queryStringParameters": params}
+        return api.handle_get_projects(event)
+
+    def test_embeds_the_window_and_reuses_its_newest_check(self):
+        p1, p2 = json.loads(self.get({"include": "status", "hours": "1"})["body"])
+        self.assertEqual(p1["status"]["summary"]["checks_total"], 2)
+        self.assertEqual(p1["current_status"], "failure")  # newest check inside the window
+        self.assertEqual(p2["status"]["checks"], [])  # nothing in the last hour...
+        self.assertEqual(p2["current_status"], "success")  # ...so the Limit=1 query still answers
+        self.assertEqual(len(self.checks.queries), 3)  # p1: window only; p2: window + newest
+
+    def test_plain_request_is_unchanged(self):
+        p1, _ = json.loads(self.get()["body"])
+        self.assertNotIn("status", p1)
+        self.assertEqual(p1["current_status"], "failure")
+        self.assertEqual(len(self.checks.queries), 2)  # one Limit=1 query per project, as before
+
+    def test_bad_hours_is_rejected(self):
+        self.assertEqual(self.get({"include": "status", "hours": "x"})["statusCode"], 400)
+
+    def test_list_window_is_capped_at_24h(self):
+        p1, _ = json.loads(self.get({"include": "status", "hours": "72"})["body"])
+        self.assertEqual(p1["status"]["summary"]["window_hours"], 24)
+
+    def test_status_route_still_clamps_to_72h(self):
+        event = {"requestContext": {"authorizer": {"jwt": {"claims": {"sub": "u1"}}}},
+                 "pathParameters": {"project_id": "p1"}, "queryStringParameters": {"hours": "999"}}
+        body = json.loads(api.handle_get_projects_status(event)["body"])
+        self.assertEqual(body["summary"]["window_hours"], 72)
+        self.assertEqual(body["current_status"], "failure")
 
 
 if __name__ == "__main__":
