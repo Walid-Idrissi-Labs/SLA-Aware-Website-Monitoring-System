@@ -254,8 +254,11 @@ class ProjectListStatusTest(unittest.TestCase):
             {"project_id": "p1", "timestamp": now - 60_000, "status": "failure", "latency_ms": 900},
             {"project_id": "p2", "timestamp": now - 5 * 3_600_000, "status": "success", "latency_ms": 80},
         ])
-        rows = [{"project_id": p, "name": p, "url": "https://example.com", "active": True, "created_at": "2026-11-25"} for p in ("p1", "p2")]
-        projects_table = type("FakeProjects", (), {"query": lambda self, **kw: {"Items": rows}})()
+        rows = [{"project_id": p, "user_id": "u1", "name": p, "url": "https://example.com", "active": True, "created_at": "2026-11-25"} for p in ("p1", "p2")]
+        projects_table = type("FakeProjects", (), {
+            "query": lambda self, **kw: {"Items": rows},
+            "get_item": lambda self, Key: {"Item": next(r for r in rows if r["project_id"] == Key["project_id"])},
+        })()
         self._real_get_tables = api._get_tables
         api._get_tables = lambda: (None, projects_table, self.checks, None, "UserProjectsIndex")
 
@@ -282,6 +285,17 @@ class ProjectListStatusTest(unittest.TestCase):
 
     def test_bad_hours_is_rejected(self):
         self.assertEqual(self.get({"include": "status", "hours": "x"})["statusCode"], 400)
+
+    def test_list_window_is_capped_at_24h(self):
+        p1, _ = json.loads(self.get({"include": "status", "hours": "72"})["body"])
+        self.assertEqual(p1["status"]["summary"]["window_hours"], 24)
+
+    def test_status_route_still_clamps_to_72h(self):
+        event = {"requestContext": {"authorizer": {"jwt": {"claims": {"sub": "u1"}}}},
+                 "pathParameters": {"project_id": "p1"}, "queryStringParameters": {"hours": "999"}}
+        body = json.loads(api.handle_get_projects_status(event)["body"])
+        self.assertEqual(body["summary"]["window_hours"], 72)
+        self.assertEqual(body["current_status"], "failure")
 
 
 if __name__ == "__main__":

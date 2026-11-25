@@ -212,6 +212,9 @@ def handle_get_projects(event: dict) -> dict:
     hours = _parse_hours(query_params) if include_status else None
     if include_status and hours is None:
         return error_response(400, "hours must be an integer")
+    if hours:
+        # Every project's window shares one response; at 72 h ten projects could pass Lambda's 6 MB limit.
+        hours = min(hours, 24)
 
     projects = []
     query_kwargs = {
