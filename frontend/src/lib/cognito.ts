@@ -32,10 +32,14 @@ function getPool(): CognitoUserPool {
   return pool
 }
 
+// The pool matches usernames case-sensitively; lowercasing lets sign-in find
+// the account whatever case was typed at sign-up.
+const normalize = (email: string) => email.trim().toLowerCase()
+
 function cognitoUser(email: string): CognitoUser {
   // With `username_attributes = ["email"]` on the pool, the email IS the sign-in
   // identifier for every operation (sign-up, confirm, authenticate).
-  return new CognitoUser({ Username: email, Pool: getPool() })
+  return new CognitoUser({ Username: normalize(email), Pool: getPool() })
 }
 
 /**
@@ -78,7 +82,7 @@ export function friendlyAuthMessage(err: unknown): { code: string; message: stri
 export function signIn(email: string, password: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const user = cognitoUser(email)
-    const details = new AuthenticationDetails({ Username: email, Password: password })
+    const details = new AuthenticationDetails({ Username: normalize(email), Password: password })
     user.authenticateUser(details, {
       onSuccess: (session) => resolve(session.getIdToken().getJwtToken()),
       onFailure: (err) => reject(err),
@@ -92,33 +96,15 @@ export function signIn(email: string, password: string): Promise<string> {
   })
 }
 
-/**
- * The pool uses `email` as an alias, and Cognito rejects a sign-up whose
- * username is an email address in that configuration. The username is therefore
- * derived from the address: deterministic, so the confirm step can recompute it
- * from the email alone and no extra state has to survive a page reload.
- */
-export function usernameFor(email: string): string {
-  const s = email.trim().toLowerCase()
-  let a = 0x811c9dc5
-  let b = 0x01000193
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i)
-    a = Math.imul(a ^ c, 0x01000193) >>> 0
-    b = Math.imul(b + c, 0x85ebca6b) >>> 0
-  }
-  return `u${a.toString(16).padStart(8, '0')}${b.toString(16).padStart(8, '0')}`
-}
-
 /** Registers a new account. Cognito emails a verification code afterward. */
 export function signUp(email: string, password: string, name: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    // The pool uses `email` as an alias, so it has to be sent as a real
-    // attribute — otherwise the alias is never set and the account cannot be
-    // looked up by email afterwards.
-    const attributes = [new CognitoUserAttribute({ Name: 'email', Value: email.trim() })]
-    if (name.trim()) attributes.push(new CognitoUserAttribute({ Name: 'name', Value: name.trim() }))
-    getPool().signUp(usernameFor(email), password, attributes, [], (err) => {
+    // `email` is supplied as the username; do NOT also pass it as an attribute
+    // (the pool uses email as the username attribute). Only `name` is a real attribute.
+    const attributes = name.trim()
+      ? [new CognitoUserAttribute({ Name: 'name', Value: name.trim() })]
+      : []
+    getPool().signUp(normalize(email), password, attributes, [], (err) => {
       if (err) return reject(err)
       resolve()
     })
@@ -128,7 +114,7 @@ export function signUp(email: string, password: string, name: string): Promise<v
 /** Confirms a new account with the 6-digit code Cognito emailed. */
 export function confirmSignUp(email: string, code: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    cognitoUser(usernameFor(email)).confirmRegistration(code.trim(), true, (err) => {
+    cognitoUser(email).confirmRegistration(code.trim(), true, (err) => {
       if (err) return reject(err)
       resolve()
     })
@@ -138,7 +124,7 @@ export function confirmSignUp(email: string, code: string): Promise<void> {
 /** Re-sends the verification code for an unconfirmed account. */
 export function resendConfirmationCode(email: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    cognitoUser(usernameFor(email)).resendConfirmationCode((err) => {
+    cognitoUser(email).resendConfirmationCode((err) => {
       if (err) return reject(err)
       resolve()
     })
