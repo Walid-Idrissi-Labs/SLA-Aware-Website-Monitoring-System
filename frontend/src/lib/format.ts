@@ -14,6 +14,13 @@ export const STATUS = {
 /** How often live views re-poll the API (matches the 1-minute check cadence). */
 export const POLL_INTERVAL_MS = 60_000
 
+/** The monitor Lambda's cadence and HTTP timeout (EventBridge rate(1 minute), HTTP_TIMEOUT_SECONDS). */
+const CHECK_INTERVAL_MS = 60_000
+const CHECK_TIMEOUT_MS = 10_000
+/** No check for this long means the monitor stopped producing evidence: one
+ *  missed cycle is tolerated, two are not. */
+export const STALE_AFTER_MS = Math.max(2 * CHECK_INTERVAL_MS, CHECK_INTERVAL_MS + CHECK_TIMEOUT_MS + 60_000)
+
 /** Defaults applied by the backend when a project omits them. */
 export const PROJECT_DEFAULTS = {
   failure_threshold: 3,
@@ -61,14 +68,40 @@ export function evidenceFromChecks(checks: Check[]): number | null {
   return (conclusive / checks.length) * 100
 }
 
-/** The three verdicts plus "no checks yet". */
-export type Verdict = 'up' | 'down' | 'inconclusive' | 'pending'
+/** The three check verdicts, plus what a monitor is when it has no current one. */
+export type Verdict = 'up' | 'down' | 'inconclusive' | 'stale' | 'off' | 'pending'
 
-export function verdictFromStatus(status: string | undefined): Verdict {
+function verdictFromStatus(status: string | undefined): Verdict {
   if (status === 'success') return 'up'
   if (status === 'failure') return 'down'
   if (status === 'inconclusive') return 'inconclusive'
   return 'pending'
+}
+
+/**
+ * A monitor's verdict right now, in precedence order. An inactive monitor is
+ * off, unless it left an incident open. A monitor with no check yet is pending,
+ * or stale once its first check was due. A last check too old to trust is
+ * stale. Only then does the latest check speak, so missing evidence never
+ * reads as up.
+ */
+export function verdictFor(
+  monitor: {
+    active?: boolean
+    created_at?: string
+    current_status?: string
+    last_checked_at?: number | null
+    open_incident?: boolean
+  },
+  now: number,
+): Verdict {
+  if (monitor.active === false) return monitor.open_incident ? 'down' : 'off'
+  if (monitor.last_checked_at == null) {
+    // An unparseable created_at gives NaN, which compares false: it stays pending.
+    const created = new Date(monitor.created_at ?? '').getTime()
+    return now - created > STALE_AFTER_MS ? 'stale' : 'pending'
+  }
+  return now - monitor.last_checked_at > STALE_AFTER_MS ? 'stale' : verdictFromStatus(monitor.current_status)
 }
 
 /** Verdict display metadata. `textClass` for Tailwind text, `color` for inline SVG. */
@@ -81,6 +114,10 @@ export const VERDICT = {
     textClass: 'text-txt-lo',
     color: STATUS.neutral,
   },
+  /** Checks stopped arriving: the last verdict can no longer be trusted. */
+  stale: { label: 'Stale', short: 'STALE', textClass: 'text-warn', color: STATUS.warn },
+  /** Inactive (paused or deleted): nothing is checking it. */
+  off: { label: 'Not monitored', short: 'OFF', textClass: 'text-txt-lo', color: STATUS.neutral },
   pending: { label: 'Pending first check', short: '—', textClass: 'text-txt-lo', color: STATUS.neutral },
 } as const
 

@@ -2,11 +2,11 @@ import type { Project, Check } from '../types'
 import {
   timeAgo,
   uptimeFromChecks,
-  verdictFromStatus,
   VERDICT,
   bareUrl,
   STATUS,
   PROJECT_DEFAULTS,
+  type Verdict,
 } from '../lib/format'
 import StatusStrip from './StatusStrip'
 import { BentoArea, BentoFigure } from './BentoVisuals'
@@ -14,6 +14,8 @@ import { BentoArea, BentoFigure } from './BentoVisuals'
 interface Props {
   project: Project
   checks: Check[]
+  /** The monitor's verdict right now (`verdictFor`). */
+  verdict: Verdict
 }
 
 /**
@@ -21,9 +23,8 @@ interface Props {
  * visual, then the name and URL. Draws no frame — the grid owns the surface,
  * the spotlight and the click target.
  */
-export default function ProjectCard({ project, checks }: Props) {
-  const verdict = verdictFromStatus(project.current_status)
-  const isDown = verdict === 'down'
+export default function ProjectCard({ project, checks, verdict }: Props) {
+  const current = verdict === 'up' || verdict === 'down'
   const latency = project.last_latency_ms
   const threshold = project.thresholds?.max_avg_latency_ms ?? PROJECT_DEFAULTS.max_avg_latency_ms
   const uptime = uptimeFromChecks(checks)
@@ -36,7 +37,8 @@ export default function ProjectCard({ project, checks }: Props) {
     .filter((c) => c.status !== 'inconclusive' && c.latency_ms != null)
     .map((c) => c.latency_ms)
 
-  const color = isDown ? STATUS.crit : overThreshold ? STATUS.warn : STATUS.ok
+  // Only a current verdict may colour the chart: old or missing evidence stays neutral.
+  const color = !current ? STATUS.neutral : verdict === 'down' ? STATUS.crit : overThreshold ? STATUS.warn : STATUS.ok
 
   const note = [
     uptime !== null ? `${uptime.toFixed(1)}% uptime` : null,
@@ -59,7 +61,8 @@ export default function ProjectCard({ project, checks }: Props) {
               '—'
             )
           }
-          note={note || 'awaiting first check'}
+          note={note || (verdict === 'stale' ? 'never checked' : 'awaiting first check')}
+          muted={!current}
         />
         <BentoArea values={latencyValues} color={color} />
       </div>
