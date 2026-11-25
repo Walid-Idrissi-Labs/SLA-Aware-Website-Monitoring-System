@@ -55,7 +55,9 @@ echo "==> Verifying the deployed bundle points at this stack..."
 BUNDLE=$(curl -s "$DASHBOARD_URL/" | grep -o 'assets/index-[^"]*\.js' | head -1 || true)
 if [ -z "$BUNDLE" ]; then
   echo "    ! could not read $DASHBOARD_URL — check it by hand"
-elif curl -s "$DASHBOARD_URL/$BUNDLE" | grep -Fq "$API_URL"; then
+# Here-string, not `curl | grep -q`: under pipefail an early grep exit makes curl
+# fail with a write error, which reads as "not found".
+elif grep -Fq "$API_URL" <<< "$(curl -s "$DASHBOARD_URL/$BUNDLE")"; then
   echo "    ok — bundle references $API_URL"
 else
   echo "    ! bundle does not reference $API_URL"

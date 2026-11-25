@@ -2,11 +2,13 @@
 # Read-only snapshot of the deployed SLA Monitor stack: what exists, what state
 # it is in, and since when.
 #
-# Nothing here writes: only list/describe/get calls, plus one unauthenticated
-# GET /health. Safe to run at any time, including while someone else is applying.
+# Nothing here writes: only list/describe/get calls, plus unauthenticated GETs of
+# /health, the public site, and the first two redirects of Google sign-in (no
+# account is used). Safe to run at any time, including while someone else is applying.
 #
 #   ./scripts/status.sh
 #   AWS_REGION=eu-west-1 ./scripts/status.sh
+#   SITE=https://preview.example.vercel.app ./scripts/status.sh
 #
 # Exits 1 if anything expected is missing, so it can gate a demo.
 set -uo pipefail
@@ -128,6 +130,101 @@ else
   bad "user pool $PREFIX-user-pool not found"
 fi
 
+section "Frontend wiring"
+# Vite inlines the VITE_* values at build time, so the live site only talks to
+# this stack if it was deployed after the stack was created. Every check prints
+# both sides, so a mismatch can be read straight off the screen.
+SITE="${SITE:-https://sla-aware-website-monitoring-system.vercel.app}"
+SITE="${SITE%/}" # a trailing slash would send //callback, which Cognito refuses
+row() { printf '      %-13s %s\n' "$1" "${2:-(none)}"; }
+# same <title> <label A> <value A> <label B> <value B>: ✓ only when A equals B.
+same() {
+  if [ -n "$3" ] && [ "$3" = "$5" ]; then ok "$1"; else bad "$1"; fi
+  row "$2" "$3"
+  row "$4" "$5"
+}
+if [ -z "$POOL" ] || [ "$POOL" = "None" ]; then
+  printf '  %s–%s skipped: no user pool to compare the site against\n' "$B" "$N"
+else
+  CLIENT=$(aws_ cognito-idp list-user-pool-clients --user-pool-id "$POOL" \
+    --query "UserPoolClients[?ClientName=='$PREFIX-app-client'].ClientId" --output text)
+  HOSTED="https://$(aws_ cognito-idp describe-user-pool --user-pool-id "$POOL" \
+    --query 'UserPool.Domain' --output text).auth.$REGION.amazoncognito.com"
+
+  entry=$(curl -s --max-time 15 "$SITE/" | grep -oE 'assets/index-[^"]+\.js' | head -1)
+  BUNDLE=$([ -n "$entry" ] && curl -s --max-time 15 "$SITE/$entry")
+  # Every distinct value of one shape found in the build, comma-separated.
+  in_build() { grep -oE "$1" <<< "$BUNDLE" | tr -d '"' | sort -u | paste -sd, - | sed 's/,/, /g'; }
+  printf '  site %s · build %s\n' "$SITE" "${entry:-unreadable}"
+  if [ -z "$BUNDLE" ]; then
+    bad "cannot read the deployed build from $SITE"
+  else
+    same "API URL" \
+      "site build" "$(in_build 'https://[a-z0-9]{10}\.execute-api\.[a-z0-9-]+\.amazonaws\.com')" \
+      "API Gateway" "$API"
+    same "user pool" "site build" "$(in_build "${REGION}_[A-Za-z0-9]{9}")" "Cognito" "$POOL"
+    # shortcut: the client ID has no prefix to anchor on, so this takes every
+    # 25–26 character lowercase string literal (only the client ID today); anchor
+    # it if extra values start showing up here.
+    # In a variable: bash 3.2 (macOS) misparses '"…"' nested inside "$(…)".
+    client_re='"[a-z0-9]{25,26}"'
+    same "app client" "site build" "$(in_build "$client_re")" "Cognito" "$CLIENT"
+    same "sign-in domain" \
+      "site build" "$(in_build 'https://[a-z0-9-]+\.auth\.[a-z0-9-]+\.amazoncognito\.com')" \
+      "Cognito" "$HOSTED"
+  fi
+
+  # The API rejects every token whose issuer or audience it doesn't trust (401).
+  API_ID=$(aws_ apigatewayv2 get-apis --query "Items[?Name=='$PREFIX-api'].ApiId" --output text)
+  jwt=$(aws_ apigatewayv2 get-authorizers --api-id "$API_ID" \
+    --query 'Items[0].JwtConfiguration.[Issuer, join(`,`, Audience)]' --output text)
+  IFS=$'\t' read -r iss aud <<< "$jwt"
+  same "API accepts tokens issued by" "authorizer" "$iss" \
+    "user pool" "https://cognito-idp.$REGION.amazonaws.com/$POOL"
+  same "API accepts tokens meant for" "authorizer" "${aud//,/, }" "app client" "$CLIENT"
+
+  # Walk the first two hops of "Continue with Google" without signing in. Both
+  # refusals are 302s to an error page, so the redirect target is all this reads.
+  # The client secret is not checked: it only comes into play after a real sign-in.
+  callbacks=$(aws_ cognito-idp describe-user-pool-client --user-pool-id "$POOL" --client-id "$CLIENT" \
+    --query 'UserPoolClient.CallbackURLs' --output text)
+  hop1=$(curl -s -o /dev/null -w '%{redirect_url}' --max-time 15 \
+    "$HOSTED/oauth2/authorize?identity_provider=Google&response_type=code&client_id=$CLIENT&redirect_uri=$SITE/callback&scope=openid+email+profile")
+  case "$hop1" in
+    https://accounts.google.com/*)
+      ok "Google sign-in, step 1: Cognito accepts the callback and hands off to Google" ;;
+    *error=*)
+      bad "Google sign-in, step 1: Cognito refuses it ($(sed -nE 's/.*[?&]error=([^&]+).*/\1/p' <<< "$hop1"))" ;;
+    *)
+      bad "Google sign-in, step 1: Cognito did not hand off to Google" ;;
+  esac
+  row "site sends" "$SITE/callback"
+  row "app client" "${callbacks//$'\t'/, }"
+
+  if [[ "$hop1" == https://accounts.google.com/* ]]; then
+    hop2=$(curl -s -o /dev/null -w '%{redirect_url}' --max-time 15 "$hop1")
+    case "$hop2" in
+      *"/signin/oauth/error"*)
+        # Google's reason (redirect_uri_mismatch, invalid_client, ...) is the first
+        # plain token in authError, a base64url-encoded protobuf.
+        a=$(sed -nE 's/.*authError=([^&]+).*/\1/p' <<< "$hop2" | sed 's/%3D/=/g' | tr '_-' '/+')
+        while [ $(( ${#a} % 4 )) -ne 0 ]; do a="$a="; done
+        reason=$(printf '%s' "$a" | base64 -d 2>/dev/null | LC_ALL=C tr -c 'a-z_' '\n' | grep -m1 -E '^[a-z_]{6,}$')
+        bad "Google sign-in, step 2: Google refuses Cognito's request"
+        verdict="refused: ${reason:-unknown reason}" ;;
+      https://accounts.google.com/*)
+        ok "Google sign-in, step 2: Google accepts Cognito's client ID and redirect URI"
+        verdict="accepted, shows its sign-in page" ;;
+      *)
+        bad "Google sign-in, step 2: unexpected reply from Google"
+        verdict="${hop2:-no redirect}" ;;
+    esac
+    row "client ID" "$(sed -nE 's/.*[?&]client_id=([^&]+).*/\1/p' <<< "$hop1")"
+    row "redirect URI" "$(sed -nE 's/.*[?&]redirect_uri=([^&]+).*/\1/p' <<< "$hop1" | sed 's/%3A/:/g; s#%2F#/#g')"
+    row "Google says" "$verdict"
+  fi
+fi
+
 section "SSM"
 env_name="${PREFIX##*-}"
 param="/sla-monitor/$env_name/ses/sender-email"
@@ -158,5 +255,5 @@ if [ "$MISSING" -eq 0 ]; then
   exit 0
 fi
 
-printf '  %s%s resource group(s) missing.%s See the ✗ lines above.\n\n' "$R" "$MISSING" "$N"
+printf '  %s%s check(s) failed.%s See the ✗ lines above.\n\n' "$R" "$MISSING" "$N"
 exit 1
