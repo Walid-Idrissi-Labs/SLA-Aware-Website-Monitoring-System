@@ -175,6 +175,43 @@ export const DAY_VERDICT = {
   untracked: { label: 'Not tracked', color: STATUS.neutral },
 } as const
 
+const HOUR_MS = 3_600_000
+
+/** One cell of the day × hour heatmap: its UTC hour, the window bucket for it
+ *  (null when no check landed), and whether the hour overlaps the window. */
+export interface HourCell<T> {
+  start: number
+  bucket: T | null
+  inWindow: boolean
+}
+
+/** One row of 24 UTC hours per UTC date the window [from, now] touches, oldest
+ *  first, so a column always means the same hour of the day. */
+export function hourGrid<T extends { key: string }>(buckets: T[], from: number, now: number) {
+  const byStart = new Map(buckets.map((bucket) => [Number(bucket.key), bucket]))
+  const rows: { date: string; cells: HourCell<T>[] }[] = []
+  for (let day = Math.floor(from / 86_400_000) * 86_400_000; day <= now; day += 86_400_000) {
+    const cells = Array.from({ length: 24 }, (_, hour) => {
+      const start = day + hour * HOUR_MS
+      return { start, bucket: byStart.get(start) ?? null, inWindow: start < now && start + HOUR_MS > from }
+    })
+    rows.push({ date: new Date(day).toISOString().slice(0, 10), cells })
+  }
+  return rows
+}
+
+/** Latency ramp relative to the average-latency target. No red: slow is not down. */
+export const LATENCY_LEVELS = [
+  { upTo: 0.5, color: '#2f9e6b' },
+  { upTo: 1, color: '#34d399' },
+  { upTo: 1.5, color: '#fbbf24' },
+  { upTo: Infinity, color: '#f97316' },
+] as const
+
+export function latencyColor(ms: number, target: number): string {
+  return (LATENCY_LEVELS.find((level) => ms <= level.upTo * target) ?? LATENCY_LEVELS[3]).color
+}
+
 /** Severity → display metadata (label + tailwind-friendly hex). */
 export const SEVERITY = {
   healthy: { label: 'HEALTHY', color: STATUS.ok, dim: 'rgba(52,211,153,0.14)' },
