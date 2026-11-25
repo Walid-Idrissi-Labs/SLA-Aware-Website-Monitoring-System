@@ -221,6 +221,7 @@ const FIGURE_LABEL: Record<keyof typeof VERDICT, string> = {
 
 const DAY_LEGEND = [
   ['Operational', 'bg-ok/70'],
+  ['Thin (under half the checks)', 'bg-ok/30'],
   ['Outage', 'bg-crit/80'],
   ['No data', 'bg-white/20'],
   ['Not tracked', 'shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]'],

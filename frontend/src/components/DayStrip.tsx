@@ -29,9 +29,9 @@ function barClass(day: Day, active: boolean) {
 function DayCard({ day, since, now, anchor, leaving }: { day: Day; since: string | null; now: number; anchor: DOMRect; leaving: boolean }) {
   const meta = DAY_VERDICT[day.verdict]
   const today = now < Date.parse(`${day.date}T00:00:00Z`) + 86_400_000
-  const note = [today ? 'today so far' : null, day.thin ? 'under half the expected checks' : null, 'UTC day']
-    .filter(Boolean)
-    .join(' · ')
+  // One short line, so the card never changes height while gliding along the strip.
+  const parts = [today ? 'today so far' : null, day.thin ? 'thin coverage' : null].filter(Boolean)
+  const note = parts.length ? `${parts.join(' · ')} · UTC` : 'UTC day'
 
   return (
     <HoverCard anchor={anchor} leaving={leaving}>

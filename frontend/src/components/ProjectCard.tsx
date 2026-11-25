@@ -76,12 +76,12 @@ export default function ProjectCard({ project, checks, verdict, daily, now }: Pr
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
           <StatusStrip checks={checks} bars={44} className="min-w-0 flex-1" />
-          <span className="w-6 flex-none text-right font-mono text-[9.5px] text-txt-dim">44m</span>
+          <span className="w-6 flex-none text-right font-mono text-[9.5px] text-txt-lo">44m</span>
         </div>
         {daily && (
           <div className="flex items-center gap-2">
             <DayStrip daily={daily} createdAt={project.created_at} now={now} className="min-w-0 flex-1" />
-            <span className="w-6 flex-none text-right font-mono text-[9.5px] text-txt-dim">{daily.days.length}d</span>
+            <span className="w-6 flex-none text-right font-mono text-[9.5px] text-txt-lo">{daily.days.length}d</span>
           </div>
         )}
       </div>
