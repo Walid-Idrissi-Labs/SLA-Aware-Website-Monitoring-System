@@ -26,7 +26,8 @@ export default function Shell({ ticker, children }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const modalOpen = document.querySelector('[aria-modal="true"]')
-      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
+      // `key` can be missing on autofill keydowns, hence the `?.`.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key?.toLowerCase() === 'k') {
         e.preventDefault() // Firefox would focus its own search bar on Ctrl+K.
         if (!modalOpen || palette) setPalette((open) => (open === 'palette' ? null : 'palette'))
         return
@@ -84,7 +85,8 @@ export default function Shell({ ticker, children }: Props) {
         </main>
       </div>
 
-      {palette && <CommandPalette mode={palette} onClose={() => setPalette(null)} />}
+      {/* Keyed by mode, so switching from the sheet to the palette remounts and focuses the input. */}
+      {palette && <CommandPalette key={palette} mode={palette} onClose={() => setPalette(null)} />}
     </div>
   )
 }

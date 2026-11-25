@@ -101,6 +101,11 @@ export default function CommandPalette({ mode, onClose }: { mode: 'palette' | 's
       onClose()
       return
     }
+    // Keep focus inside the dialog: there is nothing else to tab to in it.
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      return
+    }
     if (mode !== 'palette' || !items.length) return
     const index = active ? items.indexOf(active) : -1
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -149,8 +154,7 @@ export default function CommandPalette({ mode, onClose }: { mode: 'palette' | 's
               />
               <kbd className="flex-none rounded border border-white/10 px-1.5 py-0.5 font-mono text-[10.5px] text-txt-lo">Esc</kbd>
             </div>
-            <div id="palette-listbox" role="listbox" aria-label="Results" className="max-h-[52vh] overflow-y-auto p-1.5">
-              {items.length === 0 && <p className="px-3 py-6 text-center text-[13px] text-txt-lo">Nothing matches “{query}”.</p>}
+            <div id="palette-listbox" role="listbox" aria-label="Results" className="max-h-[52vh] overflow-y-auto p-1.5 empty:hidden">
               {GROUPS.map((group) => {
                 const members = items.filter((item) => item.group === group)
                 if (!members.length) return null
@@ -188,8 +192,10 @@ export default function CommandPalette({ mode, onClose }: { mode: 'palette' | 's
                   </div>
                 )
               })}
-              {endpoints == null && !query && <p className="px-3 pb-2 pt-2.5 text-[11.5px] text-txt-dim">Loading endpoints…</p>}
             </div>
+            {/* Outside the listbox, which may only own options and groups. */}
+            {items.length === 0 && <p className="px-3 py-6 text-center text-[13px] text-txt-lo">Nothing matches “{query}”.</p>}
+            {endpoints == null && !query && <p className="px-4 pb-3 text-[11.5px] text-txt-dim">Loading endpoints…</p>}
           </>
         ) : (
           <div className="p-5">
