@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import Counter from './Counter'
 
 interface Props {
@@ -15,34 +15,38 @@ const pad = (value: number) => String(Math.max(0, Math.floor(value))).padStart(2
 /**
  * Flip-clock readout of the time since the last incident resolved.
  *
- * Ticks once a second, but only while the tab is visible — a backgrounded
- * dashboard has no business waking the CPU sixty times a minute. Counter only
- * animates a digit whose value actually changed, so a tick usually costs one
- * rolling tile.
+ * Ticks once a second, but only while the tab is visible and the clock is on
+ * screen. Each tick rolls a digit for most of that second, so a clock scrolled
+ * out of view would otherwise burn as much CPU as one being watched.
+ * Counter only animates a digit whose value actually changed, so a tick
+ * usually costs one rolling tile.
  */
 export default function FlipClock({ since, open = false, label = 'No recorded incidents in', className = '' }: Props) {
   const [now, setNow] = useState(() => Date.now())
+  const root = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (since == null || open) return
     let timer = 0
-    const start = () => {
+    let onScreen = true
+    // (Re)start from the current time when the clock can be seen; stop otherwise.
+    const sync = () => {
       window.clearInterval(timer)
+      if (document.hidden || !onScreen) return
+      setNow(Date.now())
       timer = window.setInterval(() => setNow(Date.now()), 1000)
     }
-    const onVisibility = () => {
-      if (document.hidden) window.clearInterval(timer)
-      else {
-        setNow(Date.now())
-        start()
-      }
-    }
-    setNow(Date.now())
-    start()
-    document.addEventListener('visibilitychange', onVisibility)
+    const observer = new IntersectionObserver(([entry]) => {
+      onScreen = entry.isIntersecting
+      sync()
+    })
+    if (root.current) observer.observe(root.current)
+    sync()
+    document.addEventListener('visibilitychange', sync)
     return () => {
       window.clearInterval(timer)
-      document.removeEventListener('visibilitychange', onVisibility)
+      observer.disconnect()
+      document.removeEventListener('visibilitychange', sync)
     }
   }, [since, open])
 
@@ -73,7 +77,7 @@ export default function FlipClock({ since, open = false, label = 'No recorded in
   ]
 
   return (
-    <div className={`fc ${className}`.trim()}>
+    <div ref={root} className={`fc ${className}`.trim()}>
       <p className="fc__label">{label}</p>
       <div className="fc__row">
         {units.map((unit, index) => (

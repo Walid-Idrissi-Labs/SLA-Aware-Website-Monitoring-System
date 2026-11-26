@@ -3,6 +3,9 @@
     "target": "ES2020",
     "useDefineForClassFields": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    // Only what the code imports or references: a stray @types package in a parent
+    // folder must not make the local check pass where the clean Vercel build fails.
+    "types": [],
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",

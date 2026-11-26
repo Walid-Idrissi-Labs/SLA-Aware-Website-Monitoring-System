@@ -1,10 +1,14 @@
 import json
 import os
+import random
+import re
 import ssl
 import socket
 import time
 import logging
 import decimal
+from concurrent.futures import ThreadPoolExecutor, wait
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 import boto3
@@ -38,6 +42,19 @@ SES_SENDER_PARAM_PATH = os.environ["SES_SENDER_PARAM_PATH"]
 # Cert expiry is slow-moving per-project state; refresh it at most this often
 # rather than on every per-minute check.
 CERT_REFRESH_SECONDS = int(os.environ.get("CERT_REFRESH_SECONDS", "21600"))  # 6h
+# Targets are probed in parallel so a few slow sites cannot starve the rest of the
+# scan. Kept small: a 256 MB Lambda has a fraction of a vCPU, and more concurrent
+# TLS handshakes would inflate the very latencies being measured.
+CHECK_WORKERS = 8
+# Probing stops when this much time is left, so every finished check still gets
+# written and alerted on: a run killed mid-way is retried by the async invoke and
+# would write its checks twice. An alert alone costs an SSM and an SES call.
+WRITE_RESERVE_SECONDS = 12
+# Each check is also tallied per UTC day on its project row (d20261125_up, …), so
+# day verdicts never have to read a month of checks. Older days are pruned.
+DAILY_KEEP_DAYS = 45
+DAY_KEY = re.compile(r"^d(\d{8})_(up|down|inconclusive)$")
+DAY_STATUS = {"success": "up", "failure": "down"}
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -200,23 +217,18 @@ def perform_http_check(url: str, accepted_statuses: str | None = None) -> dict:
     }
 
 
-def refresh_certificate_if_stale(project: dict) -> None:
-    """Refresh the project's cached TLS cert fields at most every CERT_REFRESH_SECONDS.
+def certificate_due(project: dict) -> bool:
+    """True when an HTTPS project's cached TLS cert fields are older than CERT_REFRESH_SECONDS.
 
     Cert data is stored on the project row (slow-moving state), not on every
     per-minute check row (which TTLs out at 90 days).
     """
-    url = project.get("url", "")
-    if not url.lower().startswith("https"):
-        return
-    last_checked = int(project.get("cert_checked_at") or 0)
-    if (int(time.time()) - last_checked) <= CERT_REFRESH_SECONDS:
-        return
+    if not project.get("url", "").lower().startswith("https"):
+        return False
+    return int(time.time()) - int(project.get("cert_checked_at") or 0) > CERT_REFRESH_SECONDS
 
-    cert = probe_certificate(url)
-    if not cert:
-        return
 
+def save_certificate(project: dict, cert: dict) -> None:
     projects_table.update_item(
         Key={"project_id": project["project_id"]},
         UpdateExpression="SET cert_expiry_days = :d, cert_issuer = :i, cert_checked_at = :t",
@@ -304,29 +316,25 @@ def get_first_failure_timestamp(items: list[dict]) -> int:
     return first_failure_ts if first_failure_ts is not None else int(time.time() * 1000)
 
 
-def check_project(project: dict) -> None:
-    project_id = project["project_id"]
-    failure_threshold = int(project.get("failure_threshold", FAILURE_THRESHOLD_DEFAULT))
-    notification_email = project.get("notification_email")
+def run_check(project: dict) -> dict:
+    """The HTTP check, timestamped when it returns. Runs in a worker thread, so it
+    makes no AWS calls (boto3 resources are not thread-safe) and keeps no state."""
+    result = perform_http_check(project["url"], project.get("accepted_status") or DEFAULT_ACCEPTED_STATUSES)
+    result["timestamp"] = int(time.time() * 1000)
+    return result
 
 
-    check_result = perform_http_check(
-        project["url"], project.get("accepted_status") or DEFAULT_ACCEPTED_STATUSES
-    )
-    now_ms = int(time.time() * 1000)
-    ttl_seconds = int(time.time()) + 7_776_000  # 90 days : dynamodb ttl expects seconds
-
-
+def write_check(project: dict, check_result: dict) -> None:
     check_record = {
-        "project_id": project_id,
-        "timestamp": now_ms,
+        "project_id": project["project_id"],
+        "timestamp": check_result["timestamp"],
         "status": check_result["status"],
         "latency_ms": check_result["latency_ms"],
         "http_status_code": check_result["http_status_code"],
         # Snapshot of the rule that judged this check. Editing a project's
         # accepted statuses later must not rewrite history.
         "accepted_status": project.get("accepted_status") or DEFAULT_ACCEPTED_STATUSES,
-        "ttl": ttl_seconds,
+        "ttl": check_result["timestamp"] // 1000 + 7_776_000,  # 90 days: dynamodb ttl expects seconds
     }
     # Only stored on failures — success has no cause and a null attribute is noise.
     if check_result.get("error_type"):
@@ -339,13 +347,37 @@ def check_project(project: dict) -> None:
         f"http_status={check_result['http_status_code']}, error_type={check_result['error_type']}"
     )
 
-    # Slow-moving cert state, refreshed on its own cadence. Isolated so a write
-    # failure here can never suppress the alerting below.
-    try:
-        refresh_certificate_if_stale(project)
-    except Exception as exc:
-        logger.warning(f"Cert refresh failed for {project_id}: {exc}")
 
+def count_check(project: dict, check_result: dict) -> None:
+    """Add the check to its UTC day's tally on the project row; ADD creates the counter."""
+    day = datetime.fromtimestamp(check_result["timestamp"] / 1000, timezone.utc)
+    names = {
+        "#pid": "project_id",
+        "#count": f"d{day:%Y%m%d}_{DAY_STATUS.get(check_result['status'], 'inconclusive')}",
+        "#since": "daily_since",
+    }
+    expression = "ADD #count :one SET #since = if_not_exists(#since, :day)"
+    # Prune the old days this row actually holds; deleting one fixed day would
+    # leave behind any day the monitor happened to skip.
+    cutoff = f"{day - timedelta(days=DAILY_KEEP_DAYS):%Y%m%d}"
+    old = [key for key in project if (match := DAY_KEY.match(key)) and match.group(1) < cutoff]
+    if old:
+        names.update({f"#old{i}": key for i, key in enumerate(old)})
+        expression += " REMOVE " + ", ".join(f"#old{i}" for i in range(len(old)))
+    projects_table.update_item(
+        Key={"project_id": project["project_id"]},
+        UpdateExpression=expression,
+        # Never create a row for a project that no longer exists.
+        ConditionExpression="attribute_exists(#pid)",
+        ExpressionAttributeNames=names,
+        ExpressionAttributeValues={":one": 1, ":day": f"{day:%Y-%m-%d}"},
+    )
+
+
+def alert_on_transition(project: dict, check_result: dict) -> None:
+    project_id = project["project_id"]
+    failure_threshold = int(project.get("failure_threshold", FAILURE_THRESHOLD_DEFAULT))
+    notification_email = project.get("notification_email")
 
     recent_checks = fetch_recent_checks(project_id, failure_threshold)
     transition = detect_transition(recent_checks, failure_threshold)
@@ -402,21 +434,71 @@ def lambda_handler(event: dict, context) -> dict:
 
     logger.info(f"Processing {len(projects)} active project(s)")
 
-    for index, project in enumerate(projects):
-        # Stop before the runtime kills us mid-check: a truncated run would be
-        # retried by the async invoke and write duplicate check rows.
-        if context.get_remaining_time_in_millis() < (HTTP_TIMEOUT_SECONDS + 5) * 1000:
-            skipped = [p["project_id"] for p in projects[index:]]
-            logger.warning(f"Out of time — skipped {len(skipped)} project(s) this cycle: {skipped}")
-            break
+    # shortcut: 8 workers finish about 8 timeouts inside the probe window; past that,
+    # some checks are skipped each cycle. Shuffled, so no project is starved every
+    # time. Add workers (and memory) if a real fleet gets there.
+    random.shuffle(projects)
+    # Every target is probed in parallel; all AWS calls then happen on this thread.
+    # Not a `with` block: that would wait for a straggler instead of abandoning it.
+    pool = ThreadPoolExecutor(max_workers=min(len(projects), CHECK_WORKERS))
+    checks = [pool.submit(run_check, project) for project in projects]
+    certs = [
+        pool.submit(probe_certificate, project["url"]) if certificate_due(project) else None
+        for project in projects
+    ]
+    budget = context.get_remaining_time_in_millis() / 1000 - WRITE_RESERVE_SECONDS
+    wait([f for f in checks + certs if f], timeout=max(budget, 0))
+    pool.shutdown(wait=False, cancel_futures=True)
 
+    def finished(future) -> bool:
+        return future is not None and future.done() and not future.cancelled()
+
+    def time_left() -> bool:
+        # Stop before the runtime kills us mid-write: a truncated run would be
+        # retried by the async invoke and write duplicate check rows.
+        return context.get_remaining_time_in_millis() > 2_000
+
+    # Evidence first: every finished check is stored before any alert is
+    # evaluated, so a slow SES call can never cost a check.
+    written, skipped = [], []
+    for project, check, cert in zip(projects, checks, certs):
+        if not finished(check) or not time_left():
+            skipped.append(project["project_id"])
+            continue
         try:
-            check_project(project)
+            result = check.result()
+            write_check(project, result)
+            written.append((project, result))
         except Exception as e:
             # One broken project (bad URL, throttle, malformed record) must not
             # take down monitoring for every other tenant.
             logger.error(f"Check failed for project {project.get('project_id')}: {e}")
+            continue
+        try:
+            count_check(project, result)
+        except Exception as exc:
+            # The check is already stored; a failed rollup only lets the day's count drift.
+            logger.warning(f"Daily rollup failed for {project['project_id']}: {exc}")
+        # Slow-moving cert state on its own cadence; a failure here never touches the check.
+        if finished(cert) and cert.result():
+            try:
+                save_certificate(project, cert.result())
+            except Exception as exc:
+                logger.warning(f"Cert refresh failed for {project['project_id']}: {exc}")
 
+    if skipped:
+        # shortcut: a site slower than the whole probe window is skipped, so it reads
+        # STALE rather than DOWN; add a per-request total deadline if real sites hit this.
+        logger.warning(f"Out of time — skipped {len(skipped)} project(s) this cycle: {skipped}")
+
+    for project, result in written:
+        if not time_left():
+            logger.warning(f"Out of time — transitions not evaluated for project {project['project_id']} onwards")
+            break
+        try:
+            alert_on_transition(project, result)
+        except Exception as e:
+            logger.error(f"Alerting failed for project {project['project_id']}: {e}")
 
 
     logger.info("Monitor Lambda completed successfully")

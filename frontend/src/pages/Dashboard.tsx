@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { RefreshCw, Plus, Radar } from 'lucide-react'
 import Shell from '../components/Shell'
 import TickerStat from '../components/TickerStat'
@@ -7,11 +7,12 @@ import ProjectCard from '../components/ProjectCard'
 import AddProjectModal from '../components/AddProjectModal'
 import MagicBento, { type MagicBentoItem } from '../components/MagicBento'
 import Counter from '../components/Counter'
+import HowCalculated from '../components/HowCalculated'
 import { BentoFigure, BentoArea, BentoBars, BentoTiles, BentoSteps } from '../components/BentoVisuals'
 import ActionButton from '../components/ActionButton'
 import { Alert } from '../components/ui'
 import { getProjects, getProjectStatus } from '../lib/api'
-import { POLL_INTERVAL_MS, STATUS } from '../lib/format'
+import { POLL_INTERVAL_MS, STATUS, verdictFor, type Verdict } from '../lib/format'
 import type { Check, Project, ProjectStatus } from '../types'
 
 /** Consecutive failures at the end of the check list, newest first. */
@@ -26,6 +27,15 @@ function failureStreak(checks: Check[]): number {
   return streak
 }
 
+const TILE_TONE: Record<Verdict, 'ok' | 'crit' | 'warn' | 'neutral'> = {
+  up: 'ok',
+  down: 'crit',
+  stale: 'warn',
+  inconclusive: 'neutral',
+  off: 'neutral',
+  pending: 'neutral',
+}
+
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
   const [statuses, setStatuses] = useState<Record<string, ProjectStatus>>({})
@@ -33,21 +43,30 @@ export default function Dashboard() {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
+  // Captured on every poll, failed ones too, so a stopped monitor or a dead API
+  // ages the data into STALE instead of leaving the last verdict up forever.
+  const [now, setNow] = useState(Date.now)
   const requestSeq = useRef(0)
   const navigate = useNavigate()
+  const location = useLocation()
+
+  // "Add endpoint" from the command palette arrives as a one-off navigation flag.
+  useEffect(() => {
+    if ((location.state as { addEndpoint?: boolean } | null)?.addEndpoint) {
+      setShowAddModal(true)
+      navigate(location.pathname, { replace: true, state: null }) // so a refresh does not reopen it
+    }
+  }, [location.state, location.pathname, navigate])
 
   const loadProjects = useCallback(async () => {
     const seq = ++requestSeq.current
     setLoading(true)
     try {
-      const data = await getProjects()
-      const results = await Promise.allSettled(data.map((p) => getProjectStatus(p.project_id, 1)))
+      const data = await getProjects(1)
       if (seq !== requestSeq.current) return // a newer request superseded this one
       const statusMap: Record<string, ProjectStatus> = {}
-      results.forEach((res, i) => {
-        if (res.status === 'fulfilled') {
-          statusMap[data[i].project_id] = res.value
-        }
+      data.forEach((p) => {
+        if (p.status) statusMap[p.project_id] = p.status
       })
       setProjects(data)
       setStatuses(statusMap)
@@ -59,7 +78,10 @@ export default function Dashboard() {
       // shouldn't wipe a working dashboard.
       setError(e instanceof Error ? e.message : 'Failed to load projects')
     } finally {
-      if (seq === requestSeq.current) setLoading(false)
+      if (seq === requestSeq.current) {
+        setLoading(false)
+        setNow(Date.now())
+      }
     }
   }, [])
 
@@ -68,7 +90,11 @@ export default function Dashboard() {
   }, [loadProjects])
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => loadProjects(), POLL_INTERVAL_MS)
+    // A hidden tab gets refetched by the visibility listener below, so polling
+    // it in the background is a fetch plus a full re-render for nobody.
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') loadProjects()
+    }, POLL_INTERVAL_MS)
     return () => window.clearInterval(intervalId)
   }, [loadProjects])
 
@@ -81,17 +107,26 @@ export default function Dashboard() {
   }, [loadProjects])
 
   const activeProjects = useMemo(() => projects.filter((p) => p.active), [projects])
+  const verdicts = useMemo(
+    () => Object.fromEntries(activeProjects.map((p) => [p.project_id, verdictFor(p, now)])),
+    [activeProjects, now],
+  )
+  const tally = (...wanted: Verdict[]) => activeProjects.filter((p) => wanted.includes(verdicts[p.project_id])).length
   const total = activeProjects.length
-  // A project with no checks yet is "pending", not down.
-  const checked = activeProjects.filter((p) => p.current_status === 'success' || p.current_status === 'failure')
-  const healthy = checked.filter((p) => p.current_status === 'success').length
-  const withLatency = activeProjects.filter((p) => p.last_latency_ms != null)
+  const healthy = tally('up')
+  // Every endpoint past its first check owes an answer: stale or unanswered
+  // ones count against health without being called failures.
+  const due = total - tally('pending')
+  const unverified = tally('stale', 'inconclusive')
+  // Only an endpoint that is up right now has a current, real latency: a stale one
+  // is old, and a down or unanswered one may carry the synthetic timeout value.
+  const withLatency = activeProjects.filter((p) => p.last_latency_ms != null && verdicts[p.project_id] === 'up')
   const avgLatency =
     withLatency.length > 0
       ? Math.round(withLatency.reduce((sum, p) => sum + (p.last_latency_ms || 0), 0) / withLatency.length)
       : null
-  const incidents = checked.filter((p) => p.current_status === 'failure').length
-  const healthPct = checked.length > 0 ? (healthy / checked.length) * 100 : null
+  const incidents = tally('down')
+  const healthPct = due > 0 ? (healthy / due) * 100 : null
 
   /** One bucket per minute across every endpoint: the pass rate and the mean
    *  latency for that minute. Inconclusive checks are excluded from both — an
@@ -141,8 +176,8 @@ export default function Dashboard() {
           project,
           streak: failureStreak(statuses[project.project_id]?.checks ?? []),
         }))
-        .filter((entry) => entry.project.current_status === 'failure'),
-    [activeProjects, statuses],
+        .filter((entry) => verdicts[entry.project.project_id] === 'down'),
+    [activeProjects, statuses, verdicts],
   )
 
   const kpis: MagicBentoItem[] = useMemo(() => {
@@ -152,7 +187,19 @@ export default function Dashboard() {
     return [
       {
         id: 'health',
-        title: 'System Health',
+        title: (
+          <HowCalculated
+            label="System Health"
+            topic="system health"
+            empty={due === 0 ? 'No endpoint has been checked yet' : false}
+            rows={[
+              { label: 'Up now', value: healthy },
+              { label: 'Due an answer', value: due },
+            ]}
+            result={healthPct != null && `${healthy} ÷ ${due} = ${healthPct.toFixed(1)}%`}
+            caveat="A new endpoint is not due yet; a stale or unanswered one counts against health without being called a failure."
+          />
+        ),
         description: 'Minute-by-minute pass rate across every endpoint.',
         visual: (
           <>
@@ -177,7 +224,7 @@ export default function Dashboard() {
                   />
                 )
               }
-              note={checked.length > 0 ? `${healthy} of ${checked.length} responding` : 'no checks yet'}
+              note={due > 0 ? `${healthy} of ${due} up` : 'no checks yet'}
             />
             <BentoArea
               values={healthSeries}
@@ -189,7 +236,16 @@ export default function Dashboard() {
       },
       {
         id: 'latency',
-        title: 'Avg Latency',
+        title: (
+          <HowCalculated
+            label="Avg Latency"
+            topic="average latency"
+            empty={avgLatency == null ? 'No endpoint is up right now' : false}
+            rows={[{ label: 'Endpoints up', value: withLatency.length }]}
+            result={`mean of their latest latency = ${avgLatency} ms`}
+            caveat="Down, stale or unanswered endpoints are left out: a timeout is not a latency."
+          />
+        ),
         description: 'Mean response time, bucketed by minute.',
         visual: (
           <>
@@ -221,8 +277,19 @@ export default function Dashboard() {
       },
       {
         id: 'incidents',
-        title: 'Active Incidents',
-        description: 'Endpoints that have tripped their failure threshold.',
+        title: (
+          <HowCalculated
+            label="Active Incidents"
+            topic="active incidents"
+            rows={[
+              { label: 'Failing now', value: incidents },
+              { label: 'Unverified', value: unverified },
+            ]}
+            result={`${incidents} endpoint${incidents === 1 ? '' : 's'} whose latest check failed`}
+            caveat="Stale and no-evidence endpoints are unverified, not failing. The incident log needs failures in a row."
+          />
+        ),
+        description: 'Endpoints whose latest check failed.',
         visual: (
           <>
             <BentoFigure
@@ -240,7 +307,15 @@ export default function Dashboard() {
                   motionBlur
                 />
               }
-              note={incidents > 0 ? 'failing now' : 'all clear'}
+              note={
+                incidents > 0 ? (
+                  'failing now'
+                ) : unverified > 0 ? (
+                  <span style={{ color: STATUS.warn }}>{unverified} unverified</span>
+                ) : (
+                  'all clear'
+                )
+              }
             />
             <BentoSteps
               steps={
@@ -257,7 +332,15 @@ export default function Dashboard() {
       },
       {
         id: 'endpoints',
-        title: 'Endpoints',
+        title: (
+          <HowCalculated
+            label="Endpoints"
+            topic="the endpoint count"
+            rows={[{ label: 'Active', value: total }]}
+            result={`${total} endpoint${total === 1 ? '' : 's'}, each checked every minute`}
+            caveat="Deleted endpoints are not counted."
+          />
+        ),
         description: 'Probed once a minute, around the clock.',
         visual: (
           <>
@@ -266,28 +349,31 @@ export default function Dashboard() {
               items={activeProjects.map((project) => ({
                 key: project.project_id,
                 label: project.name,
-                tone:
-                  project.current_status === 'success'
-                    ? ('ok' as const)
-                    : project.current_status === 'failure'
-                      ? ('crit' as const)
-                      : ('neutral' as const),
+                tone: TILE_TONE[verdicts[project.project_id]],
               }))}
             />
           </>
         ),
       },
     ]
-  }, [healthPct, avgLatency, incidents, total, healthy, checked.length, timeline, failing, activeProjects])
+  }, [healthPct, avgLatency, withLatency.length, incidents, unverified, total, healthy, due, timeline, failing, activeProjects, verdicts])
 
   const cards: MagicBentoItem[] = useMemo(
     () =>
       activeProjects.map((project) => ({
         id: project.project_id,
         onClick: () => navigate(`/projects/${project.project_id}`),
-        content: <ProjectCard project={project} checks={statuses[project.project_id]?.checks || []} />,
+        content: (
+          <ProjectCard
+            project={project}
+            checks={statuses[project.project_id]?.checks || []}
+            verdict={verdicts[project.project_id]}
+            daily={statuses[project.project_id]?.daily}
+            now={now}
+          />
+        ),
       })),
-    [activeProjects, statuses, navigate],
+    [activeProjects, statuses, verdicts, now, navigate],
   )
 
   const ticker = (

@@ -37,6 +37,8 @@ export interface Project {
   cert_expiry_days?: number | null;
   cert_issuer?: string | null;
   cert_checked_at?: number | null;
+  /** Only when fetched with getProjects(statusHours). */
+  status?: ProjectStatus;
 }
 
 export interface Check {
@@ -60,6 +62,9 @@ export interface Incident {
   duration_seconds: number | null;
   resolved: boolean;
   cause?: ErrorType | null;
+  /** Set when it was closed without an observed recovery: the project stopped
+   *  being monitored (deleted or paused) while it was still down. */
+  closed_reason?: 'monitoring_stopped' | null;
 }
 
 export interface ErrorBudget {
@@ -104,11 +109,31 @@ export interface StatusSummary {
   coverage_pct: number;
 }
 
+/** One UTC day of a monitor's history. */
+export interface DailyTally {
+  /** UTC date, "YYYY-MM-DD". */
+  date: string;
+  up: number;
+  down: number;
+  inconclusive: number;
+  /** Seconds of confirmed outage (incidents) inside this UTC day. */
+  outage_sec: number;
+}
+
+export interface Daily {
+  /** First UTC day the monitor tallied, or null before it has tallied any. */
+  since: string | null;
+  /** Oldest first, one entry per day. */
+  days: DailyTally[];
+}
+
 export interface ProjectStatus {
   project_id: string;
   current_status: 'success' | 'failure' | 'inconclusive' | 'unknown';
   summary?: StatusSummary;
   checks: Check[];
+  /** 30 days on /status, 14 on the dashboard list. Absent before the API serves it. */
+  daily?: Daily;
 }
 
 export interface ProjectReport {

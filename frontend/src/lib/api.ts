@@ -1,4 +1,5 @@
 import { getToken, clearToken, storeUser } from './auth';
+import { DEMO } from './demo';
 import type {
   User,
   Project,
@@ -16,6 +17,8 @@ async function request<T>(
   path: string,
   body?: unknown
 ): Promise<T> {
+  // The demo answers from the browser: no API, no token, no 401 path.
+  if (DEMO) return (await import('../demo/handler')).handle<T>(method, path, body);
   if (!API_BASE) {
     throw new Error('VITE_API_GATEWAY_URL is not configured');
   }
@@ -33,11 +36,11 @@ async function request<T>(
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  // Expired or revoked session: stop polling with a dead token and
-  // send the user back to sign in.
+  // Expired or revoked session: stop polling with a dead token and send the
+  // user back to sign in, saying why — a bare redirect reads as a bug.
   if (res.status === 401) {
     clearToken();
-    window.location.assign('/login');
+    window.location.assign('/login?expired=1');
     throw new Error('Session expired');
   }
 
@@ -86,8 +89,9 @@ export function getProject(projectId: string): Promise<Project> {
   return request<Project>('GET', `/projects/${projectId}`)
 }
 
-export function getProjects(): Promise<Project[]> {
-  return request<Project[]>('GET', '/projects')
+/** With `statusHours`, each project also carries its /status payload for that window. */
+export function getProjects(statusHours?: number): Promise<Project[]> {
+  return request<Project[]>('GET', statusHours ? `/projects?include=status&hours=${statusHours}` : '/projects')
 }
 
 export function createProject(data: CreateProjectInput): Promise<Project> {

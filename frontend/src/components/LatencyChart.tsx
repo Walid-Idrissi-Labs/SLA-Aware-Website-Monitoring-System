@@ -63,7 +63,27 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
     const top = Math.ceil(maxRaw / magnitude) * magnitude
     const x = (i: number) => padL + (i / (sorted.length - 1 || 1)) * chartW
     const y = (v: number) => padT + (1 - v / top) * chartH
-    const pts = sorted.map((c, i) => [x(i), y(c.latency_ms)] as const)
+
+    // At most one point per pixel, keeping the worst latency in each bucket so
+    // spikes survive. A 72h window is ~4,300 checks drawn across ~1,100 px;
+    // plotting them all cost a 130 kB path and a getTotalLength() on every poll.
+    const perBucket = Math.max(1, Math.ceil(sorted.length / Math.max(chartW, 100)))
+    const pts: (readonly [number, number])[] = []
+    let lastIndex = -1
+    for (let start = 0; start < sorted.length; start += perBucket) {
+      const end = Math.min(start + perBucket, sorted.length)
+      let worst = start
+      for (let i = start + 1; i < end; i++) {
+        if (sorted[i].latency_ms > sorted[worst].latency_ms) worst = i
+      }
+      pts.push([x(worst), y(sorted[worst].latency_ms)] as const)
+      lastIndex = worst
+    }
+    // Keep the line touching "now" even when the final bucket peaks early.
+    if (lastIndex !== sorted.length - 1) {
+      const tail = sorted[sorted.length - 1]
+      pts.push([x(sorted.length - 1), y(tail.latency_ms)] as const)
+    }
     return { top, x, y, pts }
   }, [sorted, chartW, chartH, width])
 

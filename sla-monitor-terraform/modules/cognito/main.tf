@@ -1,7 +1,10 @@
 resource "aws_cognito_user_pool" "main" {
   name = "${var.name_prefix}-user-pool"
 
-  # email-based sign-in
+  # The email is the sign-in name, not an alias. With an alias, only the last
+  # account to verify an address can sign in with it, so a Google account and a
+  # password account on the same address could lock each other out.
+  # Create-only: changing this replaces the pool.
   username_attributes = ["email"]
 
   #*tells cognito to auto send email (and to treat the email as verified)
@@ -43,22 +46,18 @@ resource "aws_cognito_user_pool" "main" {
     name                = "email"
     attribute_data_type = "String"
     required            = true
-    mutable             = false
+    // Must stay mutable. An IdP attribute mapping that writes an immutable
+    // attribute only succeeds on the sign-in that creates the user; every later
+    // sign-in fails with "user.email: Attribute cannot be updated".
+    mutable = true
   }
 
-  schema {
-    name                = "name"
-    attribute_data_type = "String"
-    required            = false
-    mutable             = true
-  }
+  # No `name` block: it is a standard attribute and already optional + mutable.
+  # Declaring those defaults makes the provider drop it from state, then try to
+  # add it back as a custom attribute on every apply.
 
   tags = {
     Name = "${var.name_prefix}-user-pool"
-  }
-
-  lifecycle {
-    ignore_changes = [schema]
   }
 
 }
@@ -87,7 +86,9 @@ resource "aws_cognito_identity_provider" "google" {
     authorize_url                 = "https://accounts.google.com/o/oauth2/v2/auth"
     oidc_issuer                   = "https://accounts.google.com"
     token_request_method          = "POST"
-    token_url                     = "https://oauth2.googleapis.com/token"
+    # Cognito pins Google's endpoints and returns this value whatever is sent;
+    # anything else shows up as a change on every plan.
+    token_url = "https://www.googleapis.com/oauth2/v4/token"
 
   }
 

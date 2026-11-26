@@ -1,6 +1,7 @@
 import { useId, type ReactNode } from 'react'
 import { Check } from 'lucide-react'
 import { STATUS } from '../lib/format'
+import { smoothPath } from '../lib/chart'
 
 /**
  * Visual building blocks for bento cards: the figure, and the four chart
@@ -188,6 +189,137 @@ export function BentoSteps({
           </li>
         ))}
       </ol>
+    </div>
+  )
+}
+
+/** Every check the schedule expected, split by outcome. Checks that never ran
+ *  are the empty track at the end, so missing evidence stays visible, and any
+ *  non-zero part keeps a minimum width so a single failure is never invisible. */
+export function BentoComposition({
+  parts,
+  expected,
+}: {
+  parts: Array<{ key: string; label: string; value: number; color: string }>
+  expected: number
+}) {
+  const base = Math.max(expected, parts.reduce((sum, part) => sum + part.value, 0), 1)
+  return (
+    <div className="flex h-3 w-full gap-[2px] overflow-hidden rounded-full bg-white/[0.05]">
+      {parts
+        .filter((part) => part.value > 0)
+        .map((part) => (
+          <span
+            key={part.key}
+            title={`${part.label}: ${part.value.toLocaleString('en-US')}`}
+            className="h-full min-w-[3px] first:rounded-l-full"
+            style={{ flexBasis: `${(part.value / base) * 100}%`, backgroundColor: part.color }}
+          />
+        ))}
+    </div>
+  )
+}
+
+/** Latency band: the p50 line over a p50–p95 fill, against the SLO target drawn
+ *  as a dashed rule. Same stretch-to-fit SVG approach as BentoArea. */
+export function BentoBand({
+  p50,
+  p95,
+  target,
+  color = STATUS.accent,
+}: {
+  p50: number[]
+  p95: number[]
+  target: number
+  color?: string
+}) {
+  const gid = useId()
+  const n = Math.min(p50.length, p95.length)
+  if (n < 2) {
+    return (
+      <div className="mb__plot">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" fill="none" aria-hidden="true">
+          <line x1="0" y1="97" x2="100" y2="97" stroke={color} strokeOpacity="0.25" strokeWidth="1.5" />
+        </svg>
+      </div>
+    )
+  }
+  const top = Math.max(target, ...p95.slice(0, n)) * 1.15
+  const y = (v: number) => Math.min(98, Math.max(2, 100 - (v / top) * 100))
+  const point = (values: number[], i: number) => [(i / (n - 1)) * 100, y(values[i])] as const
+  const upper = Array.from({ length: n }, (_, i) => point(p95, i))
+  const lower = Array.from({ length: n }, (_, i) => point(p50, i))
+  const upperPath = smoothPath(upper)
+  // The band closes by walking the p50 line backwards.
+  const lowerBack = smoothPath([...lower].reverse()).replace(/^M/, 'L')
+  const targetY = y(target)
+
+  return (
+    <div className="mb__plot">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" fill="none" aria-hidden="true">
+        <defs>
+          <linearGradient id={`bb-${gid}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.34" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.08" />
+          </linearGradient>
+        </defs>
+        <line
+          x1="0"
+          x2="100"
+          y1={targetY}
+          y2={targetY}
+          stroke="#eceef0"
+          strokeOpacity="0.28"
+          strokeWidth="1"
+          strokeDasharray="3 4"
+          vectorEffect="non-scaling-stroke"
+        />
+        <path d={`${upperPath} ${lowerBack} Z`} fill={`url(#bb-${gid})`} />
+        <path d={upperPath} stroke={color} strokeOpacity="0.45" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        <path
+          d={smoothPath(lower)}
+          stroke={color}
+          strokeWidth="1.75"
+          vectorEffect="non-scaling-stroke"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <span
+        className="pointer-events-none absolute right-0 -translate-y-1/2 rounded-[4px] bg-ink-800/90 px-1 py-[2px] font-mono text-[10px] leading-none text-txt-lo"
+        style={{ top: `${targetY}%` }}
+      >
+        target {target}ms
+      </span>
+    </div>
+  )
+}
+
+/** Segmented fuel gauge: the lit segments are what is left. */
+export function BentoGauge({
+  remaining,
+  color,
+  segments = 24,
+}: {
+  /** Percent of the budget left, 0–100; null while unknown. */
+  remaining: number | null
+  color: string
+  segments?: number
+}) {
+  const lit = remaining == null ? 0 : Math.round((Math.min(100, Math.max(0, remaining)) / 100) * segments)
+  return (
+    <div className="flex h-[22px] w-full items-stretch gap-[3px]" role="presentation">
+      {Array.from({ length: segments }, (_, i) => (
+        <span
+          key={i}
+          className="flex-1 rounded-[3px]"
+          style={
+            i < lit
+              ? { backgroundColor: color, boxShadow: `0 0 8px -3px ${color}` }
+              : { backgroundColor: 'rgba(255,255,255,0.06)' }
+          }
+        />
+      ))}
     </div>
   )
 }

@@ -79,6 +79,10 @@ export default {
         'spin-slow': {
           '100%': { transform: 'rotate(360deg)' },
         },
+        'card-pop': {
+          '0%': { opacity: '0', transform: 'scale(0.96)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
         'live-ping': {
           '0%, 100%': { opacity: '1' },
           '50%': { opacity: '0.4' },
@@ -91,6 +95,7 @@ export default {
         shimmer: 'shimmer 1.6s infinite',
         indeterminate: 'indeterminate 1.4s ease-in-out infinite',
         'spin-slow': 'spin-slow 3s linear infinite',
+        'card-pop': 'card-pop 140ms cubic-bezier(0.22,1,0.36,1) both',
         'live-ping': 'live-ping 2s ease-in-out infinite',
       },
     },

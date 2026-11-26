@@ -1,8 +1,10 @@
 import json
 import logging
 import os
+import re
 import time
 import decimal
+from datetime import datetime, timedelta, timezone
 
 import boto3
 from botocore.exceptions import ClientError
@@ -54,6 +56,13 @@ class DecimalEncoder(json.JSONEncoder):
 # The monitor rule runs at rate(1 minute); used to say how many checks a window
 # should have contained, so missing evidence is visible instead of implied.
 CHECK_INTERVAL_SECONDS = 60
+# The monitor tallies every check per UTC day on its project row (d20261125_up, …).
+DAY_KEY = re.compile(r"^d(\d{8})_(up|down|inconclusive)$")
+DAILY_LIST_DAYS = 14
+DAILY_DETAIL_DAYS = 30
+# Fields a report row keeps for its own document (report_generator build_report);
+# the report list leaves them out.
+REPORT_DETAIL_KEYS = {"daily", "incidents", "causes", "previous", "target", "monitor"}
 
 
 def _get_tables():
@@ -115,6 +124,11 @@ def handle_get_health() -> dict:
 
 
 
+def _without_rollup(item: dict) -> dict:
+    """A project row minus the monitor's per-day counters, which are internal."""
+    return {key: value for key, value in item.items() if not DAY_KEY.match(key)}
+
+
 def get_project_or_403(project_id: str, user_id: str) -> dict | None:
     _, projects_table, _, _, _ = _get_tables()
     response = projects_table.get_item(Key={"project_id": project_id})
@@ -139,79 +153,19 @@ def handle_get_me(event: dict) -> dict:
     return success(200, user)
 
 
-def handle_get_projects(event: dict) -> dict:
-    user_id = get_user_id(event)
-    _, projects_table, checks_table, _, PROJECT_GSI_NAME = _get_tables()
-
-
-    projects = []
-    query_kwargs = {
-        "IndexName": PROJECT_GSI_NAME,
-        "KeyConditionExpression": "user_id = :uid",
-        "ExpressionAttributeValues": {":uid": user_id},
-    }
-    while True:
-        response = projects_table.query(**query_kwargs)
-        projects.extend(response.get("Items", []))
-        last_key = response.get("LastEvaluatedKey")
-        if not last_key:
-            break
-        query_kwargs["ExclusiveStartKey"] = last_key
-
-
-    enriched = []
-    for project in projects:
-        checks_response = checks_table.query(
-            KeyConditionExpression="project_id = :pid",
-            ExpressionAttributeValues={":pid": project["project_id"]},
-            ScanIndexForward=False, #newest
-            Limit=1,
-        )
-        checks = checks_response.get("Items", [])
-
-        enriched_project = {
-            "project_id": project["project_id"],
-            "name": project["name"],
-            "url": project["url"],
-            "active": project["active"],
-            "created_at": project["created_at"],
-        }
-
-        if checks:
-            last_check = checks[0]
-            enriched_project["current_status"] = last_check["status"]
-            enriched_project["last_latency_ms"] = last_check["latency_ms"]
-            enriched_project["last_checked_at"] = last_check.get("timestamp")
-        else:
-            enriched_project["current_status"] = "unknown"
-            enriched_project["last_latency_ms"] = None
-            enriched_project["last_checked_at"] = None
-
-        enriched.append(enriched_project)
-
-    return success(200, enriched)
-
-
-def handle_get_projects_status(event: dict) -> dict:
-    user_id = get_user_id(event)
-    project_id = event["pathParameters"]["project_id"]
-    _, _, checks_table, _, _ = _get_tables()
-
-    project = get_project_or_403(project_id, user_id)
-    if not project:
-        return error_response(403, "Forbidden")
-
-
-    query_params = event.get("queryStringParameters") or {}
+def _parse_hours(query_params: dict) -> int | None:
+    """The `hours` query parameter clamped to 1-72, or None when it is not an integer."""
     try:
         hours = int(query_params.get("hours", 24))
     except (TypeError, ValueError):
-        return error_response(400, "hours must be an integer")
-    hours = min(max(hours, 1), 72)
+        return None
+    return min(max(hours, 1), 72)
 
+
+def _status_window(checks_table, project_id: str, hours: int) -> dict:
+    """A project's checks over the last `hours` and their summary: the /status payload."""
     now_ms = int(time.time() * 1000)
     from_ms = now_ms - (hours * 3600 * 1000)
-
 
     checks = []
     query_kwargs = {
@@ -253,12 +207,164 @@ def handle_get_projects_status(event: dict) -> dict:
         "coverage_pct": round(min(conclusive / expected, 1) * 100, 2),
     }
 
-    return success(200, {
+    return {
         "project_id": project_id,
         "current_status": current_status,
         "summary": summary,
         "checks": checks,
-    })
+    }
+
+
+def _incidents_between(project_id: str, from_sec: int, to_sec: int) -> list[dict]:
+    """Incidents that started inside [from_sec, to_sec], newest first."""
+    incidents = []
+    query_kwargs = {
+        "KeyConditionExpression": "project_id = :pid AND start_time BETWEEN :from_ts AND :now_ts",
+        "ExpressionAttributeValues": {":pid": project_id, ":from_ts": from_sec, ":now_ts": to_sec},
+        "ScanIndexForward": False,
+    }
+    while True:
+        response = _get_incidents_table().query(**query_kwargs)
+        incidents.extend(response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            return incidents
+        query_kwargs["ExclusiveStartKey"] = last_key
+
+
+def _incident_before(project_id: str, from_sec: int) -> list[dict]:
+    """The last incident that began before `from_sec`: it can still run into a window starting there."""
+    response = _get_incidents_table().query(
+        KeyConditionExpression="project_id = :pid AND start_time < :from_ts",
+        ExpressionAttributeValues={":pid": project_id, ":from_ts": from_sec},
+        ScanIndexForward=False,
+        Limit=1,
+    )
+    return response.get("Items", [])
+
+
+def _daily(project: dict, days: int, now_sec: int) -> dict:
+    """The project's last `days` UTC days, oldest first: the monitor's check
+    tallies, and the seconds of confirmed outage (incidents) inside each day."""
+    tallies: dict[str, dict] = {}
+    for key, value in project.items():
+        match = DAY_KEY.match(key)
+        if match:
+            tallies.setdefault(match.group(1), {})[match.group(2)] = int(value)
+
+    first = datetime.fromtimestamp(now_sec, timezone.utc).date() - timedelta(days=days - 1)
+    from_sec = int(datetime(first.year, first.month, first.day, tzinfo=timezone.utc).timestamp())
+    incidents = _incidents_between(project["project_id"], from_sec, now_sec)
+    spans = [
+        (int(i["start_time"]), int(i["end_time"]) if i.get("end_time") is not None else now_sec)
+        for i in incidents + _incident_before(project["project_id"], from_sec)
+    ]
+
+    out = []
+    for offset in range(days):
+        day = first + timedelta(days=offset)
+        start = from_sec + offset * 86400
+        end = min(start + 86400, now_sec)
+        counts = tallies.get(f"{day:%Y%m%d}", {})
+        out.append({
+            "date": day.isoformat(),
+            "up": counts.get("up", 0),
+            "down": counts.get("down", 0),
+            "inconclusive": counts.get("inconclusive", 0),
+            "outage_sec": sum(max(0, min(span_end, end) - max(span_start, start)) for span_start, span_end in spans),
+        })
+    return {"since": project.get("daily_since"), "days": out}
+
+
+def handle_get_projects(event: dict) -> dict:
+    user_id = get_user_id(event)
+    _, projects_table, checks_table, _, PROJECT_GSI_NAME = _get_tables()
+
+    # ?include=status embeds each project's /status payload, so the dashboard
+    # needs one request per poll instead of one per project.
+    query_params = event.get("queryStringParameters") or {}
+    include_status = query_params.get("include") == "status"
+    hours = _parse_hours(query_params) if include_status else None
+    if include_status and hours is None:
+        return error_response(400, "hours must be an integer")
+    if hours:
+        # Every project's window shares one response; at 72 h ten projects could pass Lambda's 6 MB limit.
+        hours = min(hours, 24)
+
+    projects = []
+    query_kwargs = {
+        "IndexName": PROJECT_GSI_NAME,
+        "KeyConditionExpression": "user_id = :uid",
+        "ExpressionAttributeValues": {":uid": user_id},
+    }
+    while True:
+        response = projects_table.query(**query_kwargs)
+        projects.extend(response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_kwargs["ExclusiveStartKey"] = last_key
+
+
+    enriched = []
+    for project in projects:
+        status = _status_window(checks_table, project["project_id"], hours) if include_status else None
+        if status and status["checks"]:
+            # The window ends now, so its newest check is the newest check overall.
+            checks = status["checks"][-1:]
+        else:
+            checks_response = checks_table.query(
+                KeyConditionExpression="project_id = :pid",
+                ExpressionAttributeValues={":pid": project["project_id"]},
+                ScanIndexForward=False, #newest
+                Limit=1,
+            )
+            checks = checks_response.get("Items", [])
+
+        enriched_project = {
+            "project_id": project["project_id"],
+            "name": project["name"],
+            "url": project["url"],
+            "active": project["active"],
+            "created_at": project["created_at"],
+        }
+
+        if checks:
+            last_check = checks[0]
+            enriched_project["current_status"] = last_check["status"]
+            enriched_project["last_latency_ms"] = last_check["latency_ms"]
+            enriched_project["last_checked_at"] = last_check.get("timestamp")
+        else:
+            enriched_project["current_status"] = "unknown"
+            enriched_project["last_latency_ms"] = None
+            enriched_project["last_checked_at"] = None
+
+        if status:
+            status["daily"] = _daily(project, DAILY_LIST_DAYS, int(time.time()))
+            enriched_project["status"] = status
+
+        enriched.append(enriched_project)
+
+    return success(200, enriched)
+
+
+def handle_get_projects_status(event: dict) -> dict:
+    user_id = get_user_id(event)
+    project_id = event["pathParameters"]["project_id"]
+    _, _, checks_table, _, _ = _get_tables()
+
+    project = get_project_or_403(project_id, user_id)
+    if not project:
+        return error_response(403, "Forbidden")
+
+
+    hours = _parse_hours(event.get("queryStringParameters") or {})
+    if hours is None:
+        return error_response(400, "hours must be an integer")
+
+    status = _status_window(checks_table, project_id, hours)
+    status["daily"] = _daily(project, DAILY_DETAIL_DAYS, int(time.time()))
+    return success(200, status)
 
 
 def handle_get_project(event: dict) -> dict:
@@ -270,7 +376,7 @@ def handle_get_project(event: dict) -> dict:
     if not project:
         return error_response(403, "Forbidden")
 
-    return success(200, project)
+    return success(200, _without_rollup(project))
 
 
 def handle_get_projects_reports(event: dict) -> dict:
@@ -296,7 +402,8 @@ def handle_get_projects_reports(event: dict) -> dict:
             break
         query_kwargs["ExclusiveStartKey"] = last_key
 
-    return success(200, reports)
+    # The page polls this list; the document's own detail stays in the report file.
+    return success(200, [{k: v for k, v in r.items() if k not in REPORT_DETAIL_KEYS} for r in reports])
 
 
 def _reliability_metrics(incidents: list[dict], thresholds: dict, from_sec: int, now_sec: int) -> dict:
@@ -304,23 +411,34 @@ def _reliability_metrics(incidents: list[dict], thresholds: dict, from_sec: int,
 
     DynamoDB numbers arrive as Decimal; coerce to int/float here so the math is
     plain and the returned dict is JSON-safe. An ongoing (unresolved) incident
-    accrues downtime up to `now_sec`.
+    accrues downtime up to `now_sec`. Downtime and the longest outage count only
+    the part of an incident inside the window; MTTR uses whole durations.
     """
     window_sec = max(now_sec - from_sec, 1)
     resolved = [i for i in incidents if i.get("resolved") is True]
     open_incidents = [i for i in incidents if not i.get("resolved")]
 
     incident_count = len(incidents)
-    durations = [int(i["duration_seconds"]) for i in resolved if i.get("duration_seconds") is not None]
+    durations = [
+        int(i["duration_seconds"]) - max(from_sec - int(i["start_time"]), 0)
+        for i in resolved if i.get("duration_seconds") is not None
+    ]
 
-    # By design there is at most one open incident; it counts up to now.
+    # By design there is at most one open incident; it counts up to now, from
+    # the window's start if it began before it.
     open_downtime = 0
     if open_incidents:
-        open_start = int(open_incidents[0]["start_time"])
+        open_start = max(int(open_incidents[0]["start_time"]), from_sec)
         open_downtime = max(now_sec - open_start, 0)
 
     total_downtime = sum(durations) + open_downtime
-    mttr_sec = round(sum(durations) / len(durations)) if durations else 0
+    # An incident closed because monitoring stopped was cut off, not repaired:
+    # it still counts as downtime, but not toward the time to recover.
+    repairs = [
+        int(i["duration_seconds"]) for i in resolved
+        if i.get("duration_seconds") is not None and not i.get("closed_reason")
+    ]
+    mttr_sec = round(sum(repairs) / len(repairs)) if repairs else 0
 
     longest_candidates = list(durations)
     if open_incidents:
@@ -380,25 +498,12 @@ def handle_get_projects_incidents(event: dict) -> dict:
     now_sec = int(time.time())
     from_sec = now_sec - (days * 86400)
 
-    incidents_table = _get_incidents_table()
-    incidents = []
-    # start_time is the numeric sort key (epoch seconds); range-query the window.
-    query_kwargs = {
-        "KeyConditionExpression": "project_id = :pid AND start_time BETWEEN :from_ts AND :now_ts",
-        "ExpressionAttributeValues": {
-            ":pid": project_id,
-            ":from_ts": from_sec,
-            ":now_ts": now_sec,
-        },
-        "ScanIndexForward": False,  # newest first
-    }
-    while True:
-        response = incidents_table.query(**query_kwargs)
-        incidents.extend(response.get("Items", []))
-        last_key = response.get("LastEvaluatedKey")
-        if not last_key:
-            break
-        query_kwargs["ExclusiveStartKey"] = last_key
+    incidents = _incidents_between(project_id, from_sec, now_sec)
+    # An outage that began before the window still counts if it ran into it (or is still open).
+    incidents += [
+        i for i in _incident_before(project_id, from_sec)
+        if not i.get("resolved") or int(i.get("end_time") or 0) > from_sec
+    ]
 
     metrics = _reliability_metrics(incidents, project.get("thresholds", {}), from_sec, now_sec)
 

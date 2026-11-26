@@ -32,10 +32,14 @@ function getPool(): CognitoUserPool {
   return pool
 }
 
+// The pool matches usernames case-sensitively; lowercasing lets sign-in find
+// the account whatever case was typed at sign-up.
+const normalize = (email: string) => email.trim().toLowerCase()
+
 function cognitoUser(email: string): CognitoUser {
   // With `username_attributes = ["email"]` on the pool, the email IS the sign-in
   // identifier for every operation (sign-up, confirm, authenticate).
-  return new CognitoUser({ Username: email, Pool: getPool() })
+  return new CognitoUser({ Username: normalize(email), Pool: getPool() })
 }
 
 /**
@@ -78,7 +82,7 @@ export function friendlyAuthMessage(err: unknown): { code: string; message: stri
 export function signIn(email: string, password: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const user = cognitoUser(email)
-    const details = new AuthenticationDetails({ Username: email, Password: password })
+    const details = new AuthenticationDetails({ Username: normalize(email), Password: password })
     user.authenticateUser(details, {
       onSuccess: (session) => resolve(session.getIdToken().getJwtToken()),
       onFailure: (err) => reject(err),
@@ -100,7 +104,7 @@ export function signUp(email: string, password: string, name: string): Promise<v
     const attributes = name.trim()
       ? [new CognitoUserAttribute({ Name: 'name', Value: name.trim() })]
       : []
-    getPool().signUp(email, password, attributes, [], (err) => {
+    getPool().signUp(normalize(email), password, attributes, [], (err) => {
       if (err) return reject(err)
       resolve()
     })

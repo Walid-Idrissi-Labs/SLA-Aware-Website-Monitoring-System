@@ -1,6 +1,7 @@
 import { Suspense, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { isAuthenticated } from './lib/auth'
+import { DEMO } from './lib/demo'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Callback from './pages/Callback'
@@ -18,7 +19,7 @@ const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
 const routeFallback = <div className="grid min-h-screen place-items-center text-txt-lo">Loading…</div>
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  if (!isAuthenticated()) {
+  if (!DEMO && !isAuthenticated()) {
     return <Navigate to="/login" replace />
   }
   return <>{children}</>
@@ -26,19 +27,24 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    // Under /demo every link resolves inside the demo, with no link edits.
+    <BrowserRouter basename={DEMO ? '/demo' : undefined}>
       <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-        <Route
-          path="/confirm"
-          element={
-            <Suspense fallback={routeFallback}>
-              <ConfirmSignup />
-            </Suspense>
-          }
-        />
-        <Route path="/callback" element={<Callback />} />
+        {!DEMO && (
+          <>
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route
+              path="/confirm"
+              element={
+                <Suspense fallback={routeFallback}>
+                  <ConfirmSignup />
+                </Suspense>
+              }
+            />
+            <Route path="/callback" element={<Callback />} />
+          </>
+        )}
         <Route
           path="/dashboard"
           element={

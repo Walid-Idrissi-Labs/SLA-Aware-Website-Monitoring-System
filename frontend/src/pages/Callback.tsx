@@ -20,13 +20,30 @@ export default function Callback() {
       const code = params.get('code')
 
       if (!code) {
-        navigate('/login')
+        // Cognito sends ?error=&error_description= when the authorize step is
+        // refused. Swallowing that and redirecting to /login silently made a
+        // misconfigured callback URL indistinguishable from a wrong password.
+        const reason = params.get('error')
+        const description = params.get('error_description')?.replace(/\+/g, ' ')
+        if (reason) {
+          setError(
+            reason === 'redirect_mismatch'
+              ? `Cognito does not allow ${window.location.origin} as a callback URL. Add ${window.location.origin}/callback to the app client's allowed callbacks.`
+              : `${reason}${description ? `: ${description}` : ''}`,
+          )
+        } else {
+          setError(
+            `Sign-in returned no authorization code. The callback URL registered with Cognito must exactly match ${window.location.origin}/callback.`,
+          )
+        }
         return
       }
 
       const codeVerifier = sessionStorage.getItem('pkce_verifier')
       if (!codeVerifier) {
-        setError('Your sign-in session expired. Please try again.')
+        setError(
+          'Your sign-in session expired before the redirect came back. This happens if the browser blocks session storage — try again, or use email and password.',
+        )
         return
       }
       sessionStorage.removeItem('pkce_verifier')
@@ -49,7 +66,8 @@ export default function Callback() {
         })
 
         if (!tokenRes.ok) {
-          setError('Sign-in could not be completed. Please try again.')
+          const body = await tokenRes.text().catch(() => '')
+          setError(`Token exchange rejected (${tokenRes.status}). ${body.slice(0, 200)}`.trim())
           return
         }
 

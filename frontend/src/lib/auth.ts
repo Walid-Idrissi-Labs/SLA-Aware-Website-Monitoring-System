@@ -1,5 +1,6 @@
 import { generateRandomString, generateCodeChallenge } from './PKCE-helpers';
 import { signOutLocal } from './cognito';
+import { DEMO, DEMO_USER, exitDemo } from './demo';
 
 const TOKEN_KEY = 'id_token';
 const USER_KEY = 'user';
@@ -25,6 +26,7 @@ export function setToken(token: string): void {
 }
 
 export function clearToken(): void {
+  if (DEMO) return; // a real session in this browser stays untouched
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
 }
@@ -89,6 +91,7 @@ export async function buildGoogleLoginUrl(): Promise<string> {
 }
 
 export function logout(): void {
+  if (DEMO) return exitDemo();
   // Clear our token + the SDK's cached session. No hosted-UI round-trip needed
   // for password sign-ins; the user simply returns to the custom /login page.
   try {
@@ -101,10 +104,12 @@ export function logout(): void {
 }
 
 export function storeUser(user: unknown): void {
+  if (DEMO) return;
   localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
 export function getStoredUser(): unknown {
+  if (DEMO) return DEMO_USER;
   try {
     const raw = localStorage.getItem(USER_KEY);
     return raw ? JSON.parse(raw) : null;

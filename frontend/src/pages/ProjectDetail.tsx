@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -10,20 +10,27 @@ import {
   ChevronRight,
   Download,
   Sheet,
-  Radio,
+  ClockAlert,
+  CircleOff,
 } from 'lucide-react'
 import Shell from '../components/Shell'
 import TickerStat from '../components/TickerStat'
 import FlipClock from '../components/FlipClock'
 import IncidentReport from '../components/IncidentReport'
-import UptimeHeatmap from '../components/UptimeHeatmap'
+import HourHeatmap from '../components/HourHeatmap'
+import HowCalculated from '../components/HowCalculated'
+import IncidentState from '../components/IncidentState'
+import DayStrip from '../components/DayStrip'
 import RubberSegment from '../components/RubberSegment'
 import UseAnimations from 'react-useanimations'
 import checkCircle from 'react-useanimations/lib/checkCircle'
 import alertOctagon from 'react-useanimations/lib/alertOctagon'
 import alertTriangle from 'react-useanimations/lib/alertTriangle'
 import ActionButton from '../components/ActionButton'
-import TrendChart from '../components/TrendChart'
+import MagicBento, { type MagicBentoItem } from '../components/MagicBento'
+import Counter from '../components/Counter'
+import StatusStrip from '../components/StatusStrip'
+import { BentoFigure, BentoComposition, BentoBand, BentoGauge } from '../components/BentoVisuals'
 import HoldButton from '../components/HoldButton'
 import LatencyChart from '../components/LatencyChart'
 import IncidentTimeline from '../components/IncidentTimeline'
@@ -38,8 +45,9 @@ import {
   getReportDownloadUrl,
 } from '../lib/api'
 import { Alert, Spinner } from '../components/ui'
-import type { ProjectStatus, ProjectReport, Project, UpdateProjectInput, Incident, ReliabilityMetrics } from '../types'
-import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, evidenceFromChecks, verdictFromStatus, VERDICT, bareUrl, fmtUtcTime, formatDowntime } from '../lib/format'
+import type { Check, ProjectStatus, ProjectReport, Project, UpdateProjectInput, Incident, ReliabilityMetrics } from '../types'
+import { DEMO } from '../lib/demo'
+import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, evidenceFromChecks, verdictFor, VERDICT, bareUrl, fmtUtcTime, fmtUtcDay, formatDowntime, timeAgo, STALE_AFTER_MS, type Verdict } from '../lib/format'
 
 /** Incident/reliability window is fixed (independent of the latency chart toggle). */
 const INCIDENT_WINDOW_DAYS = 30
@@ -178,18 +186,6 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
   )
 }
 
-// ─── Delete Modal ───────────────────────────────────────────────────────────
-function Metric({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) {
-  return (
-    <div className="flex items-center justify-between border-b border-white/[0.05] py-2 last:border-0">
-      <span className="text-[12px] font-medium text-txt-lo">{label}</span>
-      <span className="data max-w-[60%] truncate text-[13px] font-semibold" style={{ color: color ?? '#eceef0' }}>
-        {value}
-      </span>
-    </div>
-  )
-}
-
 function percentile(sorted: number[], p: number): number | null {
   if (sorted.length === 0) return null
   const index = (sorted.length - 1) * p
@@ -200,6 +196,50 @@ function percentile(sorted: number[], p: number): number | null {
 
 const REDUCED_MOTION =
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/** Body of one vitals tile: figure on top, instrument centred in the middle, a
+ *  mono caption row at the bottom, so all four tiles line up with each other. */
+function VitalBody({ figure, caption, children }: { figure: ReactNode; caption: ReactNode[]; children: ReactNode }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+      {figure}
+      <div className="flex min-h-0 flex-1 flex-col justify-center">{children}</div>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 whitespace-nowrap font-mono text-[11px] tabular-nums text-txt-lo">
+        {caption}
+      </div>
+    </div>
+  )
+}
+
+/** Verdict names short enough to sit in a vitals figure beside their note. */
+const FIGURE_LABEL: Record<keyof typeof VERDICT, string> = {
+  up: 'Operational',
+  down: 'Down',
+  inconclusive: 'No evidence',
+  stale: 'Stale',
+  off: 'Not monitored',
+  pending: 'Pending',
+}
+
+const CHECK_WORD = { success: 'up', failure: 'down', inconclusive: 'no evidence' } as const
+
+const DAY_LEGEND = [
+  ['Operational', 'bg-ok/70'],
+  ['Thin (under half the checks)', 'bg-ok/30'],
+  ['Outage', 'bg-crit/80'],
+  ['No data', 'bg-white/20'],
+  ['Not tracked', 'shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]'],
+] as const
+
+/** The Status figure's note: the latest response while it is current, its age once it is not. */
+function statusNote(verdict: Verdict, latest: Check | undefined, monitored: boolean): string | undefined {
+  if (!latest) return verdict === 'stale' ? 'no recent checks' : undefined
+  if (verdict === 'stale' || !monitored) {
+    const ago = timeAgo(latest.timestamp)
+    return `last check ${ago === 'now' ? 'just now' : `${ago} ago`}`
+  }
+  return latest.http_status_code ? `HTTP ${latest.http_status_code}` : 'no response'
+}
 
 // ─── Main Page ──────────────────────────────────────────────────────────────
 export default function ProjectDetail() {
@@ -213,6 +253,9 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [hours, setHours] = useState(24)
+  const [heatMetric, setHeatMetric] = useState('Uptime')
+  // Captured on every poll, failed ones too, so data that stops changing ages into STALE.
+  const [now, setNow] = useState(Date.now)
   const requestSeq = useRef(0)
 
   const [showEdit, setShowEdit] = useState(false)
@@ -262,7 +305,10 @@ export default function ProjectDetail() {
         if (seq !== requestSeq.current) return
         setLoadError(e instanceof Error ? e.message : 'Failed to load endpoint')
       } finally {
-        if (seq === requestSeq.current) setLoading(false)
+        if (seq === requestSeq.current) {
+          setLoading(false)
+          setNow(Date.now())
+        }
       }
     },
     [hours, id]
@@ -273,7 +319,11 @@ export default function ProjectDetail() {
   }, [loadData])
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => loadData(), POLL_INTERVAL_MS)
+    // A hidden tab gets refetched by the visibility listener below, so polling
+    // it in the background is a fetch plus a full re-render for nobody.
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') loadData()
+    }, POLL_INTERVAL_MS)
     return () => window.clearInterval(intervalId)
   }, [loadData])
 
@@ -292,7 +342,19 @@ export default function ProjectDetail() {
 
   const checks = status?.checks || []
   const latestCheck = checks[checks.length - 1]
-  const verdict = verdictFromStatus(status?.current_status)
+  const verdict: Verdict =
+    project && status
+      ? verdictFor(
+          {
+            ...project,
+            current_status: status.current_status,
+            // The window's newest check; an empty window falls back to created_at.
+            last_checked_at: latestCheck?.timestamp ?? null,
+            open_incident: reliability?.open_incident,
+          },
+          now,
+        )
+      : 'pending'
   const isUp = verdict === 'up'
   const isDownState = verdict === 'down'
   const summary = status?.summary
@@ -309,10 +371,13 @@ export default function ProjectDetail() {
       .filter((c) => c.status === 'success')
       .map((c) => c.latency_ms)
       .sort((a, b) => a - b)
-    if (okLatencies.length === 0) return { avg: null as number | null, p95: null as number | null }
+    if (okLatencies.length === 0) {
+      return { avg: null as number | null, p50: null as number | null, p95: null as number | null }
+    }
     const avg = Math.round(okLatencies.reduce((s, v) => s + v, 0) / okLatencies.length)
+    const p50 = Math.round(percentile(okLatencies, 0.5) as number)
     const p95 = okLatencies[Math.min(Math.floor(okLatencies.length * 0.95), okLatencies.length - 1)]
-    return { avg, p95 }
+    return { avg, p50, p95 }
   }, [status])
   const latencyTarget = project?.thresholds?.max_avg_latency_ms ?? PROJECT_DEFAULTS.max_avg_latency_ms
 
@@ -344,9 +409,15 @@ export default function ProjectDetail() {
       const a = document.createElement('a')
       a.href = url
       a.rel = 'noopener'
+      // Saves a same-origin file (the demo's) instead of opening it over the app;
+      // browsers ignore it for the real cross-origin S3 link, whose headers decide.
+      a.download = DEMO && format === 'html' ? 'sample-report.html' : `${reportId}.${format}`
       document.body.appendChild(a)
       a.click()
       a.remove()
+      if (DEMO && format === 'html') {
+        setGenMsg({ type: 'info', text: 'Demo: every HTML download is the same sample report, rendered by the real template. Its figures are fixed.' })
+      }
     } catch (e) {
       setGenMsg({ type: 'error', text: e instanceof Error ? e.message : 'Download failed.' })
     } finally {
@@ -357,7 +428,7 @@ export default function ProjectDetail() {
   function exportCsv() {
     const cols: (keyof ProjectReport)[] = [
       'report_id', 'uptime_pct', 'avg_latency_ms', 'p95_latency_ms',
-      'incident_count', 'total_downtime_sec', 'severity', 'sla_pass', 'generated_at',
+      'incident_count', 'total_downtime_sec', 'severity', 'sla_pass', 'slo_status', 'generated_at',
     ]
     const esc = (v: unknown) => {
       const s = String(v ?? '')
@@ -389,7 +460,9 @@ export default function ProjectDetail() {
       } else if (check.status === 'failure') {
         bucket.conclusive += 1
       }
-      if (check.status !== 'inconclusive' && check.latency_ms != null) {
+      // Successful checks only, like windowStats: a timeout records a synthetic
+      // latency that would flatten every real value in the band.
+      if (check.status === 'success' && check.latency_ms != null) {
         bucket.latencies.push(check.latency_ms)
       }
       map.set(key, bucket)
@@ -410,8 +483,6 @@ export default function ProjectDetail() {
         }
       })
   }, [checks, hours])
-
-  const uptimeBuckets = windowBuckets
 
   /** Percentile bands for the vitals chart. Buckets with no measured check
    *  carry the previous value forward, so a gap does not plunge the line to 0. */
@@ -478,6 +549,282 @@ export default function ProjectDetail() {
     </>
   )
 
+  // ─── Vitals: four instruments for the selected window ──────────────────────
+  const uptimeValue = summary ? summary.uptime_pct : uptime
+  const expected = summary?.checks_expected ?? checks.length
+  const recorded = summary ? summary.checks_up + summary.checks_down + summary.checks_inconclusive : checks.length
+  const budget = reliability?.error_budget
+  // Floored, so a budget that has lost anything never reads as a full 100%.
+  const budgetLeft = budget ? Math.floor(Math.max(0, 100 - budget.burn_pct)) : null
+  const budgetColor =
+    !budget || budgetLeft == null
+      ? STATUS.neutral
+      : !budget.ok
+        ? STATUS.crit
+        : budgetLeft >= 50
+          ? STATUS.ok
+          : STATUS.warn
+  const certColor =
+    project?.cert_expiry_days == null
+      ? undefined
+      : project.cert_expiry_days < 7
+        ? STATUS.crit
+        : project.cert_expiry_days < 30
+          ? STATUS.warn
+          : undefined
+  const odometer = {
+    direction: 'up',
+    duration: 0.9,
+    bounce: 0.28,
+    stagger: 0.03,
+    fade: 0.24,
+    fontSize: 24,
+    fontWeight: 600,
+    tabular: true,
+    motionBlur: true,
+  } as const
+  const fmtCount = (n: number) => n.toLocaleString('en-US')
+  const latestAgo = latestCheck ? timeAgo(latestCheck.timestamp) : null
+  const budgetShare = budget ? +(100 - budget.min_uptime_pct).toFixed(4) : null
+
+  const vitals: MagicBentoItem[] = [
+    {
+      id: 'status',
+      title: (
+        <HowCalculated
+          label="Status"
+          topic="the status"
+          rows={[
+            {
+              label: 'Latest check',
+              value: latestCheck
+                ? `${CHECK_WORD[latestCheck.status]} · ${latestAgo === 'now' ? 'just now' : `${latestAgo} ago`}`
+                : 'none in this window',
+            },
+            { label: 'Stale after', value: `${STALE_AFTER_MS / 1000} s` },
+            ...(project?.active === false ? [{ label: 'Monitoring', value: 'stopped (deleted or paused)' }] : []),
+          ]}
+          result={`= ${FIGURE_LABEL[verdict]}`}
+          caveat={`No check for ${STALE_AFTER_MS / 1000} s reads Stale, so a monitor that stopped never stays green.`}
+        />
+      ),
+      description: (
+        <>
+          Accepts {project?.accepted_status || '200-399'}
+          {project?.cert_expiry_days != null && (
+            <>
+              {' · '}
+              <span style={{ color: certColor }}>TLS {project.cert_expiry_days}d</span>
+            </>
+          )}
+        </>
+      ),
+      visual: (
+        <VitalBody
+          figure={
+            <BentoFigure
+              value={status ? <span style={{ color: VERDICT[verdict].color }}>{FIGURE_LABEL[verdict]}</span> : '—'}
+              muted={!status}
+              note={statusNote(verdict, latestCheck, project?.active !== false)}
+            />
+          }
+          caption={[
+            <span key="n">
+              {checks.length ? `last ${Math.min(30, checks.length)} checks` : verdict === 'pending' ? 'no checks yet' : 'none in window'}
+            </span>,
+            <span key="t">{latestCheck ? fmtUtcTime(latestCheck.timestamp) : '—'}</span>,
+          ]}
+        >
+          <StatusStrip checks={checks} bars={30} latencyTarget={latencyTarget} interactive />
+        </VitalBody>
+      ),
+    },
+    {
+      id: 'uptime',
+      title: (
+        <HowCalculated
+          label="Uptime & evidence"
+          topic="uptime"
+          empty={!summary || summary.checks_total === 0 ? 'No checks in this window yet' : false}
+          rows={
+            summary
+              ? [
+                  { label: 'Up', value: fmtCount(summary.checks_up) },
+                  { label: 'Down', value: fmtCount(summary.checks_down) },
+                  { label: 'No evidence', value: fmtCount(summary.checks_inconclusive) },
+                  { label: 'Expected', value: fmtCount(summary.checks_expected) },
+                ]
+              : []
+          }
+          result={
+            summary && (
+              <>
+                {summary.checks_up + summary.checks_down === 0 ? (
+                  'uptime: no conclusive checks'
+                ) : (
+                  <>
+                    uptime = {fmtCount(summary.checks_up)} ÷ {fmtCount(summary.checks_up + summary.checks_down)} ={' '}
+                    {uptimeValue == null ? '—' : `${uptimeValue.toFixed(2)}%`}
+                  </>
+                )}
+                {/* A line break is silent to a screen reader; this keeps the two formulas apart. */}
+                <span className="sr-only">; </span>
+                <br />
+                evidence = {fmtCount(summary.checks_up + summary.checks_down)} ÷ {fmtCount(summary.checks_expected)} ={' '}
+                {coverage == null ? '—' : `${coverage.toFixed(1)}%`}
+              </>
+            )
+          }
+          caveat="Checks with no evidence (a block page, a probe-side error) count toward neither side of uptime."
+        />
+      ),
+      description: `Conclusive checks · last ${hours}h`,
+      visual: (
+        <VitalBody
+          figure={
+            <BentoFigure
+              value={uptimeValue == null ? '—' : <Counter value={uptimeValue} decimals={2} suffix="%" {...odometer} />}
+              muted={uptimeValue == null}
+              note={
+                !recorded
+                  ? 'no checks yet'
+                  : summary && summary.checks_down > 0
+                    ? `${fmtCount(summary.checks_down)} down`
+                    : 'no failures'
+              }
+            />
+          }
+          caption={[
+            <span key="n" className="text-txt-mid">
+              {fmtCount(recorded)} / {fmtCount(expected)} checks
+            </span>,
+            <span key="e" style={{ color: coverage == null ? STATUS.neutral : coverage >= 95 ? STATUS.ok : STATUS.warn }}>
+              {coverage == null ? '—' : `${coverage.toFixed(1)}%`} evidence
+            </span>,
+          ]}
+        >
+          <BentoComposition
+            expected={expected}
+            parts={[
+              { key: 'up', label: 'Up', value: summary?.checks_up ?? 0, color: STATUS.ok },
+              { key: 'down', label: 'Down', value: summary?.checks_down ?? 0, color: STATUS.crit },
+              { key: 'none', label: 'No answer', value: summary?.checks_inconclusive ?? 0, color: STATUS.neutral },
+            ]}
+          />
+        </VitalBody>
+      ),
+    },
+    {
+      id: 'latency',
+      title: (
+        <HowCalculated
+          label="Latency"
+          topic="latency"
+          empty={windowStats.avg == null ? 'No successful checks in this window' : false}
+          rows={[
+            { label: 'Successful checks', value: fmtCount(summary?.checks_up ?? 0) },
+            { label: 'p50 · p95', value: `${windowStats.p50} · ${windowStats.p95} ms` },
+          ]}
+          result={
+            windowStats.avg != null &&
+            `avg ${windowStats.avg} ms ${windowStats.avg > latencyTarget ? '>' : '≤'} ${latencyTarget} ms target`
+          }
+          caveat="Only successful checks count: a timeout records 10 s, which was never measured."
+        />
+      ),
+      description:
+        windowStats.avg == null ? (
+          `No samples yet · target ${latencyTarget}ms`
+        ) : (
+          <>
+            Avg <span style={{ color: windowStats.avg > latencyTarget ? STATUS.warn : undefined }}>{windowStats.avg}ms</span>
+            {' · '}target {latencyTarget}ms
+          </>
+        ),
+      visual: (
+        <VitalBody
+          figure={
+            <BentoFigure
+              value={windowStats.p50 == null ? '—' : <Counter value={windowStats.p50} suffix="ms" {...odometer} />}
+              muted={windowStats.p50 == null}
+              note={
+                windowStats.p95 != null ? (
+                  <span style={{ color: windowStats.p95 > latencyTarget ? STATUS.warn : undefined }}>
+                    p95 {windowStats.p95}ms
+                  </span>
+                ) : undefined
+              }
+            />
+          }
+          caption={[
+            <span key="l">p50 / p95</span>,
+            <span key="b">{hours <= 1 ? 'per 5 min' : 'per hour'}</span>,
+          ]}
+        >
+          <BentoBand p50={latencyTrend?.p50 ?? []} p95={latencyTrend?.p95 ?? []} target={latencyTarget} />
+        </VitalBody>
+      ),
+    },
+    {
+      id: 'budget',
+      title: (
+        <HowCalculated
+          label="Error budget"
+          topic="the error budget"
+          empty={!budget ? 'No incident data yet' : false}
+          rows={
+            budget
+              ? [
+                  { label: 'SLO', value: `${budget.min_uptime_pct}% over ${INCIDENT_WINDOW_DAYS} d` },
+                  { label: 'Allowed', value: `${formatDowntime(budget.allowed_downtime_sec)} · ${budgetShare}%` },
+                  { label: 'Used', value: formatDowntime(budget.consumed_downtime_sec) },
+                ]
+              : []
+          }
+          result={
+            budget &&
+            (budget.ok
+              ? `left = allowed − used = ${formatDowntime(budget.remaining_sec)}`
+              : `over by ${formatDowntime(-budget.remaining_sec)}`)
+          }
+          caveat={`Used is incident downtime, and an incident takes ${project?.failure_threshold ?? PROJECT_DEFAULTS.failure_threshold} failed checks in a row.`}
+        />
+      ),
+      description: `${INCIDENT_WINDOW_DAYS}-day window · SLO ${budget?.min_uptime_pct ?? project?.thresholds?.min_uptime_pct ?? PROJECT_DEFAULTS.min_uptime_pct}%`,
+      visual: (
+        <VitalBody
+          figure={
+            <BentoFigure
+              value={
+                budgetLeft == null ? (
+                  '—'
+                ) : budget?.ok ? (
+                  <Counter value={budgetLeft} suffix="%" {...odometer} />
+                ) : (
+                  <span style={{ color: STATUS.crit }}>Spent</span>
+                )
+              }
+              muted={budgetLeft == null}
+              note={
+                budget
+                  ? budget.ok
+                    ? `${formatDowntime(budget.remaining_sec)} left`
+                    : `${formatDowntime(-budget.remaining_sec)} over`
+                  : undefined
+              }
+            />
+          }
+          caption={[
+            <span key="u">{budget ? `${formatDowntime(budget.consumed_downtime_sec)} used` : '—'}</span>,
+            <span key="a">{budget ? `${formatDowntime(budget.allowed_downtime_sec)} allowed` : ''}</span>,
+          ]}
+        >
+          <BentoGauge remaining={budgetLeft} color={budgetColor} />
+        </VitalBody>
+      ),
+    },
+  ]
+
   // Initial load failed and there is nothing to show — a clean error state
   // beats an eternal "Loading…" header.
   if (!project && !loading && loadError) {
@@ -520,16 +867,23 @@ export default function ProjectDetail() {
                 tooltip — colour and icon alone are not an accessible state. */}
             {project && (
               <span title={VERDICT[verdict].label} className="inline-grid place-items-center">
-                <UseAnimations
-                  key={verdict}
-                  animation={isUp ? checkCircle : isDownState ? alertOctagon : alertTriangle}
-                  size={22}
-                  strokeColor={VERDICT[verdict].color}
-                  autoplay={!REDUCED_MOTION}
-                  loop={isDownState}
-                  interaction={isDownState ? 'loop' : 'click-replay'}
-                  speed={isDownState ? 1 : 1.4}
-                />
+                {/* Stale and off are about the monitor, not the site: a still icon, no alarm. */}
+                {verdict === 'stale' ? (
+                  <ClockAlert size={22} strokeWidth={1.75} color={VERDICT.stale.color} aria-hidden="true" />
+                ) : verdict === 'off' ? (
+                  <CircleOff size={22} strokeWidth={1.75} color={VERDICT.off.color} aria-hidden="true" />
+                ) : (
+                  <UseAnimations
+                    key={verdict}
+                    animation={isUp ? checkCircle : isDownState ? alertOctagon : alertTriangle}
+                    size={22}
+                    strokeColor={VERDICT[verdict].color}
+                    autoplay={!REDUCED_MOTION}
+                    loop={isDownState}
+                    interaction={isDownState ? 'loop' : 'click-replay'}
+                    speed={isDownState ? 1 : 1.4}
+                  />
+                )}
                 <span className="sr-only">{VERDICT[verdict].label}</span>
               </span>
             )}
@@ -581,147 +935,115 @@ export default function ProjectDetail() {
         )}
       </div>
 
-      {/* Chart + Vitals */}
-      <div className="mt-5 grid grid-cols-1 items-start gap-3 lg:grid-cols-3">
-        {/* Chart */}
-        <div className="panel-flush self-start lg:col-span-2 animate-fade-up" style={{ animationDelay: '120ms' }}>
-          <div className="panel-head">
-            <span className="text-[13px] font-semibold text-txt-hi">Latency</span>
-            <span className="text-[11.5px] text-txt-lo">per check · {hours}h</span>
-          </div>
-          <div className="grid-overlay p-2">
-            {loading ? (
-              <div className="grid h-[260px] place-items-center text-accent">
-                <Spinner size={24} />
-              </div>
-            ) : (
-              <LatencyChart checks={checks} />
-            )}
-          </div>
+      {/* Vitals — four instruments for the selected window */}
+      <MagicBento
+        items={vitals}
+        columns={4}
+        rowHeight={204}
+        gap={10}
+        radius={18}
+        minCell={244}
+        pairRatio={1.2}
+        spotlightRadius={280}
+        className="mt-5 animate-fade-up"
+      />
+
+      {/* Latency chart, full width under the instruments */}
+      <div className="panel-flush mt-3 animate-fade-up" style={{ animationDelay: '120ms' }}>
+        <div className="panel-head">
+          <span className="text-[13px] font-semibold text-txt-hi">Latency</span>
+          <span className="text-[11.5px] text-txt-lo">per check · {hours}h</span>
         </div>
-
-        {/* Vitals — two headline rates with meters, a latency trio, then the facts */}
-        <div className="panel self-start p-5">
-          <div className="flex items-baseline justify-between">
-            <span className="text-[13px] font-semibold text-txt-hi">Vitals</span>
-            <span className="text-[11.5px] text-txt-lo">{hours}h window</span>
-          </div>
-          <div className="hr-accent mt-3" />
-
-          <div className="mt-4 space-y-4">
-            <VitalMeter
-              label="Uptime"
-              value={uptime}
-              color={
-                uptime == null
-                  ? STATUS.neutral
-                  : uptime >= 99.9
-                    ? STATUS.ok
-                    : uptime >= 99
-                      ? STATUS.warn
-                      : STATUS.crit
-              }
-              caption={
-                summary
-                  ? `${summary.checks_up} up · ${summary.checks_down} down of ${summary.checks_expected} expected`
-                  : `${checks.length} checks recorded`
-              }
-            />
-            <VitalMeter
-              label="Evidence"
-              value={coverage}
-              color={coverage == null ? STATUS.neutral : coverage >= 95 ? STATUS.ok : STATUS.warn}
-              caption={
-                summary
-                  ? `${summary.checks_up + summary.checks_down} conclusive · ${summary.checks_inconclusive} gave no answer`
-                  : 'share of checks that produced a verdict'
-              }
-            />
-          </div>
-
-          <div className="mt-5 border-t border-white/[0.06] pt-3.5">
-            <div className="flex items-baseline justify-between">
-              <span className="text-[12px] font-medium text-txt-lo">Latency · {hours}h</span>
-              <span className="text-[11px] text-txt-dim">p50 / p95</span>
+        <div className="grid-overlay p-2">
+          {loading ? (
+            <div className="grid h-[260px] place-items-center text-accent">
+              <Spinner size={24} />
             </div>
-            {latencyTrend ? (
-              <TrendChart
-                labels={latencyTrend.labels}
-                series={[
-                  { key: 'p50', label: 'p50', color: '#8b93a1', values: latencyTrend.p50 },
-                  { key: 'p95', label: 'p95', color: STATUS.accent, values: latencyTrend.p95 },
-                ]}
-                format={(value) => `${Math.round(value)}ms`}
-                height={104}
-                className="mt-1"
-              />
-            ) : (
-              <p className="mt-6 text-center text-[12px] text-txt-dim">No latency samples yet</p>
-            )}
-            <p className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-txt-dim tabular-nums">
-              <span>now {latestCheck?.latency_ms ?? '—'}ms</span>
-              <span>avg {windowStats.avg ?? '—'}ms</span>
-              <span
-                className={
-                  windowStats.p95 != null && windowStats.p95 > latencyTarget ? 'text-warn' : undefined
-                }
-              >
-                p95 {windowStats.p95 ?? '—'}ms
-              </span>
-            </p>
-          </div>
-
-          <div className="mt-2">
-            <Metric
-              label="Status"
-              value={status ? VERDICT[verdict].label : '—'}
-              color={status ? VERDICT[verdict].color : undefined}
-            />
-            <Metric label="HTTP" value={latestCheck ? String(latestCheck.http_status_code || 'ERR') : '—'} />
-            <Metric label="Accepted" value={project?.accepted_status || '200-399'} />
-            <Metric label="Last check" value={latestCheck ? fmtUtcTime(latestCheck.timestamp) : '—'} />
-            {project?.cert_expiry_days != null && (
-              <Metric
-                label="Certificate"
-                value={`${project.cert_expiry_days}d${project.cert_issuer ? ` · ${project.cert_issuer}` : ''}`}
-                color={
-                  project.cert_expiry_days < 7
-                    ? STATUS.crit
-                    : project.cert_expiry_days < 30
-                      ? STATUS.warn
-                      : undefined
-                }
-              />
-            )}
-          </div>
+          ) : (
+            <LatencyChart checks={checks} />
+          )}
         </div>
       </div>
 
-      {/* Uptime heatmap */}
+      {/* Daily history: one bar per UTC day, from the monitor's per-day tallies */}
+      {status?.daily && (
+        <div className="panel-flush mt-3">
+          <div className="panel-head">
+            <div className="flex items-center gap-2.5">
+              <span className="text-[13px] font-semibold text-txt-hi">Daily</span>
+              <span className="rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[11px] font-medium text-txt-mid">
+                {status.daily.days.length}d
+              </span>
+            </div>
+            <span className="text-[11.5px] text-txt-lo">UTC days · an incident marks the day as an outage</span>
+          </div>
+          <div className="px-4 pb-4 pt-3">
+            <DayStrip daily={status.daily} createdAt={project?.created_at} now={now} interactive size="h-7 gap-[3px]" />
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-txt-lo">
+              {DAY_LEGEND.map(([label, swatch]) => (
+                <span key={label} className="inline-flex items-center gap-1.5">
+                  <span className={`h-2 w-2 rounded-[1px] ${swatch}`} />
+                  {label}
+                </span>
+              ))}
+              <span className="ml-auto font-mono text-[10.5px]">
+                {status.daily.since ? `tracked since ${fmtUtcDay(status.daily.since)}` : 'not tracked yet'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hourly heatmap: uptime or latency, a column per UTC hour of the day */}
       <div className="panel-flush mt-3">
-        <div className="panel-head">
-          <div className="flex items-center gap-2.5">
-            <span className="text-[13px] font-semibold text-txt-hi">Uptime</span>
+        {/* Wraps on phones rather than squeezing the metric switch. */}
+        <div className="panel-head flex-wrap gap-y-1.5">
+          <div className="flex flex-none items-center gap-2.5">
+            <RubberSegment
+              items={['Uptime', 'Latency']}
+              value={heatMetric}
+              onChange={setHeatMetric}
+              size="sm"
+              radius={9}
+              inset={2}
+              trackColor="rgba(255,255,255,0.05)"
+              thumbColor="#eceef0"
+              textColor="#9aa2ab"
+              activeTextColor="#0e1115"
+              aria-label="Heatmap metric"
+            />
             <span className="rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[11px] font-medium text-txt-mid">
               {hours}h
             </span>
           </div>
           <span className="text-[11.5px] text-txt-lo">
-            {hours <= 1 ? '5-minute buckets' : 'hourly buckets'} · conclusive checks only
+            {hours <= 1 ? '5-minute buckets' : 'UTC hours'} ·{' '}
+            {heatMetric === 'Uptime' ? 'conclusive checks only' : 'p50 of successful checks'}
           </span>
         </div>
         <div className="px-4 pb-4 pt-3">
-          <UptimeHeatmap buckets={uptimeBuckets} columns={hours <= 1 ? 12 : 24} />
+          <HourHeatmap
+            buckets={windowBuckets}
+            metric={heatMetric === 'Uptime' ? 'uptime' : 'latency'}
+            from={now - hours * 3_600_000}
+            now={now}
+            target={latencyTarget}
+            fine={hours <= 1}
+          />
         </div>
       </div>
 
-      {reliability?.open_incident && (
-        <div className="mt-3 flex items-center gap-2.5 rounded-lg border border-crit/25 bg-crit/[0.05] px-4 py-3 animate-fade-up">
-          <Radio className="h-4 w-4 animate-pulse text-crit" strokeWidth={2} />
-          <span className="font-mono text-[12px] font-semibold text-crit">
-            Incident in progress — this endpoint is currently failing checks.
-          </span>
-        </div>
+      {/* Where the endpoint is in the incident lifecycle, cross-checked against the record */}
+      {project && status && (
+        <IncidentState
+          checks={checks}
+          threshold={project.failure_threshold ?? PROJECT_DEFAULTS.failure_threshold}
+          incidents={incidents}
+          active={project.active}
+          verdict={verdict}
+          now={now}
+          className="mt-3 animate-fade-up"
+        />
       )}
 
       <IncidentReport
@@ -838,9 +1160,16 @@ export default function ProjectDetail() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className={`font-mono text-[11px] font-bold ${r.sla_pass ? 'text-ok' : 'text-crit'}`}>
-                          {r.sla_pass ? 'PASS' : 'FAIL'}
-                        </span>
+                        {/* The report's own three-way verdict; rows from before slo_status fall back to sla_pass. */}
+                        {(() => {
+                          const verdict = r.slo_status ?? (r.sla_pass ? 'met' : 'missed')
+                          const tone = verdict === 'met' ? 'text-ok' : verdict === 'missed' ? 'text-crit' : 'text-txt-mid'
+                          return (
+                            <span className={`font-mono text-[11px] font-bold ${tone}`}>
+                              {verdict === 'unproven' ? 'NOT PROVEN' : verdict.toUpperCase()}
+                            </span>
+                          )
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex items-center gap-1">
@@ -915,39 +1244,3 @@ export default function ProjectDetail() {
     </Shell>
   )
 }
-
-/** Label, big percentage, thin meter, and a caption that says what the number
- *  is counting. Replaces the uptime ring. */
-function VitalMeter({
-  label,
-  value,
-  color,
-  caption,
-}: {
-  label: string
-  value: number | null
-  color: string
-  caption?: string | null
-}) {
-  const shown = value == null ? null : Math.min(100, Math.max(0, value))
-  return (
-    <div>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[12px] font-medium text-txt-lo">{label}</span>
-        <span
-          className={`text-[17px] font-semibold tabular-nums ${shown == null ? 'text-txt-dim' : 'text-txt-hi'}`}
-        >
-          {shown == null ? '—' : `${shown.toFixed(1)}%`}
-        </span>
-      </div>
-      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-        <div
-          className="h-full rounded-full transition-[width] duration-500"
-          style={{ width: `${shown ?? 0}%`, backgroundColor: color }}
-        />
-      </div>
-      {caption && <p className="mt-1.5 text-[11px] leading-snug text-txt-dim">{caption}</p>}
-    </div>
-  )
-}
-

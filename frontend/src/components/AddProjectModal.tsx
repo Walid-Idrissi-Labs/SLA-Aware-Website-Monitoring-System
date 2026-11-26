@@ -4,6 +4,7 @@ import Stepper, { Step } from './Stepper'
 import { createProject } from '../lib/api'
 import { Alert } from './ui'
 import { PROJECT_DEFAULTS } from '../lib/format'
+import { DEMO } from '../lib/demo'
 import type { Project, CreateProjectInput } from '../types'
 
 interface Props {
@@ -67,7 +68,7 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fade-in"
       onClick={(e) => e.target === e.currentTarget && !saving && onClose()}
     >
-      <div className="w-full max-w-[480px] animate-scale-in">
+      <div role="dialog" aria-modal="true" aria-label="New endpoint" className="w-full max-w-[480px] animate-scale-in">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-[12.5px] text-txt-lo">New endpoint</span>
           <button
@@ -137,6 +138,9 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
                   className="field"
                   placeholder="https://mysite.com"
                 />
+                {DEMO && (
+                  <p className="mt-1.5 text-[10px] text-txt-dim">Demo: this endpoint is simulated. Nothing is requested and no email is sent.</p>
+                )}
               </div>
             </div>
           </Step>

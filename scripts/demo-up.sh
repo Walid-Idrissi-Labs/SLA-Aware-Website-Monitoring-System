@@ -5,6 +5,12 @@
 # updated values to actually take effect).
 set -euo pipefail
 
+# Pin the Vercel CLI. The globally installed binary is whatever Homebrew last
+# shipped (53.x here, which has no `env add --type` and takes the environment as
+# a positional argument), so the script used to work or fail depending on the
+# machine. Pinning makes the flags below deterministic.
+vercel() { npx --yes vercel@65 "$@"; }
+
 trap 'echo ""; echo "demo-up.sh failed partway through."; \
       echo "AWS resources from this run may already exist and be billing."; \
       echo "terraform apply / vercel are safe to redo, so first try: scripts/demo-up.sh"; \
@@ -24,10 +30,10 @@ HOSTED_UI_URL=$(terraform output -raw cognito_hosted_ui_url)
 
 set_env () {
   local NAME="$1" VALUE="$2"
-  vercel env rm "$NAME" production --yes >/dev/null 2>&1 || true
+  vercel env rm "$NAME" -e production --yes >/dev/null 2>&1 || true
   # --type config: Vite inlines VITE_* into the browser bundle, so Vercel rejects
   # any other type ("public framework prefix cannot use visibility: secret").
-  printf '%s' "$VALUE" | vercel env add "$NAME" production --type config >/dev/null
+  vercel env add "$NAME" --value "$VALUE" -e production --type config --force -y >/dev/null
 }
 
 DASHBOARD_URL="https://sla-aware-website-monitoring-system.vercel.app"
@@ -49,7 +55,9 @@ echo "==> Verifying the deployed bundle points at this stack..."
 BUNDLE=$(curl -s "$DASHBOARD_URL/" | grep -o 'assets/index-[^"]*\.js' | head -1 || true)
 if [ -z "$BUNDLE" ]; then
   echo "    ! could not read $DASHBOARD_URL — check it by hand"
-elif curl -s "$DASHBOARD_URL/$BUNDLE" | grep -Fq "$API_URL"; then
+# Here-string, not `curl | grep -q`: under pipefail an early grep exit makes curl
+# fail with a write error, which reads as "not found".
+elif grep -Fq "$API_URL" <<< "$(curl -s "$DASHBOARD_URL/$BUNDLE")"; then
   echo "    ok — bundle references $API_URL"
 else
   echo "    ! bundle does not reference $API_URL"
