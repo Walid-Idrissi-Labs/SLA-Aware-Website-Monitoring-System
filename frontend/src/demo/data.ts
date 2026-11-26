@@ -26,7 +26,6 @@ import type {
   ProjectStatus,
   ReliabilityMetrics,
   StatusSummary,
-  User,
 } from '../types'
 
 const MIN = 60_000
@@ -104,7 +103,7 @@ export const STORIES: Story[] = [
     ],
   },
   {
-    // Down now: refusing connections for over two hours, on record. A long
+    // Down now: refusing connections for over two hours, on record. A 1h40m
     // outage nine days ago makes an outage day and a failing weekly report.
     id: 'checkout',
     name: 'Checkout',
@@ -115,7 +114,7 @@ export const STORIES: Story[] = [
     latency: [220, 90],
     cert: [41, 'DigiCert Global G2'],
     stretches: [
-      { at: 9, from: 10 * 60 + 5, minutes: 192, ...http503 },
+      { at: 9, from: 10 * 60 + 5, minutes: 100, ...http503 },
       { at: 'hour', from: -137, minutes: Infinity, ...conn },
     ],
   },
@@ -174,13 +173,8 @@ export const STORIES: Story[] = [
   },
 ]
 
-export const DEMO_USER: User = {
-  user_id: 'demo',
-  email: 'demo@example.com',
-  display_name: 'Demo visitor',
-  notification_email: 'demo@example.com',
-  created_at: '2026-01-05T09:00:00Z',
-}
+/** The demo visitor's address (lib/demo.ts DEMO_USER); this file keeps type-only imports. */
+const DEMO_EMAIL = 'demo@example.com'
 
 // ─── Time ───────────────────────────────────────────────────────────────────
 
@@ -249,7 +243,8 @@ function checkAt(r: Resolved, minute: number): Check | null {
   const [base, spread] = r.story.latency
   // A hash of the minute, so the same minute always has the same latency.
   const noise = unit(minute * 31 + index)
-  const spike = unit(minute * 17 + index * 7) < 0.03 ? 300 + Math.round(400 * unit(minute + index * 13)) : 0
+  // An occasional slow answer, not a wall of spikes.
+  const spike = unit(minute * 17 + index * 7) < 0.015 ? 120 + Math.round(200 * unit(minute + index * 13)) : 0
   // Busiest mid-afternoon UTC, and each day a little faster or slower than the last.
   const rhythm = 0.25 * spread * Math.sin(2 * Math.PI * ((minute % DAY_MIN) / DAY_MIN - 0.375))
   const drift = 0.92 + 0.16 * unit(Math.floor(minute / DAY_MIN) * 13 + index)
@@ -388,7 +383,7 @@ export function demoProject(id: string, now: number, anchor = now): Project {
     active: true,
     failure_threshold: s.threshold,
     thresholds: { ...s.target },
-    notification_email: DEMO_USER.email,
+    notification_email: DEMO_EMAIL,
     created_at: createdAt(s, anchor),
     accepted_status: s.accepted ?? '200-399',
     current_status: latest?.status ?? 'unknown',

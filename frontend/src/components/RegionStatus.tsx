@@ -1,4 +1,5 @@
 import { Cloud } from 'lucide-react'
+import { DEMO } from '../lib/demo'
 
 /**
  * Cognito pool IDs look like "us-east-1_XXXXXXXXX", so the region prefix is the
@@ -12,6 +13,7 @@ function detectRegion(): string {
 
 /** Command-bar badge: the backend is live, and where. */
 export default function RegionStatus() {
+  if (DEMO) return null // the demo's data is not live
   const region = detectRegion()
 
   return (

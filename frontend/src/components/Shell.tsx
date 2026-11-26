@@ -4,6 +4,7 @@ import Sidebar from './Sidebar'
 import TickerClock from './TickerClock'
 import RegionStatus from './RegionStatus'
 import CommandPalette, { IS_MAC, PALETTE_KEY } from './CommandPalette'
+import { DEMO, exitDemo } from '../lib/demo'
 
 interface Props {
   ticker?: ReactNode
@@ -57,6 +58,19 @@ export default function Shell({ ticker, children }: Props) {
       <Sidebar />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[20px] border border-white/[0.07] bg-[#0c0e11]">
+          {DEMO && (
+            <div className="flex h-8 flex-none items-center justify-between gap-3 border-b border-white/[0.07] bg-white/[0.025] px-4 text-[12px] text-txt-mid">
+              {/* Says what "checked now" and the clock mean here; phones get the short form. */}
+              <span className="min-w-0 truncate">
+                <span className="font-semibold text-txt-hi">Demo</span> &middot; simulated
+                <span className="hidden sm:inline"> endpoints and</span> data
+                <span className="hidden sm:inline">. No real sites are checked.</span>
+              </span>
+              <button type="button" onClick={exitDemo} className="flex-none font-medium text-accent hover:underline">
+                Exit demo
+              </button>
+            </div>
+          )}
           {/* Command bar */}
           <header className="flex h-12 flex-none items-center gap-4 border-b border-white/[0.07] pl-4 pr-3">
             <div className="flex min-w-0 flex-1 items-center gap-5 overflow-hidden">{ticker}</div>

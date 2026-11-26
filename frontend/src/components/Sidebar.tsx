@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, Boxes, Settings as SettingsIcon, LogOut } from 'lucide-react'
 import { logout, getStoredUser } from '../lib/auth'
+import { DEMO } from '../lib/demo'
 import Logo from './Logo'
 import type { User } from '../types'
 
@@ -101,10 +102,11 @@ export default function Sidebar() {
           <div className="flex-none px-2 pb-2">
             <div className="mb-2 h-px w-full bg-white/[0.07]" />
             <Item
-              label="Log out"
+              label={DEMO ? 'Exit demo' : 'Log out'}
               onClick={() => {
                 logout()
-                navigate('/login')
+                // In the demo, logout() already left with a full load; a router push would land in /demo.
+                if (!DEMO) navigate('/login')
               }}
             >
               <LogOut className="h-[18px] w-[18px]" strokeWidth={1.75} />
