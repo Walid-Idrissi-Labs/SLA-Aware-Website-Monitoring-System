@@ -259,7 +259,8 @@ export const ERROR_TYPE = {
 export const incidentEnd = (incident: Incident, nowSec: number) => incident.end_time ?? (incident.resolved ? incident.start_time : nowSec)
 
 /** Incident totals for a window, using the incident list we already fetched.
- *  An incident can begin before the window; only its part inside it counts. */
+ *  An incident can begin before the window; only its part inside it counts, so
+ *  one that spans two windows counts once in each, with its downtime split. */
 export function incidentTotals(incidents: Incident[], fromSec: number, toSec: number, nowSec: number) {
   const inWindow = incidents.filter((i) => i.start_time < toSec && incidentEnd(i, nowSec) > fromSec)
   let downtime = 0

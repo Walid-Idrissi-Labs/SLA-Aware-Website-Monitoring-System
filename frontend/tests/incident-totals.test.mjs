@@ -22,6 +22,13 @@ test('an outage that began before the window counts only its part inside it', ()
   assert.deepEqual([ended.count, ended.downtime, ended.mttr], [1, DAY, 4 * DAY]) // MTTR keeps the whole repair
 })
 
+test('an incident spanning the previous and current windows splits its downtime between them', () => {
+  const spanning = [closed(NOW - 8 * DAY, NOW - 6 * DAY)]
+  const current = totals(spanning)
+  const previous = incidentTotals(spanning, FROM - 7 * DAY, FROM, NOW)
+  assert.deepEqual([current.count, current.downtime, previous.count, previous.downtime], [1, DAY, 1, DAY])
+})
+
 test('one that ended before the window stays out, and only failures inside it set MTBF', () => {
   assert.equal(totals([closed(NOW - 10 * DAY, NOW - 9 * DAY)]).count, 0)
   const t = totals([open(NOW - 40 * DAY), closed(NOW - 3 * DAY, NOW - 3 * DAY + 60), closed(NOW - DAY, NOW - DAY + 60)])
