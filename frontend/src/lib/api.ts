@@ -1,4 +1,5 @@
 import { getToken, clearToken, storeUser } from './auth';
+import { DEMO } from './demo';
 import type {
   User,
   Project,
@@ -16,6 +17,8 @@ async function request<T>(
   path: string,
   body?: unknown
 ): Promise<T> {
+  // The demo answers from the browser: no API, no token, no 401 path.
+  if (DEMO) return (await import('../demo/handler')).handle<T>(method, path, body);
   if (!API_BASE) {
     throw new Error('VITE_API_GATEWAY_URL is not configured');
   }
