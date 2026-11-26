@@ -369,7 +369,7 @@ export function demoStatus(id: string, hours: number, now: number, days = 30, an
   }
   return {
     project_id: id,
-    current_status: checks.at(-1)?.status ?? 'unknown',
+    current_status: checks[checks.length - 1]?.status ?? 'unknown',
     summary,
     checks,
     daily: demoDaily(id, days, now, anchor),
