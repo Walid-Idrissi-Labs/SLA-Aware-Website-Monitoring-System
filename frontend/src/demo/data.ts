@@ -7,6 +7,11 @@
  * agrees with every other. Pure: no network, no storage, no randomness; the
  * latency noise is a hash of the minute, so a refresh shows the same numbers.
  *
+ * The stories hang off the hour the visitor arrived in (`anchor`), not the
+ * current hour, so within a visit the demo moves the way the real system would:
+ * an open incident stays open, and a recovered one closes at the next hourly
+ * pass. A reload starts the stories again from the new hour.
+ *
  * Type-only imports keep this file loadable by `node --test` (type stripping).
  */
 import type {
@@ -186,8 +191,11 @@ const hourStartMin = (now: number) => Math.floor(now / HOUR) * 60
 const dayStartMin = (now: number) => toMinute(now) - (toMinute(now) % DAY_MIN)
 const isoDay = (minute: number) => new Date(minute * MIN).toISOString().slice(0, 10)
 
-/** Each endpoint's check lands a little after the minute, like the real monitor's. */
-const checkTime = (story: Story, minute: number) => minute * MIN + 20_000 + STORIES.indexOf(story) * 700
+/** Each endpoint's check lands 20-27 s after the minute, varying a little like the real monitor's. */
+const checkTime = (story: Story, minute: number) => {
+  const index = STORIES.indexOf(story)
+  return minute * MIN + 20_000 + index * 700 + Math.floor(unit(minute * 7 + index) * 3_000)
+}
 
 // ─── One endpoint, resolved against now ─────────────────────────────────────
 
@@ -216,14 +224,14 @@ export function createdAt(s: Story, now: number): string {
   return new Date((dayStartMin(now) - s.createdDaysAgo * DAY_MIN + 9 * 60 + 30) * MIN).toISOString()
 }
 
-function resolve(s: Story, now: number): Resolved {
+function resolve(s: Story, now: number, anchor: number): Resolved {
   const first = toMinute(Date.parse(createdAt(s, now)))
   let last = toMinute(now)
   if (checkTime(s, last) > now) last -= 1 // this minute's check has not landed yet
-  if (s.stoppedBeforeHour != null) last = Math.min(last, hourStartMin(now) - s.stoppedBeforeHour)
+  if (s.stoppedBeforeHour != null) last = Math.min(last, hourStartMin(anchor) - s.stoppedBeforeHour)
   const spans = s.stretches.map((stretch) => {
     if (stretch.at === 'latest') return { start: last - stretch.minutes + 1, end: last + 1, stretch }
-    const base = stretch.at === 'hour' ? hourStartMin(now) : dayStartMin(now) - stretch.at * DAY_MIN
+    const base = stretch.at === 'hour' ? hourStartMin(anchor) : dayStartMin(now) - stretch.at * DAY_MIN
     const start = base + stretch.from
     return { start, end: stretch.minutes === Infinity ? Infinity : start + stretch.minutes, stretch }
   })
@@ -241,11 +249,14 @@ function checkAt(r: Resolved, minute: number): Check | null {
   // A hash of the minute, so the same minute always has the same latency.
   const noise = unit(minute * 31 + index)
   const spike = unit(minute * 17 + index * 7) < 0.03 ? 300 + Math.round(400 * unit(minute + index * 13)) : 0
+  // Busiest mid-afternoon UTC, and each day a little faster or slower than the last.
+  const rhythm = 0.25 * spread * Math.sin(2 * Math.PI * ((minute % DAY_MIN) / DAY_MIN - 0.375))
+  const drift = 0.92 + 0.16 * unit(Math.floor(minute / DAY_MIN) * 13 + index)
   const answered = !stretch || stretch.error === 'http' || stretch.error === 'blocked'
   return {
     timestamp: checkTime(r.story, minute),
     status: stretch ? (stretch.status as Check['status']) : 'success',
-    latency_ms: answered ? Math.round(base + spread * noise + spike) : 10_000,
+    latency_ms: answered ? Math.round((base + spread * noise) * drift + rhythm + spike) : 10_000,
     http_status_code: stretch ? stretch.http ?? 0 : 200,
     error_type: stretch?.error ?? null,
     accepted_status: r.story.accepted ?? '200-399',
@@ -285,8 +296,10 @@ function incidents(r: Resolved, now: number): Incident[] {
     // Not on record until the pass after the run reached the threshold.
     if (nextPass(checkTime(r.story, lo + r.story.threshold - 1)) > now) continue
     const start = Math.floor(checkTime(r.story, lo) / 1000)
-    // The first passing check closes it, once the next pass has run.
-    const recovery = hi <= r.last ? checkTime(r.story, hi) : null
+    // The first passing check after the run closes it, once the next pass has run.
+    let next = hi
+    while (next <= r.last && checkAt(r, next)?.status !== 'success') next++
+    const recovery = next <= r.last ? checkTime(r.story, next) : null
     const closed = recovery != null && nextPass(recovery) <= now
     const end = closed ? Math.floor((recovery as number) / 1000) : null
     out.push({
@@ -312,8 +325,8 @@ function downtimeIn(list: Incident[], fromSec: number, toSec: number): number {
 // ─── API-shaped views ───────────────────────────────────────────────────────
 
 /** Checks in [fromMs, toMs], oldest first. */
-export function demoChecks(id: string, fromMs: number, toMs: number, now: number): Check[] {
-  const r = resolve(story(id), now)
+export function demoChecks(id: string, fromMs: number, toMs: number, now: number, anchor = now): Check[] {
+  const r = resolve(story(id), now, anchor)
   const out: Check[] = []
   for (let m = Math.max(toMinute(fromMs), r.first); m <= Math.min(toMinute(toMs), r.last); m++) {
     const check = checkAt(r, m)
@@ -323,8 +336,8 @@ export function demoChecks(id: string, fromMs: number, toMs: number, now: number
 }
 
 /** The last `days` UTC days, oldest first: the API's `_daily`. */
-export function demoDaily(id: string, days: number, now: number): Daily {
-  const r = resolve(story(id), now)
+export function demoDaily(id: string, days: number, now: number, anchor = now): Daily {
+  const r = resolve(story(id), now, anchor)
   const list = incidents(r, now)
   const nowSec = Math.floor(now / 1000)
   const firstDay = dayStartMin(now) - (days - 1) * DAY_MIN
@@ -338,8 +351,8 @@ export function demoDaily(id: string, days: number, now: number): Daily {
 }
 
 /** The API's `/status` window, with the 30-day (or list's 14-day) history. */
-export function demoStatus(id: string, hours: number, now: number, days = 30): ProjectStatus {
-  const checks = demoChecks(id, now - hours * HOUR, now, now)
+export function demoStatus(id: string, hours: number, now: number, days = 30, anchor = now): ProjectStatus {
+  const checks = demoChecks(id, now - hours * HOUR, now, now, anchor)
   const up = checks.filter((c) => c.status === 'success').length
   const down = checks.filter((c) => c.status === 'failure').length
   const expected = Math.max(hours * 60, 1)
@@ -358,14 +371,14 @@ export function demoStatus(id: string, hours: number, now: number, days = 30): P
     current_status: checks.at(-1)?.status ?? 'unknown',
     summary,
     checks,
-    daily: demoDaily(id, days, now),
+    daily: demoDaily(id, days, now, anchor),
   }
 }
 
 /** One project as GET /projects/{id} returns it. */
-export function demoProject(id: string, now: number): Project {
+export function demoProject(id: string, now: number, anchor = now): Project {
   const s = story(id)
-  const r = resolve(s, now)
+  const r = resolve(s, now, anchor)
   const latest = checkAt(r, r.last)
   return {
     project_id: s.id,
@@ -382,15 +395,15 @@ export function demoProject(id: string, now: number): Project {
     last_checked_at: latest?.timestamp ?? null,
     cert_expiry_days: s.cert?.[0] ?? null,
     cert_issuer: s.cert?.[1] ?? null,
-    cert_checked_at: s.cert ? now - 3 * HOUR : null,
+    cert_checked_at: s.cert ? Math.floor(now / 1000) - 10_800 : null, // seconds, as the monitor writes it
   }
 }
 
 /** GET /projects, with each project's window and 14-day history when `statusHours` is given (capped at 24 h, like the API). */
-export function demoProjects(now: number, statusHours?: number): Project[] {
+export function demoProjects(now: number, statusHours?: number, anchor = now): Project[] {
   return STORIES.map((s) => {
-    const project = demoProject(s.id, now)
-    return statusHours ? { ...project, status: demoStatus(s.id, Math.min(statusHours, 24), now, 14) } : project
+    const project = demoProject(s.id, now, anchor)
+    return statusHours ? { ...project, status: demoStatus(s.id, Math.min(statusHours, 24), now, 14, anchor) } : project
   })
 }
 
@@ -424,8 +437,8 @@ function reliability(list: Incident[], minUptime: number, fromSec: number, nowSe
 }
 
 /** GET /projects/{id}/incidents?days=N: those that began in the window, plus an earlier one still running into it. */
-export function demoIncidents(id: string, days: number, now: number): IncidentsResponse {
-  const r = resolve(story(id), now)
+export function demoIncidents(id: string, days: number, now: number, anchor = now): IncidentsResponse {
+  const r = resolve(story(id), now, anchor)
   const nowSec = Math.floor(now / 1000)
   const fromSec = nowSec - days * 86_400
   const all = incidents(r, now)
@@ -444,13 +457,21 @@ function evaluate(s: Story, uptime: number, avg: number, coverage: number) {
 }
 
 /** A report over [fromMs, toMs), computed the way the report generator computes one. */
-export function demoReport(id: string, reportId: string, fromMs: number, toMs: number, generatedAt: number, now: number): ProjectReport {
+export function demoReport(
+  id: string,
+  reportId: string,
+  fromMs: number,
+  toMs: number,
+  generatedAt: number,
+  now: number,
+  anchor = now,
+): ProjectReport {
   const s = story(id)
-  const r = resolve(s, now)
+  const r = resolve(s, now, anchor)
   const { up, down, inconclusive } = tally(r, toMinute(fromMs), toMinute(toMs))
   const conclusive = up + down
   const expected = Math.max(Math.floor((toMs - fromMs) / MIN), conclusive, 1)
-  const latencies = demoChecks(id, fromMs, toMs - 1, now)
+  const latencies = demoChecks(id, fromMs, toMs - 1, now, anchor)
     .filter((c) => c.status === 'success')
     .map((c) => c.latency_ms)
     .sort((a, b) => a - b)
@@ -486,8 +507,8 @@ export function demoReport(id: string, reportId: string, fromMs: number, toMs: n
 const weekly = new Map<string, ProjectReport>()
 let weeklyDay = -1
 
-/** The last four weekly reports (Monday to Monday, generated Monday 08:00 UTC), newest first. */
-export function demoReports(id: string, now: number): ProjectReport[] {
+/** The last four weekly reports (Monday to Monday, generated Monday 08:00 UTC), oldest first like the API. */
+export function demoReports(id: string, now: number, anchor = now): ProjectReport[] {
   if (weeklyDay !== dayStartMin(now)) {
     weekly.clear()
     weeklyDay = dayStartMin(now)
@@ -496,7 +517,7 @@ export function demoReports(id: string, now: number): ProjectReport[] {
   const today = dayStartMin(now) * MIN
   const weekday = (new Date(today).getUTCDay() + 6) % 7 // Monday = 0
   let weekEnd = today - weekday * 86_400_000
-  if (now < weekEnd + 8 * HOUR) weekEnd -= 7 * 86_400_000 // this week's run has not happened yet
+  if (now < weekEnd + 8 * HOUR + 4_000) weekEnd -= 7 * 86_400_000 // this week's run has not finished yet
   const created = Date.parse(createdAt(s, now))
   const out: ProjectReport[] = []
   for (let k = 0; k < 4; k++) {
@@ -509,9 +530,10 @@ export function demoReports(id: string, now: number): ProjectReport[] {
     const yearStart = Date.UTC(thursday.getUTCFullYear(), 0, 1)
     const week = Math.ceil(((thursday.getTime() - yearStart) / 86_400_000 + 1) / 7)
     const reportId = `${thursday.getUTCFullYear()}-W${String(week).padStart(2, '0')}`
-    const key = `${id}:${reportId}`
-    if (!weekly.has(key)) weekly.set(key, demoReport(id, reportId, monday.getTime(), end, end + 8 * HOUR + 4_000, now))
-    out.push(weekly.get(key) as ProjectReport)
+    // Issued reports are records: they keep the targets they were judged against.
+    const key = `${id}:${reportId}:${anchor}`
+    if (!weekly.has(key)) weekly.set(key, demoReport(id, reportId, monday.getTime(), end, end + 8 * HOUR + 4_000, now, anchor))
+    out.push({ ...(weekly.get(key) as ProjectReport) })
   }
-  return out
+  return out.reverse()
 }
