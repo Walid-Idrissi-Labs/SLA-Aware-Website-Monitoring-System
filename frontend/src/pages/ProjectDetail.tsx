@@ -10,7 +10,6 @@ import {
   ChevronRight,
   Download,
   Sheet,
-  Radio,
   ClockAlert,
   CircleOff,
 } from 'lucide-react'
@@ -20,6 +19,7 @@ import FlipClock from '../components/FlipClock'
 import IncidentReport from '../components/IncidentReport'
 import HourHeatmap from '../components/HourHeatmap'
 import HowCalculated from '../components/HowCalculated'
+import IncidentState from '../components/IncidentState'
 import DayStrip from '../components/DayStrip'
 import RubberSegment from '../components/RubberSegment'
 import UseAnimations from 'react-useanimations'
@@ -1026,13 +1026,17 @@ export default function ProjectDetail() {
         </div>
       </div>
 
-      {reliability?.open_incident && (
-        <div className="mt-3 flex items-center gap-2.5 rounded-lg border border-crit/25 bg-crit/[0.05] px-4 py-3 animate-fade-up">
-          <Radio className="h-4 w-4 animate-pulse text-crit" strokeWidth={2} />
-          <span className="font-mono text-[12px] font-semibold text-crit">
-            Incident in progress — this endpoint is currently failing checks.
-          </span>
-        </div>
+      {/* Where the endpoint is in the incident lifecycle, cross-checked against the record */}
+      {project && status && (
+        <IncidentState
+          checks={checks}
+          threshold={project.failure_threshold ?? PROJECT_DEFAULTS.failure_threshold}
+          incidents={incidents}
+          active={project.active}
+          verdict={verdict}
+          now={now}
+          className="mt-3 animate-fade-up"
+        />
       )}
 
       <IncidentReport
