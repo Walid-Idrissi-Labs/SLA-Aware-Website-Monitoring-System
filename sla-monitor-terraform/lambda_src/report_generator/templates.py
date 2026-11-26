@@ -322,8 +322,8 @@ def build_html_report(
         f'<li><span class="n">3</span>Response-time metrics are computed over passing checks only. '
         f'P95 is the 95th-percentile response time.</li>'
         f'<li><span class="n">4</span>An incident opens after {failure_threshold} consecutive failed checks '
-        f'and closes on the first passing check that follows. Downtime is the sum of resolved '
-        f'incident durations.</li>'
+        f'and closes on the first passing check that follows. Downtime is the time inside the '
+        f'reporting period covered by incidents, including one still open at its end.</li>'
         f'<li><span class="n">5</span>All timestamps are UTC.</li>'
     )
 

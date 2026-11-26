@@ -388,6 +388,8 @@ class FakeIncidentsTable:
             return {"Items": [r for r in rows if r["resolved"] == values[":resolved"]]}
         if ":now_ts" in values:
             return {"Items": [r for r in rows if values[":from_ts"] <= r["start_time"] <= values[":now_ts"]]}
+        if ":to_sec" in values:
+            return {"Items": [r for r in rows if values[":from_sec"] <= r["start_time"] <= values[":to_sec"]]}
         if ":end_ts" in values:
             return {"Items": [r for r in rows if r["start_time"] <= values[":end_ts"]][: kw.get("Limit")]}
         return {"Items": [r for r in rows if r["start_time"] < values[":from_ts"]][: kw.get("Limit")]}
@@ -555,6 +557,46 @@ class OpenIncidentWindowTest(unittest.TestCase):
         start = self.NOW - 40 * 86400
         body = self.incidents_route([{"project_id": "p1", "start_time": start, "end_time": start + 60, "duration_seconds": 60, "resolved": True}])
         self.assertEqual((body["incidents"], body["metrics"]["open_incident"]), ([], False))
+
+
+class ReportIncidentWindowTest(unittest.TestCase):
+    """A report counts an outage that ran into its window, inside the window only (board #31)."""
+
+    FROM, TO = 1_800_000_000, 1_800_000_000 + 7 * 86400
+
+    def incidents(self, rows):
+        with mock.patch.object(reports, "incidents_table", FakeIncidentsTable(rows)):
+            return [i["start_time"] for i in reports.query_incidents_paginated("p1", self.FROM, self.TO)]
+
+    @staticmethod
+    def row(start, end=None):
+        return {"project_id": "p1", "start_time": start, "end_time": end, "resolved": end is not None,
+                "duration_seconds": None if end is None else end - start}
+
+    def downtime(self, *rows):
+        return reports.compute_reliability_metrics(list(rows), self.FROM, self.TO)["total_downtime_sec"]
+
+    def test_the_outage_before_the_window_is_kept_only_while_it_overlaps(self):
+        inside = self.row(self.FROM + 86400, self.FROM + 86400 + 300)
+        self.assertEqual(self.incidents([self.row(self.FROM - 3600), inside]), [self.FROM - 3600, self.FROM + 86400])
+        self.assertEqual(self.incidents([self.row(self.FROM - 3600, self.FROM + 600), inside]), [self.FROM - 3600, self.FROM + 86400])
+        self.assertEqual(self.incidents([self.row(self.FROM - 3600, self.FROM - 60), inside]), [self.FROM + 86400])
+        # The window's edges: a start exactly at it is taken once, an end exactly at it is outside.
+        self.assertEqual(self.incidents([self.row(self.FROM, self.FROM + 60)]), [self.FROM])
+        self.assertEqual(self.incidents([self.row(self.FROM - 60, self.FROM)]), [])
+
+    def test_build_report_clips_to_the_window_it_is_given(self):
+        checks = [{"status": "success", "latency_ms": 100}] * 10
+        report = reports.build_report({"project_id": "p1"}, checks, [self.row(self.FROM - 3600, self.FROM + 600)], "r1", (self.FROM, self.TO), expected_checks=10)
+        self.assertEqual((report["incident_count"], report["total_downtime_sec"]), (1, 600))
+
+    def test_downtime_is_clipped_to_the_window_and_counts_open_outages(self):
+        self.assertEqual(self.downtime(self.row(self.FROM - 3600, self.FROM + 600), self.row(self.FROM + 86400, self.FROM + 86700)), 900)
+        self.assertEqual(self.downtime(self.row(self.TO - 120, self.TO + 3600)), 120)  # ran past the end
+        self.assertEqual(self.downtime(self.row(self.TO - 60)), 60)  # still open: down until the window closes
+        self.assertEqual(self.downtime(self.row(self.FROM - 3600)), 7 * 86400)  # open all week
+        legacy = {"start_time": self.FROM + 10, "end_time": None, "resolved": True, "duration_seconds": 50}
+        self.assertEqual(self.downtime(legacy), 50)
 
 
 class MttrTest(unittest.TestCase):
