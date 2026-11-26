@@ -581,6 +581,14 @@ class ReportIncidentWindowTest(unittest.TestCase):
         self.assertEqual(self.incidents([self.row(self.FROM - 3600), inside]), [self.FROM - 3600, self.FROM + 86400])
         self.assertEqual(self.incidents([self.row(self.FROM - 3600, self.FROM + 600), inside]), [self.FROM - 3600, self.FROM + 86400])
         self.assertEqual(self.incidents([self.row(self.FROM - 3600, self.FROM - 60), inside]), [self.FROM + 86400])
+        # The window's edges: a start exactly at it is taken once, an end exactly at it is outside.
+        self.assertEqual(self.incidents([self.row(self.FROM, self.FROM + 60)]), [self.FROM])
+        self.assertEqual(self.incidents([self.row(self.FROM - 60, self.FROM)]), [])
+
+    def test_build_report_clips_to_the_window_it_is_given(self):
+        checks = [{"status": "success", "latency_ms": 100}] * 10
+        report = reports.build_report({"project_id": "p1"}, checks, [self.row(self.FROM - 3600, self.FROM + 600)], "r1", (self.FROM, self.TO), expected_checks=10)
+        self.assertEqual((report["incident_count"], report["total_downtime_sec"]), (1, 600))
 
     def test_downtime_is_clipped_to_the_window_and_counts_open_outages(self):
         self.assertEqual(self.downtime(self.row(self.FROM - 3600, self.FROM + 600), self.row(self.FROM + 86400, self.FROM + 86700)), 900)
