@@ -125,14 +125,23 @@ def compute_performance_metrics(checks: list[dict]) -> dict[str, float]:
     return {"avg_latency_ms": avg, "p95_latency_ms": p95}
 
 
-def compute_reliability_metrics(incidents: list[dict]) -> dict[str, Any]:
-    incident_count = len(incidents)
-    resolved = [i for i in incidents if i.get("resolved") is True]
-    # duration_seconds comes back as Decimal; coerce to int (and guard None).
-    total_downtime = int(sum(int(i.get("duration_seconds") or 0) for i in resolved))
+def compute_reliability_metrics(incidents: list[dict], from_sec: int, to_sec: int) -> dict[str, Any]:
+    """Incident count and downtime inside [from_sec, to_sec]. An incident that began
+    before the window, ran past its end, or is still open counts only its part inside."""
+    downtime = 0
+    for incident in incidents:
+        # DynamoDB numbers arrive as Decimal; coerce to int.
+        start = int(incident["start_time"])
+        if incident.get("end_time") is not None:
+            end = int(incident["end_time"])
+        elif incident.get("resolved"):
+            end = start + int(incident.get("duration_seconds") or 0)
+        else:
+            end = to_sec  # still open: down until the window closes
+        downtime += max(0, min(end, to_sec) - max(start, from_sec))
     return {
-        "incident_count": incident_count,
-        "total_downtime_sec": total_downtime,
+        "incident_count": len(incidents),
+        "total_downtime_sec": downtime,
     }
 
 
@@ -179,12 +188,13 @@ def build_report(
     checks: list[dict],
     incidents: list[dict],
     report_id: str,
+    window: tuple[int, int],
     expected_checks: int | None = None,
 ) -> dict:
 
     avail = compute_availability_metrics(checks, expected_checks)
     perf = compute_performance_metrics(checks)
-    rel = compute_reliability_metrics(incidents)
+    rel = compute_reliability_metrics(incidents, *window)
 
     sla_pass, severity, slo_status = evaluate_sla(
         project.get("thresholds", {}),
@@ -284,6 +294,8 @@ def query_checks_paginated(project_id: str, from_ms: int, to_ms: int) -> list[di
 
 
 def query_incidents_paginated(project_id: str, from_sec: int, to_sec: int) -> list[dict]:
+    """Incidents that overlap [from_sec, to_sec]: those that began inside it, plus the
+    last one that began before it if it was still open when the window started."""
     incidents = []
     query_kwargs = {
         "KeyConditionExpression": "project_id = :pid AND start_time BETWEEN :from_sec AND :to_sec",
@@ -294,8 +306,17 @@ def query_incidents_paginated(project_id: str, from_sec: int, to_sec: int) -> li
         incidents.extend(response.get("Items", []))
         last_key = response.get("LastEvaluatedKey")
         if not last_key:
-            return incidents
+            break
         query_kwargs["ExclusiveStartKey"] = last_key
+
+    # Incidents never overlap, so only the latest earlier one can run into the window.
+    earlier = incidents_table.query(
+        KeyConditionExpression="project_id = :pid AND start_time < :from_ts",
+        ExpressionAttributeValues={":pid": project_id, ":from_ts": from_sec},
+        ScanIndexForward=False,
+        Limit=1,
+    ).get("Items", [])
+    return [i for i in earlier if not i.get("resolved") or int(i.get("end_time") or 0) > from_sec] + incidents
 
 
 
@@ -332,6 +353,7 @@ def generate_for_project(
         checks,
         incidents,
         report_id,
+        (from_sec, to_sec),
         expected_checks=int((window_end - window_start).total_seconds() // CHECK_INTERVAL_SECONDS),
     )
     # report holds native floats/ints (JSON-safe for S3/email); convert floats ->
