@@ -267,7 +267,7 @@ def process_project(project: dict) -> None:
 
     now_sec = int(time.time())
     # Two hours, though the pass runs hourly: a failure run that crosses the hour
-    # mark (or a late pass) is then seen whole, from its true first failure.
+    # mark, or one missed by a pass up to an hour late, is then seen whole.
     from_sec = now_sec - 2 * 3600
 
     # STEP 1 — settle any incident carried over from previous windows.
@@ -307,6 +307,9 @@ def process_project(project: dict) -> None:
             # This run is part of the incident closed in step 1.
             continue
         # The overlap hour shows runs an earlier pass already recorded, some cut short at the window's start.
+        # shortcut: a run that goes on after a monitoring_stopped close (paused while down, resumed
+        # still down) reads as on record until the pause leaves the window, so its incident opens up
+        # to an hour late; split runs at that close if pausing mid-outage turns out to be common.
         if run_on_record(project_id, run_start_sec, run["end_ts_ms"] // 1000):
             continue
 

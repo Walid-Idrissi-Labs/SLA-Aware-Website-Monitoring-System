@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Timer, Activity, Hourglass, Gauge, TrendingUp, TrendingDown } from 'lucide-react'
 import RubberSegment from './RubberSegment'
 import TrendChart from './TrendChart'
-import { STATUS, formatDowntime } from '../lib/format'
+import { STATUS, formatDowntime, incidentEnd, incidentTotals } from '../lib/format'
 import type { Incident, ReliabilityMetrics } from '../types'
 
 const DAY_MS = 86_400_000
@@ -71,44 +71,6 @@ function Row({
   )
 }
 
-/** Incident totals for a window, using the incident list we already fetched. */
-function summarise(incidents: Incident[], fromSec: number, toSec: number) {
-  const inWindow = incidents.filter((i) => i.start_time >= fromSec && i.start_time < toSec)
-  let downtime = 0
-  let resolvedDuration = 0
-  let resolvedCount = 0
-  let longest = 0
-  for (const incident of inWindow) {
-    // An open incident has no end_time yet; count it up to now.
-    const seconds = incident.duration_seconds ?? (incident.resolved ? 0 : Date.now() / 1000 - incident.start_time)
-    downtime += seconds
-    longest = Math.max(longest, seconds)
-    // Cut off when monitoring stopped, not repaired: downtime, but no recovery time.
-    if (incident.resolved && incident.duration_seconds != null && !incident.closed_reason) {
-      resolvedDuration += incident.duration_seconds
-      resolvedCount += 1
-    }
-  }
-  // MTBF is computed per window rather than taken from the API metrics, which
-  // are calculated over the whole fetched range — otherwise the card would mix
-  // a 7-day headline with a 30-day average.
-  const starts = inWindow.map((incident) => incident.start_time).sort((a, b) => a - b)
-  let mtbf: number | null = null
-  if (starts.length >= 2) {
-    let total = 0
-    for (let i = 1; i < starts.length; i++) total += starts[i] - starts[i - 1]
-    mtbf = total / (starts.length - 1)
-  }
-
-  return {
-    count: inWindow.length,
-    downtime,
-    longest,
-    mtbf,
-    mttr: resolvedCount > 0 ? resolvedDuration / resolvedCount : null,
-  }
-}
-
 /**
  * Incident report: a downtime-per-day trend, the two headline totals with
  * period-over-period deltas, and the reliability figures underneath.
@@ -127,9 +89,9 @@ export default function IncidentReport({
   const report = useMemo(() => {
     const nowSec = Math.floor(Date.now() / 1000)
     const windowSec = windowDays * 86_400
-    const current = summarise(incidents, nowSec - windowSec, nowSec + 1)
+    const current = incidentTotals(incidents, nowSec - windowSec, nowSec + 1, nowSec)
     const previous = comparisonAvailable
-      ? summarise(incidents, nowSec - windowSec * 2, nowSec - windowSec)
+      ? incidentTotals(incidents, nowSec - windowSec * 2, nowSec - windowSec, nowSec)
       : null
 
     // Downtime minutes per UTC day across the window.
@@ -137,12 +99,12 @@ export default function IncidentReport({
     const firstDayMs = Math.floor((todayMs - windowSec * 1000) / DAY_MS) * DAY_MS
     const perDay = new Map<number, number>()
     for (const incident of incidents) {
-      if (incident.start_time < nowSec - windowSec) continue
-      const seconds =
-        incident.duration_seconds ?? (incident.resolved ? 0 : nowSec - incident.start_time)
-      // Attributed to the day it began; an incident spanning midnight is not
-      // split, which is a known simplification.
-      const day = Math.floor((incident.start_time * 1000) / DAY_MS) * DAY_MS
+      const start = Math.max(incident.start_time, nowSec - windowSec)
+      const seconds = incidentEnd(incident, nowSec) - start
+      if (seconds < 0) continue
+      // Attributed to the day it began (or the window's first day); an incident
+      // spanning midnight is not split, which is a known simplification.
+      const day = Math.floor((start * 1000) / DAY_MS) * DAY_MS
       perDay.set(day, (perDay.get(day) ?? 0) + seconds / 60)
     }
     const labels: string[] = []

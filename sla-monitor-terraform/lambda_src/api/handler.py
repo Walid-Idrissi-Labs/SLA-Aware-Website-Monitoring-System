@@ -407,14 +407,18 @@ def _reliability_metrics(incidents: list[dict], thresholds: dict, from_sec: int,
 
     DynamoDB numbers arrive as Decimal; coerce to int/float here so the math is
     plain and the returned dict is JSON-safe. An ongoing (unresolved) incident
-    accrues downtime up to `now_sec`.
+    accrues downtime up to `now_sec`. Downtime and the longest outage count only
+    the part of an incident inside the window; MTTR uses whole durations.
     """
     window_sec = max(now_sec - from_sec, 1)
     resolved = [i for i in incidents if i.get("resolved") is True]
     open_incidents = [i for i in incidents if not i.get("resolved")]
 
     incident_count = len(incidents)
-    durations = [int(i["duration_seconds"]) for i in resolved if i.get("duration_seconds") is not None]
+    durations = [
+        int(i["duration_seconds"]) - max(from_sec - int(i["start_time"]), 0)
+        for i in resolved if i.get("duration_seconds") is not None
+    ]
 
     # By design there is at most one open incident; it counts up to now, from
     # the window's start if it began before it.
@@ -491,8 +495,11 @@ def handle_get_projects_incidents(event: dict) -> dict:
     from_sec = now_sec - (days * 86400)
 
     incidents = _incidents_between(project_id, from_sec, now_sec)
-    # An outage that began before the window and is still open is the current one.
-    incidents += [i for i in _incident_before(project_id, from_sec) if not i.get("resolved")]
+    # An outage that began before the window still counts if it ran into it (or is still open).
+    incidents += [
+        i for i in _incident_before(project_id, from_sec)
+        if not i.get("resolved") or int(i.get("end_time") or 0) > from_sec
+    ]
 
     metrics = _reliability_metrics(incidents, project.get("thresholds", {}), from_sec, now_sec)
 

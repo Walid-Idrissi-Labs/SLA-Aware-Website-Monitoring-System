@@ -457,14 +457,16 @@ class HourBoundaryTest(unittest.TestCase):
 
     H = 1_800_000_000 - 1_800_000_000 % 3600  # a top of the hour
 
-    def passes(self, checks, at, rows=None):
-        incidents = FakeIncidentsTable(rows if rows is not None else [])
+    def passes(self, checks, at, rows=()):
+        incidents = FakeIncidentsTable(list(rows))
         project = {"project_id": "p1", "active": True, "failure_threshold": 3}
         with mock.patch.object(processor, "incidents_table", incidents), \
-             mock.patch.object(processor, "checks_table", FakeChecksTable(checks)), \
              mock.patch.object(processor, "load_projects", lambda: [project]):
             for now in at:
-                with mock.patch.object(processor.time, "time", return_value=now):
+                # Each pass sees only the checks written by then.
+                seen = FakeChecksTable([c for c in checks if c["timestamp"] <= now * 1000])
+                with mock.patch.object(processor, "checks_table", seen), \
+                     mock.patch.object(processor.time, "time", return_value=now):
                     processor.lambda_handler({}, None)
         return incidents.rows
 
@@ -487,11 +489,28 @@ class HourBoundaryTest(unittest.TestCase):
         self.assertEqual([(r["start_time"], r["duration_seconds"]) for r in rows], [(H - 100, 300)])
 
     def test_a_run_seen_again_at_the_window_start_is_not_recorded_twice(self):
-        # The pass at H records and closes it; the pass at H+1h sees it again, cut short by its window's start.
+        # The pass at H records and closes it; the pass at H+1h sees it again, cut short by its
+        # window's start. The older incident makes sure the overlap check reads the latest one.
         start = self.H - 3600 - 120
+        older = {"project_id": "p1", "start_time": start - 5000, "end_time": start - 4000, "duration_seconds": 1000, "resolved": True}
         checks = self.checks(*[(start + 60 * i, "failure") for i in range(8)], (start + 480, "success"))
-        rows = self.passes(checks, [self.H, self.H + 3600])
-        self.assertEqual([(r["start_time"], r["end_time"]) for r in rows], [(start, start + 480)])
+        rows = self.passes(checks, [self.H, self.H + 3600], rows=[older])
+        self.assertEqual([(r["start_time"], r["end_time"]) for r in rows], [(start - 5000, start - 4000), (start, start + 480)])
+
+    def test_an_ongoing_outage_stays_one_incident_across_passes(self):
+        H = self.H
+        failures = [(H - 600 + 60 * i, "failure") for i in range(72)]  # H-600 to H+3660
+        checks = self.checks((H - 700, "success"), *failures, (H + 3700, "success"))
+        rows = self.passes(checks, [H, H + 3600, H + 7200])
+        self.assertEqual([(r["start_time"], r["end_time"]) for r in rows], [(H - 600, H + 3700)])
+
+    def test_a_new_outage_right_after_a_recovery_opens_its_own_incident(self):
+        H = self.H
+        first = [(H - 600 + 60 * i, "failure") for i in range(11)]  # H-600 to H, still open after the pass at H
+        second = [(H + 300 + 60 * i, "failure") for i in range(3)]
+        checks = self.checks(*first, (H + 100, "success"), *second, (H + 500, "success"))
+        rows = self.passes(checks, [H, H + 3600])
+        self.assertEqual([(r["start_time"], r["end_time"]) for r in rows], [(H - 600, H + 100), (H + 300, H + 500)])
 
     def test_a_retry_never_overwrites_a_closed_incident(self):
         closed = {"project_id": "p1", "start_time": 100, "end_time": 400, "duration_seconds": 300, "resolved": True}
@@ -502,7 +521,9 @@ class HourBoundaryTest(unittest.TestCase):
 
 
 class OpenIncidentWindowTest(unittest.TestCase):
-    """An outage still open from before the incidents window is still reported (board #9)."""
+    """An outage that began before the incidents window still counts, inside the window only (board #9)."""
+
+    NOW = 1_800_000_000
 
     def incidents_route(self, rows):
         event = {
@@ -511,19 +532,28 @@ class OpenIncidentWindowTest(unittest.TestCase):
             "queryStringParameters": {"days": "30"},
         }
         with mock.patch.object(api, "_get_incidents_table", lambda: FakeIncidentsTable(rows)), \
-             mock.patch.object(api, "get_project_or_403", lambda pid, uid: {"project_id": "p1", "thresholds": {}}):
+             mock.patch.object(api, "get_project_or_403", lambda pid, uid: {"project_id": "p1", "thresholds": {}}), \
+             mock.patch.object(api.time, "time", return_value=self.NOW):
             return json.loads(api.handle_get_projects_incidents(event)["body"])
 
     def test_an_outage_open_since_before_the_window_is_still_open(self):
-        start = int(time.time()) - 40 * 86400
+        start = self.NOW - 40 * 86400
         body = self.incidents_route([{"project_id": "p1", "start_time": start, "end_time": None, "resolved": False}])
         self.assertEqual([i["start_time"] for i in body["incidents"]], [start])
         self.assertTrue(body["metrics"]["open_incident"])
         self.assertEqual(body["metrics"]["total_downtime_sec"], 30 * 86400)  # counted from the window's start
 
+    def test_an_outage_that_ran_into_the_window_counts_only_inside_it(self):
+        start, end = self.NOW - 40 * 86400, self.NOW - 86400
+        body = self.incidents_route([{"project_id": "p1", "start_time": start, "end_time": end, "duration_seconds": end - start, "resolved": True}])
+        metrics = body["metrics"]
+        self.assertEqual([i["start_time"] for i in body["incidents"]], [start])
+        self.assertEqual((metrics["open_incident"], metrics["total_downtime_sec"], metrics["longest_outage_sec"]), (False, 29 * 86400, 29 * 86400))
+        self.assertEqual(metrics["mttr_sec"], end - start)  # the whole repair, not only its part in the window
+
     def test_a_closed_incident_from_before_the_window_stays_out(self):
-        start = int(time.time()) - 40 * 86400
-        body = self.incidents_route([{"project_id": "p1", "start_time": start, "end_time": start + 60, "resolved": True}])
+        start = self.NOW - 40 * 86400
+        body = self.incidents_route([{"project_id": "p1", "start_time": start, "end_time": start + 60, "duration_seconds": 60, "resolved": True}])
         self.assertEqual((body["incidents"], body["metrics"]["open_incident"]), ([], False))
 
 
