@@ -1,8 +1,10 @@
 // The demo dataset (src/demo/data.ts): every endpoint tells its story, and every view agrees. Run with `npm test`.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { STORIES, demoChecks, demoDaily, demoIncidents, demoProject, demoProjects, demoReports, demoStatus } from '../src/demo/data.ts'
+import { STORIES, addDemoEndpoint, demoChecks, demoDaily, demoIncidents, demoProject, demoProjects, demoReports, demoStatus, editDemoEndpoint, resetDemoVisit } from '../src/demo/data.ts'
 import { dayVerdict, incidentState, verdictFor } from '../src/lib/format.ts'
+import { handle } from '../src/demo/handler.ts'
+import { DEMO_USER } from '../src/lib/demo.ts'
 
 const MIN = 60_000
 const H = Date.UTC(2026, 10, 25, 14) // Wed 25 Nov 2026, 14:00 UTC
@@ -127,5 +129,77 @@ test('the dashboard list carries each window and 14 days of history', () => {
   for (const p of list) {
     assert.equal(p.status.summary.window_hours, 1)
     assert.equal(p.status.daily.days.length, 14)
+  }
+})
+
+test('a visit\'s changes: add, delete while down, and a new threshold', () => {
+  resetDemoVisit()
+  const t0 = TIMES['mid-hour']
+  const id = addDemoEndpoint({ name: 'Status page', url: 'https://status.example.com' }, t0)
+  assert.equal(id, 'status-page')
+  assert.equal(judge(id, t0 + 5_000).verdict, 'pending') // its first check has not landed
+  assert.equal(judge(id, t0 + 2 * MIN).verdict, 'up')
+  assert.equal(demoProjects(t0, 1).length, STORIES.length + 1)
+
+  // Paused while down: still down while the incident is open, closed as monitoring stopped at the next pass.
+  editDemoEndpoint('checkout', { active: false }, t0)
+  assert.equal(demoProject('checkout', t0 + MIN, t0).active, false)
+  const open = demoIncidents('checkout', 30, t0 + 10 * MIN, t0).incidents[0]
+  assert.equal(open.resolved, false)
+  const closed = demoIncidents('checkout', 30, H + 61 * MIN, t0).incidents[0]
+  assert.equal(closed.closed_reason, 'monitoring_stopped')
+  const lastCheck = demoChecks('checkout', t0 - 5 * MIN, H + 61 * MIN, H + 61 * MIN, t0).at(-1)
+  assert.equal(closed.end_time, Math.floor(lastCheck.timestamp / 1000))
+
+  // Deleted endpoints stay deleted: no checks after the pause.
+  assert.ok(!demoChecks('checkout', t0, H + 90 * MIN, H + 90 * MIN, t0).some((c) => c.timestamp > t0))
+
+  // A lower threshold: two timeouts in a row are now an incident, not yet on record.
+  editDemoEndpoint('docs', { failure_threshold: 2 }, t0)
+  assert.deepEqual(judge('docs', t0 + MIN), { verdict: 'down', stage: 'open', record: 'missing' })
+  resetDemoVisit()
+  assert.equal(demoProjects(t0).length, STORIES.length)
+})
+
+test('the handler answers writes the way the API does, messages included', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] }) // the JSON download's revoke timer would hold the run open
+  resetDemoVisit()
+  const visitor = { ...DEMO_USER }
+  try {
+    await assert.rejects(handle('POST', '/projects', { name: 'Shop' }), /^Error: name and url are required$/)
+    await assert.rejects(handle('POST', '/projects', { name: 'Shop', url: 'ftp://shop.dev' }), /url must start with http:\/\/ or https:\/\//)
+    await assert.rejects(handle('POST', '/projects', { name: 'Shop', url: 'https://shop.dev', accepted_status: '299-200' }), /accepted_status must be a status list/)
+    const created = await handle('POST', '/projects', { name: ' Status page ', url: 'https://status.example.com', accepted_status: '200-299, 404' })
+    assert.equal(created.project_id, 'status-page')
+    assert.equal(created.name, 'Status page')
+    assert.equal(created.accepted_status, '200-299,404')
+    assert.equal(created.failure_threshold, 3)
+    assert.equal(created.notification_email, DEMO_USER.email)
+    assert.ok((await handle('GET', '/projects')).some((p) => p.project_id === 'status-page'))
+
+    await assert.rejects(handle('PUT', '/projects/checkout', {}), /^Error: No fields provided$/)
+    await assert.rejects(handle('PUT', '/projects/checkout', { failure_threshold: 11 }), /failure_threshold must be an integer between 1 and 10/)
+    assert.equal((await handle('PUT', '/projects/checkout', { name: 'Checkout (EU)' })).name, 'Checkout (EU)')
+    await assert.rejects(handle('GET', '/projects/nobody'), /^Error: Forbidden$/)
+
+    await assert.rejects(handle('POST', '/projects/checkout/reports', { days: 2 }), /days must be 1, 7, or 30/)
+    const { report_id } = await handle('POST', '/projects/checkout/reports', { days: 7 })
+    assert.match(report_id, /^7d-\d{4}-\d{2}-\d{2}$/)
+    const ids = (await handle('GET', '/projects/checkout/reports')).map((r) => r.report_id)
+    assert.deepEqual(ids, [...ids].sort()) // sort-key order, as DynamoDB returns them
+    assert.ok(ids.includes(report_id))
+    assert.equal((await handle('GET', `/projects/checkout/reports/${report_id}/download?format=html`)).url, '/demo/sample-report.html')
+    assert.match((await handle('GET', `/projects/checkout/reports/${report_id}/download?format=json`)).url, /^blob:/)
+    await assert.rejects(handle('GET', '/projects/checkout/reports/2001-W01/download'), /^Error: Report not found$/)
+
+    await assert.rejects(handle('PUT', '/me', { notification_email: `${'a'.repeat(250)}@x.io` }), /notification_email must be a valid email address/)
+    assert.equal((await handle('PUT', '/me', { display_name: ' Ada ' })).display_name, 'Ada')
+    assert.equal((await handle('GET', '/me')).display_name, 'Ada')
+
+    assert.equal(await handle('DELETE', '/projects/status-page'), undefined)
+    assert.equal((await handle('GET', '/projects/status-page')).active, false)
+  } finally {
+    Object.assign(DEMO_USER, visitor)
+    resetDemoVisit()
   }
 })

@@ -46,6 +46,7 @@ import {
 } from '../lib/api'
 import { Alert, Spinner } from '../components/ui'
 import type { Check, ProjectStatus, ProjectReport, Project, UpdateProjectInput, Incident, ReliabilityMetrics } from '../types'
+import { DEMO } from '../lib/demo'
 import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, evidenceFromChecks, verdictFor, VERDICT, bareUrl, fmtUtcTime, fmtUtcDay, formatDowntime, timeAgo, STALE_AFTER_MS, type Verdict } from '../lib/format'
 
 /** Incident/reliability window is fixed (independent of the latency chart toggle). */
@@ -408,9 +409,15 @@ export default function ProjectDetail() {
       const a = document.createElement('a')
       a.href = url
       a.rel = 'noopener'
+      // Saves a same-origin file (the demo's) instead of opening it over the app;
+      // browsers ignore it for the real cross-origin S3 link, whose headers decide.
+      a.download = DEMO && format === 'html' ? 'sample-report.html' : `${reportId}.${format}`
       document.body.appendChild(a)
       a.click()
       a.remove()
+      if (DEMO && format === 'html') {
+        setGenMsg({ type: 'info', text: 'Demo: every HTML download is the same sample report, rendered by the real template. Its figures are fixed.' })
+      }
     } catch (e) {
       setGenMsg({ type: 'error', text: e instanceof Error ? e.message : 'Download failed.' })
     } finally {
