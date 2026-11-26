@@ -11,6 +11,9 @@ import os
 import sys
 import time
 import unittest
+from unittest import mock
+
+from botocore.exceptions import ClientError
 
 # The handlers are imported from inside the Lambda source directories. Writing
 # __pycache__ there puts .pyc files into the deployment zip, so keep bytecode out
@@ -373,7 +376,7 @@ class MonitorScanTest(unittest.TestCase):
 
 
 class FakeIncidentsTable:
-    """Open-incident lookups, puts, and the closing update_item."""
+    """Open-incident lookups, the latest-before queries, conditional puts, and the closing update_item."""
 
     def __init__(self, rows):
         self.rows = rows
@@ -385,9 +388,15 @@ class FakeIncidentsTable:
             return {"Items": [r for r in rows if r["resolved"] == values[":resolved"]]}
         if ":now_ts" in values:
             return {"Items": [r for r in rows if values[":from_ts"] <= r["start_time"] <= values[":now_ts"]]}
+        if ":end_ts" in values:
+            return {"Items": [r for r in rows if r["start_time"] <= values[":end_ts"]][: kw.get("Limit")]}
         return {"Items": [r for r in rows if r["start_time"] < values[":from_ts"]][: kw.get("Limit")]}
 
-    def put_item(self, Item):
+    def put_item(self, Item, ConditionExpression=None):
+        if ConditionExpression and any(
+            r["project_id"] == Item["project_id"] and r["start_time"] == Item["start_time"] for r in self.rows
+        ):
+            raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "PutItem")
         self.rows.append(dict(Item))
 
     def update_item(self, Key, ExpressionAttributeValues, **kw):
@@ -441,6 +450,81 @@ class InactiveIncidentTest(unittest.TestCase):
         for project in ({"project_id": "p1", "active": True}, {"project_id": "p1"}):
             row = self.run_processor(project, [self.check(self.START, "failure"), self.check(self.START + 600, "failure")])
             self.assertFalse(row["resolved"], project)
+
+
+class HourBoundaryTest(unittest.TestCase):
+    """A failure run that crosses the top of the hour is recorded once, from its first failure (board #9)."""
+
+    H = 1_800_000_000 - 1_800_000_000 % 3600  # a top of the hour
+
+    def passes(self, checks, at, rows=None):
+        incidents = FakeIncidentsTable(rows if rows is not None else [])
+        project = {"project_id": "p1", "active": True, "failure_threshold": 3}
+        with mock.patch.object(processor, "incidents_table", incidents), \
+             mock.patch.object(processor, "checks_table", FakeChecksTable(checks)), \
+             mock.patch.object(processor, "load_projects", lambda: [project]):
+            for now in at:
+                with mock.patch.object(processor.time, "time", return_value=now):
+                    processor.lambda_handler({}, None)
+        return incidents.rows
+
+    @staticmethod
+    def checks(*pairs):
+        return [{"project_id": "p1", "timestamp": sec * 1000, "status": status} for sec, status in pairs]
+
+    def test_a_short_run_across_the_hour_is_recorded(self):
+        H = self.H  # two failures before the hour, two after: each hour alone holds fewer than three
+        checks = self.checks((H - 300, "success"), (H - 100, "failure"), (H - 40, "failure"),
+                             (H + 20, "failure"), (H + 80, "failure"), (H + 140, "success"))
+        rows = self.passes(checks, [H + 5, H + 3605])
+        self.assertEqual([(r["start_time"], r["end_time"], r["resolved"]) for r in rows], [(H - 100, H + 140, True)])
+
+    def test_a_longer_run_keeps_its_first_failure_and_full_duration(self):
+        H = self.H
+        checks = self.checks((H - 300, "success"), (H - 100, "failure"), (H - 40, "failure"), (H + 20, "failure"),
+                             (H + 80, "failure"), (H + 140, "failure"), (H + 200, "success"))
+        rows = self.passes(checks, [H + 5, H + 3605])
+        self.assertEqual([(r["start_time"], r["duration_seconds"]) for r in rows], [(H - 100, 300)])
+
+    def test_a_run_seen_again_at_the_window_start_is_not_recorded_twice(self):
+        # The pass at H records and closes it; the pass at H+1h sees it again, cut short by its window's start.
+        start = self.H - 3600 - 120
+        checks = self.checks(*[(start + 60 * i, "failure") for i in range(8)], (start + 480, "success"))
+        rows = self.passes(checks, [self.H, self.H + 3600])
+        self.assertEqual([(r["start_time"], r["end_time"]) for r in rows], [(start, start + 480)])
+
+    def test_a_retry_never_overwrites_a_closed_incident(self):
+        closed = {"project_id": "p1", "start_time": 100, "end_time": 400, "duration_seconds": 300, "resolved": True}
+        incidents = FakeIncidentsTable([dict(closed)])
+        with mock.patch.object(processor, "incidents_table", incidents):
+            self.assertFalse(processor.open_incident("p1", 100))
+        self.assertEqual(incidents.rows, [closed])
+
+
+class OpenIncidentWindowTest(unittest.TestCase):
+    """An outage still open from before the incidents window is still reported (board #9)."""
+
+    def incidents_route(self, rows):
+        event = {
+            "requestContext": {"authorizer": {"jwt": {"claims": {"sub": "u1"}}}},
+            "pathParameters": {"project_id": "p1"},
+            "queryStringParameters": {"days": "30"},
+        }
+        with mock.patch.object(api, "_get_incidents_table", lambda: FakeIncidentsTable(rows)), \
+             mock.patch.object(api, "get_project_or_403", lambda pid, uid: {"project_id": "p1", "thresholds": {}}):
+            return json.loads(api.handle_get_projects_incidents(event)["body"])
+
+    def test_an_outage_open_since_before_the_window_is_still_open(self):
+        start = int(time.time()) - 40 * 86400
+        body = self.incidents_route([{"project_id": "p1", "start_time": start, "end_time": None, "resolved": False}])
+        self.assertEqual([i["start_time"] for i in body["incidents"]], [start])
+        self.assertTrue(body["metrics"]["open_incident"])
+        self.assertEqual(body["metrics"]["total_downtime_sec"], 30 * 86400)  # counted from the window's start
+
+    def test_a_closed_incident_from_before_the_window_stays_out(self):
+        start = int(time.time()) - 40 * 86400
+        body = self.incidents_route([{"project_id": "p1", "start_time": start, "end_time": start + 60, "resolved": True}])
+        self.assertEqual((body["incidents"], body["metrics"]["open_incident"]), ([], False))
 
 
 class MttrTest(unittest.TestCase):

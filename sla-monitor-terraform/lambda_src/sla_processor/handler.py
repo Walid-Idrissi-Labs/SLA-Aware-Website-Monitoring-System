@@ -85,9 +85,12 @@ def get_open_incident(project_id: str) -> dict | None:
     return items[0] if items else None
 
 
-def open_incident(project_id: str, start_time_sec: int, cause: str | None = None) -> None:
-    #Idempotency: caller should already have checked that no open incident exists
+def open_incident(project_id: str, start_time_sec: int, cause: str | None = None) -> bool:
+    """Record a new open incident; False when one with this start is already on record.
 
+    The caller has already checked that no incident is open or overlaps the run;
+    the condition only stops a retry from overwriting a closed incident with an open one.
+    """
     item = {
         "project_id": project_id,
         "start_time": start_time_sec,
@@ -97,10 +100,37 @@ def open_incident(project_id: str, start_time_sec: int, cause: str | None = None
     }
     if cause:
         item["cause"] = cause
-    incidents_table.put_item(Item=item)
+    try:
+        incidents_table.put_item(Item=item, ConditionExpression="attribute_not_exists(start_time)")
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            logger.info(f"Incident for project {project_id} at {start_time_sec} is already on record — skipping")
+            return False
+        raise
     logger.info(
         f"Opened incident for project {project_id}, start_time={start_time_sec}, cause={cause}"
     )
+    return True
+
+
+def run_on_record(project_id: str, start_sec: int, end_sec: int) -> bool:
+    """Whether a recorded incident overlaps the failure run [start_sec, end_sec].
+
+    Incidents never overlap each other, so only the latest one that began before
+    the run ended can overlap it.
+    """
+    response = incidents_table.query(
+        KeyConditionExpression="project_id = :pid AND start_time <= :end_ts",
+        ExpressionAttributeValues={":pid": project_id, ":end_ts": end_sec},
+        ScanIndexForward=False,
+        Limit=1,
+        ConsistentRead=True,
+    )
+    items = response.get("Items", [])
+    if not items:
+        return False
+    latest = items[0]
+    return not latest.get("resolved") or int(latest.get("end_time") or 0) >= start_sec
 
 
 def close_incident(project_id: str, start_time_sec: int, end_time_sec: int, reason: str | None = None) -> bool:
@@ -236,7 +266,9 @@ def process_project(project: dict) -> None:
     failure_threshold = int(project.get("failure_threshold", FAILURE_THRESHOLD_DEFAULT))
 
     now_sec = int(time.time())
-    from_sec = now_sec - 3600
+    # Two hours, though the pass runs hourly: a failure run that crosses the hour
+    # mark (or a late pass) is then seen whole, from its true first failure.
+    from_sec = now_sec - 2 * 3600
 
     # STEP 1 — settle any incident carried over from previous windows.
     # closed_at_sec guards step 2: failure runs that belong to the incident we
@@ -257,11 +289,11 @@ def process_project(project: dict) -> None:
     checks = query_window_checks(project_id, from_sec * 1000, now_sec * 1000)
 
     if not checks:
-        logger.info(f"No checks in the last hour for project {project_id} — skipping")
+        logger.info(f"No checks in the last two hours for project {project_id} — skipping")
         return
 
     logger.info(
-        f"Project {project_id}: {len(checks)} checks in the last hour, "
+        f"Project {project_id}: {len(checks)} checks in the last two hours, "
         f"threshold={failure_threshold}"
     )
 
@@ -274,8 +306,12 @@ def process_project(project: dict) -> None:
         if closed_at_sec is not None and run_start_sec <= closed_at_sec:
             # This run is part of the incident closed in step 1.
             continue
+        # The overlap hour shows runs an earlier pass already recorded, some cut short at the window's start.
+        if run_on_record(project_id, run_start_sec, run["end_ts_ms"] // 1000):
+            continue
 
-        open_incident(project_id, run_start_sec, run.get("cause"))
+        if not open_incident(project_id, run_start_sec, run.get("cause")):
+            continue
 
         # If the site already recovered inside this window, close immediately —
         # otherwise a second run in the same window would be silently dropped.
@@ -295,7 +331,7 @@ def settle_inactive_project(project: dict) -> None:
     fine until roughly a thousand of them, then skip the long-settled ones.
     """
     # The normal pass first: a recovery seen before deactivation still closes the
-    # incident as a recovery, and a failure run in its last hour still opens one.
+    # incident as a recovery, and a failure run in its last two hours still opens one.
     process_project(project)
 
     project_id = project["project_id"]
