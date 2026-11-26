@@ -421,7 +421,7 @@ export default function ProjectDetail() {
   function exportCsv() {
     const cols: (keyof ProjectReport)[] = [
       'report_id', 'uptime_pct', 'avg_latency_ms', 'p95_latency_ms',
-      'incident_count', 'total_downtime_sec', 'severity', 'sla_pass', 'generated_at',
+      'incident_count', 'total_downtime_sec', 'severity', 'sla_pass', 'slo_status', 'generated_at',
     ]
     const esc = (v: unknown) => {
       const s = String(v ?? '')

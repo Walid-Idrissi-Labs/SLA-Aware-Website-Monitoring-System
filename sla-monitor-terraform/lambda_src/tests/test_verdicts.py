@@ -8,10 +8,12 @@ Stdlib only, no AWS calls, no dependencies:
 import importlib.util
 import json
 import os
+import re
 import sys
 import time
 import unittest
 from datetime import datetime, timezone
+from decimal import Decimal
 from unittest import mock
 
 from botocore.exceptions import ClientError
@@ -622,7 +624,7 @@ class ReportDocumentTest(unittest.TestCase):
         checks += [self.check(self.FROM + 86460, "failure", 10000, "timeout"), self.check(self.FROM + 86520, "inconclusive", 300, "blocked")]
         checks.append(self.check(self.TO, "failure", 10000, "http"))  # the window's closing instant stays in its last day
         report, _ = self.report(checks)
-        self.assertEqual((report["p50_latency_ms"], report["p99_latency_ms"], report["max_latency_ms"]), (51.0, 100.0, 100.0))
+        self.assertEqual((report["p50_latency_ms"], report["p99_latency_ms"], report["max_latency_ms"]), (50.0, 99.0, 100.0))
         self.assertEqual({c["cause"]: (c["failed"], c["inconclusive"]) for c in report["causes"]},
                          {"timeout": (1, 0), "http": (1, 0), "blocked": (0, 1)})
         self.assertEqual([(d["checks_up"], d["checks_down"], d["checks_inconclusive"], d["uptime_pct"]) for d in report["daily"]],
@@ -651,19 +653,24 @@ class ReportDocumentTest(unittest.TestCase):
             self.assertIn(title.upper(), subject)
 
     def test_user_text_is_escaped_and_cannot_reach_the_page_css(self):
-        report, project = self.report([self.check(self.FROM)], name="<script>alert(1)</script>")
+        cause = {"start_time": self.FROM + 60, "end_time": self.FROM + 300, "duration_seconds": 240, "resolved": True, "cause": "<b>x</b>"}
+        report, project = self.report([self.check(self.FROM)], [cause], name="<script>alert(1)</script>", url='https://x.example/"><i>')
         report["report_id"] = '2026-W47"} body { color: red'
         html = reports.build_html_report(report, project)
         self.assertNotIn("<script>alert(1)</script>", html)
         self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
+        self.assertNotIn('"><i>', html)
+        self.assertNotIn("<b>x</b>", html)
         self.assertIn('content: "SLA Monitor \\00B7  2026-W47bodycolorred"', html)
 
     def test_an_old_row_renders_without_the_newer_sections(self):
         old = {"report_id": "2026-W47", "uptime_pct": 99.5, "avg_latency_ms": 120.0, "p95_latency_ms": 200.0, "incident_count": 0,
                "total_downtime_sec": 0, "severity": "degraded", "sla_pass": False, "generated_at": "2026-11-23T08:00:00+00:00",
                "window_start": self.FROM, "window_end": self.TO, "report_kind": "Weekly Report", "incidents": []}
-        html = reports.build_html_report(old, {"name": "API", "thresholds": {"min_uptime_pct": 99.9}})
+        html = reports.build_html_report(old, {"name": "API", "thresholds": {"min_uptime_pct": 99.0}})  # target since lowered
         self.assertIn("Objectives missed", html)
+        self.assertNotIn(">Met<", html)
+        self.assertNotIn("Both objectives were met", html)
         for section in ("Daily availability", "Error budget", "Response time", "Evidence and coverage"):
             self.assertNotIn(f"<h2>{section}</h2>", html)
 
@@ -681,6 +688,68 @@ class ReportDocumentTest(unittest.TestCase):
              mock.patch.object(reports, "upload_report_files", lambda report, project: uploaded.append(report)):
             reports._run_rebuild("p1", "2026-W47")
         self.assertEqual([i["start"] for i in uploaded[0]["incidents"]], [week_start + 3600])
+
+    @staticmethod
+    def summary(report, project):
+        html = reports.build_html_report(report, project)
+        return re.search(r'<div class="verdict"[^>]*>(.*?)</div>\s*<p>(.*?)</p>', html, re.S).groups()
+
+    def test_numbers_read_like_a_document(self):
+        delta, duration = (reports.build_html_report.__globals__[n] for n in ("_delta", "fmt_duration"))
+        self.assertEqual([delta(99.82, 99.97, " pts"), delta(178, 171, " ms", 0), delta(1, 1, " pts"), delta(None, 1, " pts")],
+                         ["\u22120.15 pts", "+7 ms", "no change", ""])
+        self.assertEqual([duration(n) for n in (45, 420, 432, 7200, 7260)], ["45s", "7m", "7m 12s", "2h", "2h 1m"])
+
+    def test_summary_sentences(self):
+        ok = [self.check(self.FROM + i * 60) for i in range(4)]
+        first = {"start_time": self.FROM + 600, "end_time": self.FROM + 1020, "duration_seconds": 420, "resolved": True, "cause": "timeout"}
+        second = {"start_time": self.FROM + 86400, "end_time": self.FROM + 86460, "duration_seconds": 60, "resolved": True, "cause": "http"}
+        self.assertIn("1 incident caused 7m of downtime in this period. ", self.summary(*self.report(ok, [first]))[1] + " ")
+        self.assertIn("2 incidents caused 8m of downtime in this period; the longest lasted 7m.", self.summary(*self.report(ok, [first, second]))[1])
+        self.assertIn("No incidents were recorded: no run of failures reached 3 consecutive checks.", self.summary(*self.report(ok))[1])
+        self.assertIn("Both objectives were met.", self.summary(*self.report(ok))[1])
+
+    def test_no_evidence_and_nothing_passing_blame_nothing_they_cannot_show(self):
+        blocked = [self.check(self.FROM + i * 60, "inconclusive", 300, "blocked") for i in range(4)]
+        title, text = self.summary(*self.report(blocked))
+        self.assertEqual((title, text.split(".")[0]), ("Objectives not proven", "No check produced evidence in this period, so the objectives cannot be judged"))
+        failed = [self.check(self.FROM + i * 60, "failure", 10000, "timeout") for i in range(4)]
+        report, project = self.report(failed)
+        title, text = self.summary(report, project)
+        self.assertEqual(title, "Objectives missed")
+        self.assertIn("no check passed, so there is no response time to judge. The availability objective was missed", text)
+        latency_row = re.search(r"<tr><td>Average response time</td>.*?</tr>", reports.build_html_report(report, project)).group(0)
+        self.assertIn("&mdash;", latency_row)
+        self.assertNotIn("Missed", latency_row)
+
+    def test_the_email_matches_the_document(self):
+        blocked = [self.check(self.FROM + i * 60, "inconclusive", 300, "blocked") for i in range(4)]
+        report, project = self.report(blocked, name='Shop </div><a href=//evil>x</a>')
+        subject, body = reports.build_report_email(project, report, datetime_utc(self.FROM), datetime_utc(self.TO))
+        self.assertIn("OBJECTIVES NOT PROVEN", subject)
+        self.assertIn("Objectives not proven", body)
+        self.assertRegex(body, r"Availability</td>.*?>n/a ")
+        self.assertIn("Evidence coverage", body)
+        self.assertNotIn("<a href=//evil>", body)
+
+    def test_previous_week_reads_last_weeks_row(self):
+        row = {"report_id": "2026-W46", "uptime_pct": Decimal("99.97"), "avg_latency_ms": Decimal("171"),
+               "coverage_pct": Decimal("99.9"), "total_downtime_sec": Decimal("0"), "daily": []}
+        keys = []
+        table = type("T", (), {"get_item": lambda self, Key: (keys.append(Key), {"Item": row})[1]})()
+        with mock.patch.object(reports, "reports_table", table):
+            previous = reports.previous_week("p1", datetime(2026, 11, 16, tzinfo=timezone.utc))
+        self.assertEqual(keys, [{"project_id": "p1", "report_id": "2026-W46"}])
+        self.assertEqual(previous, {"report_id": "2026-W46", "uptime_pct": 99.97, "avg_latency_ms": 171,
+                                    "coverage_pct": 99.9, "total_downtime_sec": 0})
+
+    def test_a_flapping_month_stays_under_the_item_limit_and_round_trips(self):
+        many = [{"start_time": self.FROM + i * 240, "end_time": self.FROM + i * 240 + 180, "duration_seconds": 180,
+                 "resolved": True, "cause": "timeout"} for i in range(300)]
+        report, _ = self.report([self.check(self.FROM + i * 60) for i in range(10)], many)
+        self.assertEqual((len(report["incidents"]), report["incidents_omitted"], report["incident_count"]), (200, 100, 300))
+        stored = json.loads(json.dumps(reports.decimals_to_native(reports.floats_to_decimal(report))))
+        self.assertEqual(stored["incidents"], report["incidents"])
 
     def test_the_report_list_leaves_the_document_detail_out(self):
         row = {"project_id": "p1", "report_id": "2026-W47", "uptime_pct": 99.5, "daily": [{"start": 1}], "incidents": [],

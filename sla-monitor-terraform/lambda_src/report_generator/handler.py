@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import re
 import logging
@@ -120,7 +121,8 @@ def compute_performance_metrics(checks: list[dict]) -> dict[str, float | None]:
         return {"avg_latency_ms": 0.0, "p95_latency_ms": 0.0, "p50_latency_ms": None, "p99_latency_ms": None, "max_latency_ms": None}
 
     def nearest_rank(q: float) -> float:
-        return latencies[int(len(latencies) * q)]
+        # The smallest value with at least q of the passes at or below it.
+        return latencies[max(0, math.ceil(len(latencies) * q) - 1)]
 
     return {
         "avg_latency_ms": round(sum(latencies) / len(latencies), 1),
@@ -141,19 +143,40 @@ def checks_by_cause(checks: list[dict]) -> list[dict]:
     return [{"cause": cause, **row} for cause, row in sorted(counts.items(), key=lambda kv: -sum(kv[1].values()))]
 
 
+def _incident_end(incident: dict) -> int | None:
+    if incident.get("end_time") is not None:
+        return int(incident["end_time"])
+    if incident.get("resolved"):
+        return int(incident["start_time"]) + int(incident.get("duration_seconds") or 0)
+    return None
+
+
 def incident_rows(incidents: list[dict], from_sec: int, to_sec: int) -> list[dict]:
     """The window's incidents as the document lists them, oldest first, with their time inside it."""
     rows = []
     for incident in sorted(incidents, key=lambda i: int(i["start_time"])):
         rows.append({
             "start": int(incident["start_time"]),
-            "end": int(incident["end_time"]) if incident.get("end_time") is not None else None,
+            "end": _incident_end(incident),
             "in_window_sec": compute_reliability_metrics([incident], from_sec, to_sec)["total_downtime_sec"],
             "cause": str(incident["cause"]) if incident.get("cause") else None,
             "resolved": incident.get("resolved") is True,
             "closed_reason": str(incident["closed_reason"]) if incident.get("closed_reason") else None,
         })
     return rows
+
+
+# A DynamoDB item tops out at 400 KB; a monitor flapping for 30 days can open thousands of incidents.
+MAX_LISTED_INCIDENTS = 200
+
+
+def _listed_incidents(rows: list[dict]) -> dict:
+    """The incidents the document lists: all of them, or the open ones and the longest
+    up to the cap, back in time order, with a count of the rest."""
+    if len(rows) <= MAX_LISTED_INCIDENTS:
+        return {"incidents": rows, "incidents_omitted": 0}
+    kept = sorted(rows, key=lambda r: (r["resolved"], -r["in_window_sec"]))[:MAX_LISTED_INCIDENTS]
+    return {"incidents": sorted(kept, key=lambda r: r["start"]), "incidents_omitted": len(rows) - len(kept)}
 
 
 def daily_rows(checks: list[dict], incidents: list[dict], from_sec: int, to_sec: int) -> list[dict]:
@@ -298,7 +321,7 @@ def build_report(
         "max_latency_ms": perf["max_latency_ms"],
         "causes": checks_by_cause(checks),
         "daily": daily_rows(checks, incidents, *window),
-        "incidents": incident_rows(incidents, *window),
+        **_listed_incidents(incident_rows(incidents, *window)),
     }
 
     return report
@@ -402,7 +425,7 @@ def previous_week(project_id: str, week_start: datetime) -> dict | None:
         return None
     if not row:
         return None
-    keys = ("report_id", "uptime_pct", "avg_latency_ms", "coverage_pct", "incident_count", "total_downtime_sec", "checks_up", "checks_down")
+    keys = ("report_id", "uptime_pct", "avg_latency_ms", "coverage_pct", "total_downtime_sec")
     return decimals_to_native({key: row[key] for key in keys if key in row})
 
 

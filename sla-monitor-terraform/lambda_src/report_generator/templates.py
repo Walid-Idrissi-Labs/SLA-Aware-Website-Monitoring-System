@@ -13,7 +13,7 @@ import os
 import re
 from datetime import datetime, timezone
 
-from fonts import INTER_WOFF2_BASE64
+from assets import INTER_WOFF2_BASE64, LOGO_PNG_BASE64
 
 # Optional deep link used in the email CTA; the button is omitted when unset.
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "").strip().rstrip("/")
@@ -54,26 +54,22 @@ _CAUSE = {
     "unknown": "Not recorded",
 }
 
-_LOGO_SVG = (
-    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
-    '<rect width="24" height="24" rx="5" fill="#FA5C29"/>'
-    '<g stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">'
-    '<path d="M12 16v5"/><path d="M16 14.639V21"/><path d="M20 10.656V21"/>'
-    '<path d="m22 3-8.646 8.646a.5.5 0 0 1-.708 0L9.354 8.354a.5.5 0 0 0-.707 0L2 15"/>'
-    '<path d="M4 18.463V21"/><path d="M8 14.656V21"/></g></svg>'
-)
+# The app icon, embedded; the email links the hosted copy instead (mail clients block data: images).
+_LOGO_IMG = f'<img src="data:image/png;base64,{LOGO_PNG_BASE64}" width="20" height="20" alt="" style="border-radius:5px">'
 
 
 def fmt_duration(seconds) -> str:
-    """7m 12s under an hour, 1h 2m above it."""
+    """7m 12s under an hour, 1h 2m above it; zero units are left out (12m, 2h)."""
     seconds = int(seconds or 0)
     if seconds <= 0:
         return "0s"
     h, rem = divmod(seconds, 3600)
     m, s = divmod(rem, 60)
     if h:
-        return f"{h}h {m}m"
-    return f"{m}m {s}s" if m else f"{s}s"
+        return f"{h}h {m}m" if m else f"{h}h"
+    if m:
+        return f"{m}m {s}s" if s else f"{m}m"
+    return f"{s}s"
 
 
 def verdict_of(report: dict) -> str:
@@ -186,6 +182,7 @@ _REPORT_CSS = """
 
   ol.notes, ul.notes { padding-left: 18px; color: #344054; }
   .notes li + li { margin-top: 6px; }
+  .notes li { break-inside: avoid; }
   h3 { margin: 16px 0 8px; font-size: 12.5px; font-weight: 600; }
 
   .closing { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; margin-top: 32px;
@@ -203,6 +200,8 @@ _REPORT_CSS = """
     h2 { break-after: avoid; }
     thead { display: table-header-group; }
     tr, .control, .summary, .budget, .figures { break-inside: avoid; }
+    /* The methodology reads as one appendix: it moves whole rather than strand a line at a page foot. */
+    .appendix { break-inside: avoid; }
   }
 """
 
@@ -230,6 +229,9 @@ def build_html_report(report: dict, project: dict) -> str:
         "failure_threshold": project.get("failure_threshold", 3),
         "accepted_status": project.get("accepted_status") or "200-399",
     }
+    # A row from before the snapshot fields carries no targets: today's could differ, so it
+    # shows its stored verdict and figures but judges nothing against them.
+    legacy = "target" not in report
     monitor = report.get("monitor") or {"name": project.get("name", "Untitled"), "url": project.get("url", "")}
     min_uptime = float(target["min_uptime_pct"])
     max_latency = float(target["max_avg_latency_ms"])
@@ -256,12 +258,17 @@ def build_html_report(report: dict, project: dict) -> str:
     coverage = report.get("coverage_pct")
     proven = verdict != "unproven"
 
-    def result(ok: bool) -> str:
+    dash = '<span class="muted">&mdash;</span>'
+
+    def result(ok: bool | None) -> str:
+        # None: no evidence for this objective (nothing passed), which is not a miss.
+        if legacy or ok is None:
+            return dash
         word, color = ("Not proven", _NEUTRAL) if not proven else (("Met", _OK) if ok else ("Missed", _BAD))
         return f'<span class="st" style="color:{color}">{word}</span>'
 
-    uptime_ok = uptime is not None and float(uptime) >= min_uptime
-    latency_ok = avg is not None and float(avg) <= max_latency
+    uptime_ok = None if uptime is None else float(uptime) >= min_uptime
+    latency_ok = None if avg is None else float(avg) <= max_latency
     vs_col = bool(weekly and previous)
     prev_head = f'<th class="r">vs {_esc(previous.get("report_id", "previous"))}</th>' if vs_col else ""
 
@@ -269,9 +276,9 @@ def build_html_report(report: dict, project: dict) -> str:
         return f'<td class="r muted">{_delta(now, previous.get(key), unit, places)}</td>' if vs_col else ""
 
     objective_rows = [
-        f'<tr><td>Availability</td><td class="r">&ge; {min_uptime:.2f}%</td><td class="r">{_pct(uptime)}</td>'
+        f'<tr><td>Availability</td><td class="r">{dash if legacy else f"&ge; {min_uptime:.2f}%"}</td><td class="r">{_pct(uptime)}</td>'
         f'{vs(uptime, "uptime_pct", " pts")}<td class="r">{result(uptime_ok)}</td></tr>',
-        f'<tr><td>Average response time</td><td class="r">&le; {round(max_latency):,} ms</td><td class="r">{_ms(avg)}</td>'
+        f'<tr><td>Average response time</td><td class="r">{dash if legacy else f"&le; {round(max_latency):,} ms"}</td><td class="r">{_ms(avg)}</td>'
         f'{vs(avg, "avg_latency_ms", " ms", 0)}<td class="r">{result(latency_ok)}</td></tr>',
     ]
     if coverage is not None:
@@ -286,18 +293,25 @@ def build_html_report(report: dict, project: dict) -> str:
     # ── Executive summary, in plain words ──
     incidents = report.get("incidents") or []
     downtime = int(report.get("total_downtime_sec") or 0)
-    if verdict == "unproven":
+    latency_phrase = (
+        f"average response time {_ms(avg)} against {round(max_latency):,} ms" if avg is not None
+        else "no check passed, so there is no response time to judge"
+    )
+    if no_evidence:
+        first = "No check produced evidence in this period, so the objectives cannot be judged."
+    elif legacy:
+        first = f"Availability was {_pct(uptime)} and average response time {_ms(avg)}."
+    elif verdict == "unproven":
         first = (
             f"Only {_pct(coverage)} of the expected checks produced evidence, below the 95% needed, so the "
             f"objectives cannot be judged. On the evidence there is, availability was {_pct(uptime)} and "
             f"average response time {_ms(avg)}."
         )
     else:
-        missed = [label for label, ok in (("availability", uptime_ok), ("response-time", latency_ok)) if not ok]
+        missed = [label for label, ok in (("availability", uptime_ok), ("response-time", latency_ok)) if ok is False]
         severity = _SEVERITY.get(report.get("severity"), {}).get("label", "").lower()
         first = (
-            f"Availability was {_pct(uptime)} against a {min_uptime:.2f}% target, and average response time "
-            f"{_ms(avg)} against {round(max_latency):,} ms. "
+            f"Availability was {_pct(uptime)} against a {min_uptime:.2f}% target, and {latency_phrase}. "
             + (
                 "Both objectives were met."
                 if not missed
@@ -305,12 +319,13 @@ def build_html_report(report: dict, project: dict) -> str:
                 + (f" (severity: {severity})." if severity else ".")
             )
         )
+    count = int(report.get("incident_count") or len(incidents))
     if incidents:
         longest = max(int(i.get("in_window_sec") or 0) for i in incidents)
-        still_open = sum(1 for i in incidents if not i.get("resolved"))
+        still_open = any(not i.get("resolved") for i in incidents)
         second = (
-            f"{len(incidents)} incident{'s' if len(incidents) != 1 else ''} caused {fmt_duration(downtime)} of "
-            f"downtime in this period; the longest lasted {fmt_duration(longest)}."
+            f"{count} incident{'s' if count != 1 else ''} caused {fmt_duration(downtime)} of downtime in this period"
+            + (f"; the longest lasted {fmt_duration(longest)}." if count > 1 else ".")
             + (" One was still open when the period ended." if still_open else "")
         )
     else:
@@ -318,14 +333,16 @@ def build_html_report(report: dict, project: dict) -> str:
     third = ""
     if vs_col and uptime is not None and previous.get("uptime_pct") is not None:
         change = round(float(uptime) - float(previous["uptime_pct"]), 2)
-        third = (
-            f" Availability was unchanged from {_esc(previous['report_id'])}." if change == 0 else
-            f" Availability {'rose' if change > 0 else 'fell'} by {abs(change):.2f} points from {_esc(previous['report_id'])}."
-        )
+        parts = ["availability was unchanged" if change == 0 else
+                 f"availability {'rose' if change > 0 else 'fell'} by {abs(change):.2f} points"]
+        before = previous.get("total_downtime_sec")
+        if before is not None and int(before) != downtime:
+            parts.append(f"downtime {'rose' if downtime > int(before) else 'fell'} from {fmt_duration(before)} to {fmt_duration(downtime)}")
+        third = f" Compared with {_esc(previous['report_id'])}, {' and '.join(parts)}."
 
     # ── Error budget: check-based, so it agrees with the availability figure ──
     budget_html = ""
-    if has_counts and conclusive:
+    if has_counts and conclusive and not legacy:
         allowed = (100 - min_uptime) / 100 * conclusive
         used = int(down)
         if allowed > 0:
@@ -429,6 +446,12 @@ def build_html_report(report: dict, project: dict) -> str:
             '<th class="r">In this period</th><th>Cause</th><th>Status</th></tr></thead>'
             f'<tbody>{"".join(rows)}</tbody></table>'
         )
+        omitted = int(report.get("incidents_omitted") or 0)
+        if omitted:
+            body += (
+                f'<p class="lede" style="margin-top:8px">{omitted:,} more incidents are not listed; '
+                'the open ones and the longest are. All of them count in the totals.</p>'
+            )
     else:
         body = (
             f'<p class="empty">No incidents recorded. Failures shorter than {n_fail} consecutive checks lower '
@@ -478,11 +501,11 @@ def build_html_report(report: dict, project: dict) -> str:
         "Response time leaves out failed and timed-out checks, so it describes the service only when it answered.",
     ])
     details.append(
-        '<section><h2>Methodology and limitations</h2>'
+        '<section class="appendix"><h2>Methodology and limitations</h2>'
         f'<ol class="notes">{methodology}</ol><h3>Limitations</h3><ul class="notes">{limitations}</ul></section>'
     )
 
-    generated = str(report["generated_at"])[:16].replace("T", " ")
+    generated = _esc(str(report["generated_at"])[:16].replace("T", " "))
     on_demand = re.fullmatch(r"On-Demand · (\d+)-Day", kind)
     report_type = "Weekly" if weekly else (
         f"On demand, {on_demand[1]} day{'s' if on_demand[1] != '1' else ''}" if on_demand else kind
@@ -517,7 +540,7 @@ def build_html_report(report: dict, project: dict) -> str:
   <main class="doc">
     <div class="rule"></div>
     <header class="mast">
-      <div class="brand">{_LOGO_SVG} SLA Monitor</div>
+      <div class="brand">{_LOGO_IMG} SLA Monitor</div>
       <div class="doctype"><div class="k">Service level report</div><div class="id">{_esc(report_id)}</div></div>
     </header>
     <h1>{name}</h1>
@@ -571,6 +594,14 @@ def _email_button(href: str, label: str) -> str:
     )
 
 
+def _email_logo() -> str:
+    """The hosted app icon when the dashboard URL is known, else a plain brand square."""
+    if DASHBOARD_URL:
+        return (f'<td style="width:20px;height:20px;"><img src="{_esc(DASHBOARD_URL)}/logo.png" width="20" height="20" '
+                'alt="" style="display:block;border-radius:5px;"></td>')
+    return '<td style="width:20px;height:20px;background-color:#FA5C29;border-radius:6px;font-size:0;line-height:0;">&nbsp;</td>'
+
+
 def _email_shell(preheader: str, card_html: str, footer_text: str) -> str:
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -582,7 +613,7 @@ def _email_shell(preheader: str, card_html: str, footer_text: str) -> str:
       <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;">
         <tr><td style="padding:0 4px 14px;">
           <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-            <td style="width:20px;height:20px;background-color:#FA5C29;border-radius:6px;font-size:0;line-height:0;">&nbsp;</td>
+            {_email_logo()}
             <td style="padding-left:9px;font-family:{_FONT};font-size:14px;font-weight:600;color:#344054;">SLA Monitor</td>
           </tr></table>
         </td></tr>
@@ -621,12 +652,19 @@ def build_report_email(
     max_latency = float(thresholds.get("max_avg_latency_ms", 300))
 
     muted = f'font-family:{_FONT};font-size:12px;color:#98A2B3;'
+    # Same rule as the document: no evidence reads n/a, never 0.00% or 0 ms.
+    up, down = report.get("checks_up"), report.get("checks_down")
+    counted = up is not None and down is not None
+    uptime = None if counted and int(up) + int(down) == 0 else report["uptime_pct"]
+    passed = not (counted and int(up) == 0)
 
     facts = "".join([
         _email_fact_row("Reporting period", period, first=True),
-        _email_fact_row("Availability", f'{_pct(report["uptime_pct"])} <span style="{muted}">(target &ge; {min_uptime:.2f}%)</span>'),
-        _email_fact_row("Avg response", f'{_ms(report["avg_latency_ms"])} <span style="{muted}">(target &le; {round(max_latency):,} ms)</span>'),
-        _email_fact_row("P95 response", _ms(report["p95_latency_ms"])),
+        _email_fact_row("Availability", f'{_pct(uptime)} <span style="{muted}">(target &ge; {min_uptime:.2f}%)</span>'),
+        _email_fact_row("Avg response", f'{_ms(report["avg_latency_ms"] if passed else None)} <span style="{muted}">(target &le; {round(max_latency):,} ms)</span>'),
+        _email_fact_row("P95 response", _ms(report["p95_latency_ms"] if passed else None)),
+        *([_email_fact_row("Evidence coverage", f'{_pct(report["coverage_pct"])} <span style="{muted}">(needs &ge; 95.00%)</span>')]
+          if report.get("coverage_pct") is not None else []),
         _email_fact_row("Incidents", str(report["incident_count"])),
         _email_fact_row("Total downtime", fmt_duration(report["total_downtime_sec"])),
     ])
@@ -639,7 +677,7 @@ def build_report_email(
     )
     card = (
         f'<div style="font-family:{_FONT};font-size:11px;font-weight:600;letter-spacing:.08em;'
-        f'text-transform:uppercase;color:#98A2B3;">Weekly SLA report &middot; {report["report_id"]}</div>'
+        f'text-transform:uppercase;color:#98A2B3;">Weekly SLA report &middot; {_esc(report["report_id"])}</div>'
         f'<h1 style="margin:8px 0 2px;font-family:{_FONT};font-size:20px;line-height:28px;'
         f'font-weight:700;color:#101828;">{safe_name}</h1>'
         f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin:14px 0 20px;"><tr>'
@@ -650,6 +688,6 @@ def build_report_email(
         + (_email_button(DASHBOARD_URL, "View full report") if DASHBOARD_URL else "")
     )
 
-    preheader = f"{project['name']}: {_pct(report['uptime_pct'])} availability, {report['incident_count']} incident(s) — {v['title']}."
+    preheader = f"{safe_name}: {_pct(uptime)} availability, {report['incident_count']} incident(s) — {v['title']}."
     footer = f"You're receiving this because you monitor {safe_name} on SLA Monitor."
     return subject, _email_shell(preheader, card, footer)
