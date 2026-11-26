@@ -421,7 +421,7 @@ export default function ProjectDetail() {
   function exportCsv() {
     const cols: (keyof ProjectReport)[] = [
       'report_id', 'uptime_pct', 'avg_latency_ms', 'p95_latency_ms',
-      'incident_count', 'total_downtime_sec', 'severity', 'sla_pass', 'generated_at',
+      'incident_count', 'total_downtime_sec', 'severity', 'sla_pass', 'slo_status', 'generated_at',
     ]
     const esc = (v: unknown) => {
       const s = String(v ?? '')
@@ -1153,9 +1153,16 @@ export default function ProjectDetail() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className={`font-mono text-[11px] font-bold ${r.sla_pass ? 'text-ok' : 'text-crit'}`}>
-                          {r.sla_pass ? 'PASS' : 'FAIL'}
-                        </span>
+                        {/* The report's own three-way verdict; rows from before slo_status fall back to sla_pass. */}
+                        {(() => {
+                          const verdict = r.slo_status ?? (r.sla_pass ? 'met' : 'missed')
+                          const tone = verdict === 'met' ? 'text-ok' : verdict === 'missed' ? 'text-crit' : 'text-txt-mid'
+                          return (
+                            <span className={`font-mono text-[11px] font-bold ${tone}`}>
+                              {verdict === 'unproven' ? 'NOT PROVEN' : verdict.toUpperCase()}
+                            </span>
+                          )
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex items-center gap-1">
