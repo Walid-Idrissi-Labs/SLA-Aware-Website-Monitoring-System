@@ -160,7 +160,7 @@ export default function IncidentReport({
           emptyLabel="No recorded downtime in this window"
         />
         <p className="mt-1.5 text-[11.5px] text-txt-lo">
-          Downtime minutes per day, attributed to the day the incident began.
+          Downtime minutes per day, attributed to the day the incident began (or the first day shown, if earlier).
         </p>
 
         <div className="hr-accent my-4" />
