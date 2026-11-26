@@ -2,6 +2,8 @@
 
 A serverless AWS platform that monitors HTTP endpoints, detects incidents from consecutive failures, computes SLA metrics (uptime, latency percentiles, MTTR, MTBF), and generates weekly reports. Infrastructure is fully managed via Terraform with remote state in Terraform Cloud.
 
+**[Live demo](https://sla-aware-website-monitoring-system.vercel.app/demo)**: the full dashboard on sample data, running in your browser. No account needed; your changes stay in the browser and reset on reload.
+
 ---
 
 ## AWS Architecture
@@ -106,6 +108,7 @@ Views:
 - **Dashboard** : a bento grid of KPI cards — system health with a minute-by-minute pass-rate area chart, mean latency with a bar chart, active incidents, and endpoint coverage — followed by one card per endpoint showing its latency trend, status strip and verdict. Auto-refreshes every minute.
 - **Project Detail** : a single 1 h / 24 h / 72 h selector drives three panels — a per-check latency chart, an hourly heatmap laid out day × hour in UTC, with an Uptime tab (green → yellow → orange → red, grey where no check produced a verdict) and a Latency tab (each hour's median against the average-latency target, on a ramp with no red because slow is not down), and Vitals (uptime and evidence meters, a p50/p95 percentile chart, and the endpoint's status, HTTP code, accepted statuses, last check and certificate expiry). Below that: the incident state, Healthy → Suspect → Incident open → Recovering, derived from the last hour of checks by the same rules the backend uses and cross-checked against the incident record, which the hourly pass writes (the panel says when the record will catch up, and flags it if that time has passed); an incident report with a downtime-per-day trend, period-over-period deltas and reliability rows; the incident log; the SLA report table with on-demand generation and HTML/JSON downloads; and a hold-to-confirm delete zone.
 - **Settings** : profile and notification email
+- **Demo** (`/demo`) : the whole app on a hand-written dataset, with no account, API or Cognito. In demo mode [`api.ts`](frontend/src/lib/api.ts) hands every request to [`src/demo/handler.ts`](frontend/src/demo/handler.ts), which answers with the API's routes, response shapes, validation and error messages. Seven endpoint stories are anchored to the visit's hour, and their checks, incidents and reports are derived by the backend's own rules. Changes last until a reload, and every HTML report download is one sample rendered by the real report template ([`scripts/build-demo-report.py`](scripts/build-demo-report.py)).
 
 An endpoint's verdict (Operational, Down, No evidence) comes from its latest check only while that check is fresh. With no check for 130 s it reads **Stale** instead of repeating the last verdict: one missed one-minute cycle is tolerated, two are not. An inactive endpoint reads **Not monitored** unless it left an incident open. Missing evidence never shows as up.
 
@@ -137,11 +140,16 @@ The root [`main.tf`](sla-monitor-terraform/main.tf) wires modules together and d
 
 ## Screenshots
 
+Taken from the [demo](https://sla-aware-website-monitoring-system.vercel.app/demo), on its sample data.
+
 #### Dashboard
-![Dashboard](./assets/screenshot-dashboard.png)
+![Dashboard](./assets/screenshot-dashboard.webp)
 
 #### Project Details
-![Project](./assets/screenshot-project.png)
+![Project](./assets/screenshot-project.webp)
+
+#### Weekly SLA Report
+![Weekly SLA report](./assets/screenshot-report.webp)
 
 ---
 
