@@ -60,6 +60,9 @@ CHECK_INTERVAL_SECONDS = 60
 DAY_KEY = re.compile(r"^d(\d{8})_(up|down|inconclusive)$")
 DAILY_LIST_DAYS = 14
 DAILY_DETAIL_DAYS = 30
+# Fields a report row keeps for its own document (report_generator build_report);
+# the report list leaves them out.
+REPORT_DETAIL_KEYS = {"daily", "incidents", "causes", "previous", "target", "monitor"}
 
 
 def _get_tables():
@@ -399,7 +402,8 @@ def handle_get_projects_reports(event: dict) -> dict:
             break
         query_kwargs["ExclusiveStartKey"] = last_key
 
-    return success(200, reports)
+    # The page polls this list; the document's own detail stays in the report file.
+    return success(200, [{k: v for k, v in r.items() if k not in REPORT_DETAIL_KEYS} for r in reports])
 
 
 def _reliability_metrics(incidents: list[dict], thresholds: dict, from_sec: int, now_sec: int) -> dict:

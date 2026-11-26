@@ -11,6 +11,7 @@ import os
 import sys
 import time
 import unittest
+from datetime import datetime, timezone
 from unittest import mock
 
 from botocore.exceptions import ClientError
@@ -586,7 +587,7 @@ class ReportIncidentWindowTest(unittest.TestCase):
         self.assertEqual(self.incidents([self.row(self.FROM - 60, self.FROM)]), [])
 
     def test_build_report_clips_to_the_window_it_is_given(self):
-        checks = [{"status": "success", "latency_ms": 100}] * 10
+        checks = [{"timestamp": (self.FROM + i * 60) * 1000, "status": "success", "latency_ms": 100} for i in range(10)]
         report = reports.build_report({"project_id": "p1"}, checks, [self.row(self.FROM - 3600, self.FROM + 600)], "r1", (self.FROM, self.TO), expected_checks=10)
         self.assertEqual((report["incident_count"], report["total_downtime_sec"]), (1, 600))
 
@@ -597,6 +598,103 @@ class ReportIncidentWindowTest(unittest.TestCase):
         self.assertEqual(self.downtime(self.row(self.FROM - 3600)), 7 * 86400)  # open all week
         legacy = {"start_time": self.FROM + 10, "end_time": None, "resolved": True, "duration_seconds": 50}
         self.assertEqual(self.downtime(legacy), 50)
+
+
+class ReportDocumentTest(unittest.TestCase):
+    """The report row keeps what its document shows, and the document says it plainly (board #10)."""
+
+    FROM = 1_800_000_000 - 1_800_000_000 % 86400  # a UTC midnight
+    TO = FROM + 2 * 86400
+
+    @staticmethod
+    def check(sec, status="success", latency=100, error=None):
+        return {"timestamp": sec * 1000 + 250, "status": status, "latency_ms": latency, "error_type": error}
+
+    def report(self, checks, incidents=(), expected=4, **project):
+        project = {"project_id": "p1", "name": "API", "url": "https://x.example",
+                   "thresholds": {"min_uptime_pct": 99.0, "max_avg_latency_ms": 300}, **project}
+        report = reports.build_report(project, checks, list(incidents), "2026-W47", (self.FROM, self.TO), expected_checks=expected)
+        report["report_kind"] = "Weekly Report"
+        return report, project
+
+    def test_percentiles_causes_and_days(self):
+        checks = [self.check(self.FROM + i * 60, latency=i + 1) for i in range(100)]
+        checks += [self.check(self.FROM + 86460, "failure", 10000, "timeout"), self.check(self.FROM + 86520, "inconclusive", 300, "blocked")]
+        checks.append(self.check(self.TO, "failure", 10000, "http"))  # the window's closing instant stays in its last day
+        report, _ = self.report(checks)
+        self.assertEqual((report["p50_latency_ms"], report["p99_latency_ms"], report["max_latency_ms"]), (51.0, 100.0, 100.0))
+        self.assertEqual({c["cause"]: (c["failed"], c["inconclusive"]) for c in report["causes"]},
+                         {"timeout": (1, 0), "http": (1, 0), "blocked": (0, 1)})
+        self.assertEqual([(d["checks_up"], d["checks_down"], d["checks_inconclusive"], d["uptime_pct"]) for d in report["daily"]],
+                         [(100, 0, 0, 100.0), (0, 2, 1, 0.0)])
+
+    def test_incidents_are_kept_clipped_to_the_window(self):
+        carried = {"start_time": self.FROM - 600, "end_time": self.FROM + 300, "duration_seconds": 900, "resolved": True, "cause": "conn"}
+        report, _ = self.report([self.check(self.FROM)], [carried])
+        self.assertEqual(report["incidents"], [{"start": self.FROM - 600, "end": self.FROM + 300, "in_window_sec": 300,
+                                                "cause": "conn", "resolved": True, "closed_reason": None}])
+        self.assertEqual([d["downtime_sec"] for d in report["daily"]], [300, 0])
+
+    def test_three_verdicts_and_no_contract_wording(self):
+        ok = [self.check(self.FROM + i * 60) for i in range(4)]
+        for checks, expected, title in [
+            (ok, 4, "Objectives met"),
+            (ok + [self.check(self.FROM + 300, "failure", 10000, "timeout")], 5, "Objectives missed"),
+            (ok, 400, "Objectives not proven"),  # 1% coverage
+        ]:
+            report, project = self.report(checks, expected=expected)
+            html = reports.build_html_report(report, project)
+            self.assertIn(title, html)
+            self.assertNotIn("SLA met", html)
+            self.assertNotIn("SLA breached", html)
+            subject, _ = reports.build_report_email(project, report, datetime_utc(self.FROM), datetime_utc(self.TO))
+            self.assertIn(title.upper(), subject)
+
+    def test_user_text_is_escaped_and_cannot_reach_the_page_css(self):
+        report, project = self.report([self.check(self.FROM)], name="<script>alert(1)</script>")
+        report["report_id"] = '2026-W47"} body { color: red'
+        html = reports.build_html_report(report, project)
+        self.assertNotIn("<script>alert(1)</script>", html)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
+        self.assertIn('content: "SLA Monitor \\00B7  2026-W47bodycolorred"', html)
+
+    def test_an_old_row_renders_without_the_newer_sections(self):
+        old = {"report_id": "2026-W47", "uptime_pct": 99.5, "avg_latency_ms": 120.0, "p95_latency_ms": 200.0, "incident_count": 0,
+               "total_downtime_sec": 0, "severity": "degraded", "sla_pass": False, "generated_at": "2026-11-23T08:00:00+00:00",
+               "window_start": self.FROM, "window_end": self.TO, "report_kind": "Weekly Report", "incidents": []}
+        html = reports.build_html_report(old, {"name": "API", "thresholds": {"min_uptime_pct": 99.9}})
+        self.assertIn("Objectives missed", html)
+        for section in ("Daily availability", "Error budget", "Response time", "Evidence and coverage"):
+            self.assertNotIn(f"<h2>{section}</h2>", html)
+
+    def test_rebuilding_an_old_row_lists_only_incidents_that_started_inside(self):
+        week_start = int(datetime.fromisocalendar(2026, 47, 1).replace(tzinfo=timezone.utc).timestamp())
+        row = {"project_id": "p1", "report_id": "2026-W47", "uptime_pct": 99.5, "avg_latency_ms": 120, "p95_latency_ms": 200,
+               "incident_count": 1, "total_downtime_sec": 60, "severity": "degraded", "sla_pass": False, "generated_at": "2026-11-23T08:00:00"}
+        rows = [{"project_id": "p1", "start_time": week_start - 600, "end_time": week_start + 300, "resolved": True},
+                {"project_id": "p1", "start_time": week_start + 3600, "end_time": week_start + 3660, "resolved": True}]
+        uploaded = []
+        table = lambda item: type("T", (), {"get_item": lambda self, Key: {"Item": item}})()
+        with mock.patch.object(reports, "projects_table", table({"project_id": "p1", "name": "API"})), \
+             mock.patch.object(reports, "reports_table", table(row)), \
+             mock.patch.object(reports, "incidents_table", FakeIncidentsTable(rows)), \
+             mock.patch.object(reports, "upload_report_files", lambda report, project: uploaded.append(report)):
+            reports._run_rebuild("p1", "2026-W47")
+        self.assertEqual([i["start"] for i in uploaded[0]["incidents"]], [week_start + 3600])
+
+    def test_the_report_list_leaves_the_document_detail_out(self):
+        row = {"project_id": "p1", "report_id": "2026-W47", "uptime_pct": 99.5, "daily": [{"start": 1}], "incidents": [],
+               "causes": [], "previous": None, "target": {}, "monitor": {}}
+        reports_table = type("R", (), {"query": lambda self, **kw: {"Items": [row]}})()
+        event = {"requestContext": {"authorizer": {"jwt": {"claims": {"sub": "u1"}}}}, "pathParameters": {"project_id": "p1"}}
+        with mock.patch.object(api, "_get_tables", lambda: (None, None, None, reports_table, None)), \
+             mock.patch.object(api, "get_project_or_403", lambda pid, uid: {"project_id": "p1"}):
+            body = json.loads(api.handle_get_projects_reports(event)["body"])
+        self.assertEqual(body, [{"project_id": "p1", "report_id": "2026-W47", "uptime_pct": 99.5}])
+
+
+def datetime_utc(epoch_sec):
+    return datetime.fromtimestamp(epoch_sec, tz=timezone.utc)
 
 
 class MttrTest(unittest.TestCase):

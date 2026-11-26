@@ -1153,9 +1153,16 @@ export default function ProjectDetail() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className={`font-mono text-[11px] font-bold ${r.sla_pass ? 'text-ok' : 'text-crit'}`}>
-                          {r.sla_pass ? 'PASS' : 'FAIL'}
-                        </span>
+                        {/* The report's own three-way verdict; rows from before slo_status fall back to sla_pass. */}
+                        {(() => {
+                          const verdict = r.slo_status ?? (r.sla_pass ? 'met' : 'missed')
+                          const tone = verdict === 'met' ? 'text-ok' : verdict === 'missed' ? 'text-crit' : 'text-txt-mid'
+                          return (
+                            <span className={`font-mono text-[11px] font-bold ${tone}`}>
+                              {verdict === 'unproven' ? 'NOT PROVEN' : verdict.toUpperCase()}
+                            </span>
+                          )
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex items-center gap-1">
