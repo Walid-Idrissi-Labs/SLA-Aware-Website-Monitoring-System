@@ -1,4 +1,4 @@
-import type { Check, DailyTally } from '../types'
+import type { Check, DailyTally, Incident } from '../types'
 
 /** Status palette — the single source for status hexes used in inline SVG/styles.
  *  Mirrors the `ok`/`warn`/`crit`/`accent` tokens in tailwind.config.js. */
@@ -254,3 +254,48 @@ export const ERROR_TYPE = {
   http: { label: 'HTTP', color: STATUS.warn },
   blocked: { label: 'BLOCKED', color: STATUS.neutral },
 } as const
+
+/** An open incident has no end_time yet; it runs up to now. */
+export const incidentEnd = (incident: Incident, nowSec: number) => incident.end_time ?? (incident.resolved ? incident.start_time : nowSec)
+
+/** Incident totals for a window, using the incident list we already fetched.
+ *  An incident can begin before the window; only its part inside it counts, so
+ *  one that spans two windows counts once in each, with its downtime split. */
+export function incidentTotals(incidents: Incident[], fromSec: number, toSec: number, nowSec: number) {
+  const inWindow = incidents.filter((i) => i.start_time < toSec && incidentEnd(i, nowSec) > fromSec)
+  let downtime = 0
+  let resolvedDuration = 0
+  let resolvedCount = 0
+  let longest = 0
+  for (const incident of inWindow) {
+    const seconds = Math.min(incidentEnd(incident, nowSec), toSec) - Math.max(incident.start_time, fromSec)
+    downtime += seconds
+    longest = Math.max(longest, seconds)
+    // Cut off when monitoring stopped, not repaired: downtime, but no recovery time.
+    if (incident.resolved && incident.duration_seconds != null && !incident.closed_reason) {
+      resolvedDuration += incident.duration_seconds
+      resolvedCount += 1
+    }
+  }
+  // MTBF is computed per window rather than taken from the API metrics, which
+  // are calculated over the whole fetched range — otherwise the card would mix
+  // a 7-day headline with a 30-day average. Only failures that began inside it.
+  const starts = inWindow
+    .map((incident) => incident.start_time)
+    .filter((start) => start >= fromSec)
+    .sort((a, b) => a - b)
+  let mtbf: number | null = null
+  if (starts.length >= 2) {
+    let total = 0
+    for (let i = 1; i < starts.length; i++) total += starts[i] - starts[i - 1]
+    mtbf = total / (starts.length - 1)
+  }
+
+  return {
+    count: inWindow.length,
+    downtime,
+    longest,
+    mtbf,
+    mttr: resolvedCount > 0 ? resolvedDuration / resolvedCount : null,
+  }
+}

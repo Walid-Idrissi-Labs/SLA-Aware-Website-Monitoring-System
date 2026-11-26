@@ -229,6 +229,17 @@ def _incidents_between(project_id: str, from_sec: int, to_sec: int) -> list[dict
         query_kwargs["ExclusiveStartKey"] = last_key
 
 
+def _incident_before(project_id: str, from_sec: int) -> list[dict]:
+    """The last incident that began before `from_sec`: it can still run into a window starting there."""
+    response = _get_incidents_table().query(
+        KeyConditionExpression="project_id = :pid AND start_time < :from_ts",
+        ExpressionAttributeValues={":pid": project_id, ":from_ts": from_sec},
+        ScanIndexForward=False,
+        Limit=1,
+    )
+    return response.get("Items", [])
+
+
 def _daily(project: dict, days: int, now_sec: int) -> dict:
     """The project's last `days` UTC days, oldest first: the monitor's check
     tallies, and the seconds of confirmed outage (incidents) inside each day."""
@@ -241,16 +252,9 @@ def _daily(project: dict, days: int, now_sec: int) -> dict:
     first = datetime.fromtimestamp(now_sec, timezone.utc).date() - timedelta(days=days - 1)
     from_sec = int(datetime(first.year, first.month, first.day, tzinfo=timezone.utc).timestamp())
     incidents = _incidents_between(project["project_id"], from_sec, now_sec)
-    # An incident that began before the window can still run into it.
-    earlier = _get_incidents_table().query(
-        KeyConditionExpression="project_id = :pid AND start_time < :from_ts",
-        ExpressionAttributeValues={":pid": project["project_id"], ":from_ts": from_sec},
-        ScanIndexForward=False,
-        Limit=1,
-    )
     spans = [
         (int(i["start_time"]), int(i["end_time"]) if i.get("end_time") is not None else now_sec)
-        for i in incidents + earlier.get("Items", [])
+        for i in incidents + _incident_before(project["project_id"], from_sec)
     ]
 
     out = []
@@ -403,19 +407,24 @@ def _reliability_metrics(incidents: list[dict], thresholds: dict, from_sec: int,
 
     DynamoDB numbers arrive as Decimal; coerce to int/float here so the math is
     plain and the returned dict is JSON-safe. An ongoing (unresolved) incident
-    accrues downtime up to `now_sec`.
+    accrues downtime up to `now_sec`. Downtime and the longest outage count only
+    the part of an incident inside the window; MTTR uses whole durations.
     """
     window_sec = max(now_sec - from_sec, 1)
     resolved = [i for i in incidents if i.get("resolved") is True]
     open_incidents = [i for i in incidents if not i.get("resolved")]
 
     incident_count = len(incidents)
-    durations = [int(i["duration_seconds"]) for i in resolved if i.get("duration_seconds") is not None]
+    durations = [
+        int(i["duration_seconds"]) - max(from_sec - int(i["start_time"]), 0)
+        for i in resolved if i.get("duration_seconds") is not None
+    ]
 
-    # By design there is at most one open incident; it counts up to now.
+    # By design there is at most one open incident; it counts up to now, from
+    # the window's start if it began before it.
     open_downtime = 0
     if open_incidents:
-        open_start = int(open_incidents[0]["start_time"])
+        open_start = max(int(open_incidents[0]["start_time"]), from_sec)
         open_downtime = max(now_sec - open_start, 0)
 
     total_downtime = sum(durations) + open_downtime
@@ -486,6 +495,11 @@ def handle_get_projects_incidents(event: dict) -> dict:
     from_sec = now_sec - (days * 86400)
 
     incidents = _incidents_between(project_id, from_sec, now_sec)
+    # An outage that began before the window still counts if it ran into it (or is still open).
+    incidents += [
+        i for i in _incident_before(project_id, from_sec)
+        if not i.get("resolved") or int(i.get("end_time") or 0) > from_sec
+    ]
 
     metrics = _reliability_metrics(incidents, project.get("thresholds", {}), from_sec, now_sec)
 
