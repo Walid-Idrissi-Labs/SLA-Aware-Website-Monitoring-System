@@ -33,7 +33,7 @@ WEEK_START = int(datetime(2026, 11, 16, tzinfo=timezone.utc).timestamp())
 WEEK_END = WEEK_START + 7 * 86400
 PROJECT = {
     "project_id": "checkout",
-    "name": "Checkout",
+    "name": "Checkout (demo sample)",
     "url": "https://checkout.example.com",
     "failure_threshold": 3,
     "thresholds": {"min_uptime_pct": 99.9, "max_avg_latency_ms": 400},

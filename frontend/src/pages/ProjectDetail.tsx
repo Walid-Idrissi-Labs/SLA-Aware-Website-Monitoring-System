@@ -411,7 +411,7 @@ export default function ProjectDetail() {
       a.rel = 'noopener'
       // Saves a same-origin file (the demo's) instead of opening it over the app;
       // browsers ignore it for the real cross-origin S3 link, whose headers decide.
-      a.download = `${reportId}.${format}`
+      a.download = DEMO && format === 'html' ? 'sample-report.html' : `${reportId}.${format}`
       document.body.appendChild(a)
       a.click()
       a.remove()

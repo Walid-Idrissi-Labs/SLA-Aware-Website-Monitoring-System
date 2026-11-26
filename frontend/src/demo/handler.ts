@@ -1,5 +1,5 @@
 import type { Project, ProjectReport, User } from '../types'
-import { DEMO_USER } from '../lib/demo'
+import { DEMO_USER } from '../lib/demo.ts'
 import {
   type DemoFields,
   addDemoEndpoint,
@@ -11,7 +11,7 @@ import {
   demoReports,
   demoStatus,
   editDemoEndpoint,
-} from './data'
+} from './data.ts'
 
 /**
  * The demo's stand-in for the API (board #11): lib/api.ts sends every request
@@ -127,7 +127,9 @@ export async function handle<T>(method: string, path: string, body?: unknown): P
       }
       if ('notification_email' in input) {
         const email = input.notification_email
-        if (typeof email !== 'string' || !EMAIL_RE.test(email)) throw new Error('notification_email must be a valid email address')
+        if (typeof email !== 'string' || !EMAIL_RE.test(email) || email.length > 254) {
+          throw new Error('notification_email must be a valid email address')
+        }
         patch.notification_email = email.trim()
       }
       if (!Object.keys(patch).length) throw new Error('No valid fields provided')

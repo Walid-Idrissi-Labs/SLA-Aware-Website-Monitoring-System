@@ -4,6 +4,7 @@ import Stepper, { Step } from './Stepper'
 import { createProject } from '../lib/api'
 import { Alert } from './ui'
 import { PROJECT_DEFAULTS } from '../lib/format'
+import { DEMO } from '../lib/demo'
 import type { Project, CreateProjectInput } from '../types'
 
 interface Props {
@@ -137,6 +138,9 @@ export default function AddProjectModal({ onClose, onSuccess }: Props) {
                   className="field"
                   placeholder="https://mysite.com"
                 />
+                {DEMO && (
+                  <p className="mt-1.5 text-[10px] text-txt-dim">Demo: this endpoint is simulated. Nothing is requested and no email is sent.</p>
+                )}
               </div>
             </div>
           </Step>
