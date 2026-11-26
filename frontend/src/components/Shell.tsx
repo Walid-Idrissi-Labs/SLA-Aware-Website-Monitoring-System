@@ -65,6 +65,7 @@ export default function Shell({ ticker, children }: Props) {
                 <span className="font-semibold text-txt-hi">Demo</span> &middot; simulated
                 <span className="hidden sm:inline"> endpoints and</span> data
                 <span className="hidden sm:inline">. No real sites are checked.</span>
+                <span className="hidden lg:inline"> Your changes last until you reload.</span>
               </span>
               <button type="button" onClick={exitDemo} className="flex-none font-medium text-accent hover:underline">
                 Exit demo

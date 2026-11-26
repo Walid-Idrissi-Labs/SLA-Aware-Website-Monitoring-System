@@ -64,6 +64,11 @@ interface Story {
   /** Checks stopped this many minutes before the top of the hour: a stale monitor. */
   stoppedBeforeHour?: number
   stretches: Stretch[]
+  /** A visitor's endpoint: created at this instant (ms). */
+  createdAtMs?: number
+  /** Paused or deleted by the visitor at this instant (ms): no checks after it. */
+  pausedAtMs?: number
+  email?: string
 }
 
 const conn = { status: 'failure', http: 0, error: 'conn' } as const
@@ -186,10 +191,8 @@ const dayStartMin = (now: number) => toMinute(now) - (toMinute(now) % DAY_MIN)
 const isoDay = (minute: number) => new Date(minute * MIN).toISOString().slice(0, 10)
 
 /** Each endpoint's check lands 20-27 s after the minute, varying a little like the real monitor's. */
-const checkTime = (story: Story, minute: number) => {
-  const index = STORIES.indexOf(story)
-  return minute * MIN + 20_000 + index * 700 + Math.floor(unit(minute * 7 + index) * 3_000)
-}
+const checkTime = (r: { index: number }, minute: number) =>
+  minute * MIN + 20_000 + r.index * 700 + Math.floor(unit(minute * 7 + r.index) * 3_000)
 
 // ─── One endpoint, resolved against now ─────────────────────────────────────
 
@@ -201,36 +204,55 @@ interface Span {
 
 interface Resolved {
   story: Story
+  /** Its place among all endpoints: spreads the check times and the latency noise. */
+  index: number
   /** First and last minute with a check (inclusive). */
   first: number
   last: number
   spans: Span[]
 }
 
+// ─── A visit's changes: in memory only, gone on reload ──────────────────────
+
+/** Endpoints the visitor added, and the visitor's edits to any endpoint. */
+const added: Story[] = []
+const edits = new Map<string, Partial<Story>>()
+const allIds = () => [...STORIES, ...added].map((s) => s.id)
+
 function story(id: string): Story {
-  const found = STORIES.find((s) => s.id === id)
+  const found = STORIES.find((s) => s.id === id) ?? added.find((s) => s.id === id)
   if (!found) throw new Error(`No demo endpoint "${id}"`)
-  return found
+  const edit = edits.get(id)
+  return edit ? { ...found, ...edit } : found
 }
 
 export function createdAt(s: Story, now: number): string {
+  if (s.createdAtMs != null) return new Date(s.createdAtMs).toISOString()
   // 09:30 UTC on the creation day, so the first day is a partial one.
   return new Date((dayStartMin(now) - s.createdDaysAgo * DAY_MIN + 9 * 60 + 30) * MIN).toISOString()
 }
 
 function resolve(s: Story, now: number, anchor: number): Resolved {
-  const first = toMinute(Date.parse(createdAt(s, anchor)))
-  let last = toMinute(now)
-  if (checkTime(s, last) > now) last -= 1 // this minute's check has not landed yet
-  if (s.stoppedBeforeHour != null) last = Math.min(last, hourStartMin(anchor) - s.stoppedBeforeHour)
-  const spans = s.stretches.map((stretch) => {
-    if (stretch.at === 'latest') return { start: last - stretch.minutes + 1, end: last + 1, stretch }
+  const r = { story: s, index: allIds().indexOf(s.id), first: 0, last: 0, spans: [] as Span[] }
+  const created = Date.parse(createdAt(s, anchor))
+  r.first = toMinute(created)
+  if (checkTime(r, r.first) < created) r.first += 1 // the first check comes after the endpoint exists
+  r.last = toMinute(now)
+  if (checkTime(r, r.last) > now) r.last -= 1 // this minute's check has not landed yet
+  if (s.stoppedBeforeHour != null) r.last = Math.min(r.last, hourStartMin(anchor) - s.stoppedBeforeHour)
+  if (s.pausedAtMs != null) {
+    let paused = toMinute(s.pausedAtMs)
+    if (checkTime(r, paused) > s.pausedAtMs) paused -= 1
+    r.last = Math.min(r.last, paused)
+  }
+  r.spans = s.stretches.map((stretch) => {
+    if (stretch.at === 'latest') return { start: r.last - stretch.minutes + 1, end: r.last + 1, stretch }
     // Both anchors are the visit's, so history holds still across midnight too.
     const base = stretch.at === 'hour' ? hourStartMin(anchor) : dayStartMin(anchor) - stretch.at * DAY_MIN
     const start = base + stretch.from
     return { start, end: stretch.minutes === Infinity ? Infinity : start + stretch.minutes, stretch }
   })
-  return { story: s, first, last, spans }
+  return r
 }
 
 /** The check at a minute, or null when none ran (before creation, after it stopped, in a gap). */
@@ -239,7 +261,7 @@ function checkAt(r: Resolved, minute: number): Check | null {
   const span = r.spans.find((x) => minute >= x.start && minute < x.end)
   if (span?.stretch.status === 'gap') return null
   const stretch = span?.stretch
-  const index = STORIES.indexOf(r.story)
+  const index = r.index
   const [base, spread] = r.story.latency
   // A hash of the minute, so the same minute always has the same latency.
   const noise = unit(minute * 31 + index)
@@ -250,7 +272,7 @@ function checkAt(r: Resolved, minute: number): Check | null {
   const drift = 0.92 + 0.16 * unit(Math.floor(minute / DAY_MIN) * 13 + index)
   const answered = !stretch || stretch.error === 'http' || stretch.error === 'blocked'
   return {
-    timestamp: checkTime(r.story, minute),
+    timestamp: checkTime(r, minute),
     status: stretch ? (stretch.status as Check['status']) : 'success',
     latency_ms: answered ? Math.round((base + spread * noise) * drift + rhythm + spike) : 10_000,
     http_status_code: stretch ? stretch.http ?? 0 : 200,
@@ -290,21 +312,24 @@ function incidents(r: Resolved, now: number): Incident[] {
     const hi = Math.min(span.end, r.last + 1)
     if (hi - lo < r.story.threshold) continue
     // Not on record until the pass after the run reached the threshold.
-    if (nextPass(checkTime(r.story, lo + r.story.threshold - 1)) > now) continue
-    const start = Math.floor(checkTime(r.story, lo) / 1000)
+    if (nextPass(checkTime(r, lo + r.story.threshold - 1)) > now) continue
+    const start = Math.floor(checkTime(r, lo) / 1000)
     // The first passing check after the run closes it, once the next pass has run.
     let next = hi
     while (next <= r.last && checkAt(r, next)?.status !== 'success') next++
-    const recovery = next <= r.last ? checkTime(r.story, next) : null
-    const closed = recovery != null && nextPass(recovery) <= now
-    const end = closed ? Math.floor((recovery as number) / 1000) : null
+    const recovery = next <= r.last ? checkTime(r, next) : null
+    let end = recovery != null && nextPass(recovery) <= now ? Math.floor(recovery / 1000) : null
+    // Paused while still down: the pass after the pause closes it at the last check.
+    const stopped = end == null && r.story.pausedAtMs != null && nextPass(r.story.pausedAtMs) <= now
+    if (stopped) end = Math.floor(checkTime(r, r.last) / 1000)
     out.push({
       project_id: r.story.id,
       start_time: start,
       end_time: end,
       duration_seconds: end == null ? null : end - start,
-      resolved: closed,
+      resolved: end != null,
       cause: span.stretch.error ?? null,
+      ...(stopped ? { closed_reason: 'monitoring_stopped' as const } : {}),
     })
   }
   return out.sort((x, y) => y.start_time - x.start_time) // newest first, like the API
@@ -380,10 +405,10 @@ export function demoProject(id: string, now: number, anchor = now): Project {
     project_id: s.id,
     name: s.name,
     url: s.url,
-    active: true,
+    active: s.pausedAtMs == null,
     failure_threshold: s.threshold,
     thresholds: { ...s.target },
-    notification_email: DEMO_EMAIL,
+    notification_email: s.email ?? DEMO_EMAIL,
     created_at: createdAt(s, anchor),
     accepted_status: s.accepted ?? '200-399',
     current_status: latest?.status ?? 'unknown',
@@ -397,10 +422,71 @@ export function demoProject(id: string, now: number, anchor = now): Project {
 
 /** GET /projects, with each project's window and 14-day history when `statusHours` is given (capped at 24 h, like the API). */
 export function demoProjects(now: number, statusHours?: number, anchor = now): Project[] {
-  return STORIES.map((s) => {
-    const project = demoProject(s.id, now, anchor)
-    return statusHours ? { ...project, status: demoStatus(s.id, Math.min(statusHours, 24), now, 14, anchor) } : project
+  return allIds().map((id) => {
+    const project = demoProject(id, now, anchor)
+    return statusHours ? { ...project, status: demoStatus(id, Math.min(statusHours, 24), now, 14, anchor) } : project
   })
+}
+
+// ─── A visit's writes (the handler validates, these apply) ──────────────────
+
+export interface DemoFields {
+  name?: string
+  url?: string
+  failure_threshold?: number
+  thresholds?: { min_uptime_pct: number; max_avg_latency_ms: number }
+  accepted_status?: string
+  notification_email?: string
+  active?: boolean
+}
+
+export const demoExists = (id: string) => allIds().includes(id)
+
+/** A new endpoint: pending until its first check lands, then healthy. */
+export function addDemoEndpoint(fields: DemoFields, now: number): string {
+  const base = (fields.name ?? 'endpoint').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'endpoint'
+  let id = base
+  for (let n = 2; demoExists(id); n++) id = `${base}-${n}`
+  added.push({
+    id,
+    name: fields.name ?? id,
+    url: fields.url ?? 'https://example.com',
+    createdDaysAgo: 0,
+    createdAtMs: now,
+    threshold: fields.failure_threshold ?? 3,
+    target: fields.thresholds ?? { min_uptime_pct: 99.9, max_avg_latency_ms: 300 },
+    accepted: fields.accepted_status ?? '200-399',
+    email: fields.notification_email,
+    latency: [140, 60],
+    stretches: [],
+  })
+  return id
+}
+
+/**
+ * The visitor's edit. `active: false` stops the checks from now, as the API's
+ * soft DELETE does.
+ * shortcut: the app has no control to reactivate an endpoint, so `active: true`
+ * is ignored here; and a new failure threshold also re-reads the past, where
+ * the real record keeps the incidents it wrote. Revisit if either shows.
+ */
+export function editDemoEndpoint(id: string, fields: DemoFields, now: number): void {
+  const current = story(id)
+  const edit: Partial<Story> = { ...edits.get(id) }
+  if (fields.name !== undefined) edit.name = fields.name
+  if (fields.url !== undefined) edit.url = fields.url
+  if (fields.failure_threshold !== undefined) edit.threshold = fields.failure_threshold
+  if (fields.thresholds !== undefined) edit.target = fields.thresholds
+  if (fields.accepted_status !== undefined) edit.accepted = fields.accepted_status
+  if (fields.notification_email !== undefined) edit.email = fields.notification_email
+  if (fields.active === false && current.pausedAtMs == null) edit.pausedAtMs = now
+  edits.set(id, edit)
+}
+
+/** Forget the visit's changes (tests; a reload does the same). */
+export function resetDemoVisit(): void {
+  added.length = 0
+  edits.clear()
 }
 
 /** The API's reliability metrics over [fromSec, nowSec] (`_reliability_metrics`). */

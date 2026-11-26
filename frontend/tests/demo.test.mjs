@@ -1,7 +1,7 @@
 // The demo dataset (src/demo/data.ts): every endpoint tells its story, and every view agrees. Run with `npm test`.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { STORIES, demoChecks, demoDaily, demoIncidents, demoProject, demoProjects, demoReports, demoStatus } from '../src/demo/data.ts'
+import { STORIES, addDemoEndpoint, demoChecks, demoDaily, demoIncidents, demoProject, demoProjects, demoReports, demoStatus, editDemoEndpoint, resetDemoVisit } from '../src/demo/data.ts'
 import { dayVerdict, incidentState, verdictFor } from '../src/lib/format.ts'
 
 const MIN = 60_000
@@ -128,4 +128,33 @@ test('the dashboard list carries each window and 14 days of history', () => {
     assert.equal(p.status.summary.window_hours, 1)
     assert.equal(p.status.daily.days.length, 14)
   }
+})
+
+test('a visit\'s changes: add, delete while down, and a new threshold', () => {
+  resetDemoVisit()
+  const t0 = TIMES['mid-hour']
+  const id = addDemoEndpoint({ name: 'Status page', url: 'https://status.example.com' }, t0)
+  assert.equal(id, 'status-page')
+  assert.equal(judge(id, t0 + 5_000).verdict, 'pending') // its first check has not landed
+  assert.equal(judge(id, t0 + 2 * MIN).verdict, 'up')
+  assert.equal(demoProjects(t0, 1).length, STORIES.length + 1)
+
+  // Paused while down: still down while the incident is open, closed as monitoring stopped at the next pass.
+  editDemoEndpoint('checkout', { active: false }, t0)
+  assert.equal(demoProject('checkout', t0 + MIN, t0).active, false)
+  const open = demoIncidents('checkout', 30, t0 + 10 * MIN, t0).incidents[0]
+  assert.equal(open.resolved, false)
+  const closed = demoIncidents('checkout', 30, H + 61 * MIN, t0).incidents[0]
+  assert.equal(closed.closed_reason, 'monitoring_stopped')
+  const lastCheck = demoChecks('checkout', t0 - 5 * MIN, H + 61 * MIN, H + 61 * MIN, t0).at(-1)
+  assert.equal(closed.end_time, Math.floor(lastCheck.timestamp / 1000))
+
+  // Deleted endpoints stay deleted: no checks after the pause.
+  assert.ok(!demoChecks('checkout', t0, H + 90 * MIN, H + 90 * MIN, t0).some((c) => c.timestamp > t0))
+
+  // A lower threshold: two timeouts in a row are now an incident, not yet on record.
+  editDemoEndpoint('docs', { failure_threshold: 2 }, t0)
+  assert.deepEqual(judge('docs', t0 + MIN), { verdict: 'down', stage: 'open', record: 'missing' })
+  resetDemoVisit()
+  assert.equal(demoProjects(t0).length, STORIES.length)
 })

@@ -8,7 +8,7 @@ import type { User } from '../types'
  */
 export const DEMO = typeof location !== 'undefined' && /^\/demo(\/|$)/.test(location.pathname)
 
-/** The visitor the demo signs in as. */
+/** The visitor the demo signs in as; a Settings save edits it for the visit. */
 export const DEMO_USER: User = {
   user_id: 'demo',
   email: 'demo@example.com',
