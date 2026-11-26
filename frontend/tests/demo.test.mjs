@@ -50,6 +50,12 @@ test('within a visit the stories move on like the real system', () => {
   assert.deepEqual(judge('checkout', later, arrived), { verdict: 'down', stage: 'open', record: 'open' })
   const start = (now) => demoIncidents('checkout', 30, now, arrived).incidents[0].start_time
   assert.equal(start(later), start(arrived)) // history does not jump at the top of the hour
+  // Nor at midnight, nor in a tab left open for days.
+  const starts = (now) => demoIncidents('public-api', 30, now, arrived).incidents.map((i) => i.start_time)
+  assert.deepEqual(starts(Date.UTC(2026, 10, 26, 0, 30)), starts(arrived))
+  const days = demoDaily('checkout', 30, arrived + 10 * 1440 * MIN, arrived).days
+  assert.ok(days.every((d) => d.up >= 0 && d.down >= 0))
+  assert.equal(demoIncidents('checkout', 30, arrived + 10 * 1440 * MIN, arrived).incidents.filter((i) => !i.resolved).length, 1)
 })
 
 test('the same moment always gives the same data', () => {

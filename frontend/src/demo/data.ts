@@ -225,13 +225,14 @@ export function createdAt(s: Story, now: number): string {
 }
 
 function resolve(s: Story, now: number, anchor: number): Resolved {
-  const first = toMinute(Date.parse(createdAt(s, now)))
+  const first = toMinute(Date.parse(createdAt(s, anchor)))
   let last = toMinute(now)
   if (checkTime(s, last) > now) last -= 1 // this minute's check has not landed yet
   if (s.stoppedBeforeHour != null) last = Math.min(last, hourStartMin(anchor) - s.stoppedBeforeHour)
   const spans = s.stretches.map((stretch) => {
     if (stretch.at === 'latest') return { start: last - stretch.minutes + 1, end: last + 1, stretch }
-    const base = stretch.at === 'hour' ? hourStartMin(anchor) : dayStartMin(now) - stretch.at * DAY_MIN
+    // Both anchors are the visit's, so history holds still across midnight too.
+    const base = stretch.at === 'hour' ? hourStartMin(anchor) : dayStartMin(anchor) - stretch.at * DAY_MIN
     const start = base + stretch.from
     return { start, end: stretch.minutes === Infinity ? Infinity : start + stretch.minutes, stretch }
   })
@@ -388,7 +389,7 @@ export function demoProject(id: string, now: number, anchor = now): Project {
     failure_threshold: s.threshold,
     thresholds: { ...s.target },
     notification_email: DEMO_USER.email,
-    created_at: createdAt(s, now),
+    created_at: createdAt(s, anchor),
     accepted_status: s.accepted ?? '200-399',
     current_status: latest?.status ?? 'unknown',
     last_latency_ms: latest?.latency_ms ?? null,
@@ -518,7 +519,7 @@ export function demoReports(id: string, now: number, anchor = now): ProjectRepor
   const weekday = (new Date(today).getUTCDay() + 6) % 7 // Monday = 0
   let weekEnd = today - weekday * 86_400_000
   if (now < weekEnd + 8 * HOUR + 4_000) weekEnd -= 7 * 86_400_000 // this week's run has not finished yet
-  const created = Date.parse(createdAt(s, now))
+  const created = Date.parse(createdAt(s, anchor))
   const out: ProjectReport[] = []
   for (let k = 0; k < 4; k++) {
     const end = weekEnd - k * 7 * 86_400_000
@@ -531,7 +532,7 @@ export function demoReports(id: string, now: number, anchor = now): ProjectRepor
     const week = Math.ceil(((thursday.getTime() - yearStart) / 86_400_000 + 1) / 7)
     const reportId = `${thursday.getUTCFullYear()}-W${String(week).padStart(2, '0')}`
     // Issued reports are records: they keep the targets they were judged against.
-    const key = `${id}:${reportId}:${anchor}`
+    const key = `${id}:${reportId}:${hourStartMin(anchor)}` // the stories read only the visit's hour
     if (!weekly.has(key)) weekly.set(key, demoReport(id, reportId, monday.getTime(), end, end + 8 * HOUR + 4_000, now, anchor))
     out.push({ ...(weekly.get(key) as ProjectReport) })
   }
