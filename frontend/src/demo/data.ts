@@ -103,7 +103,7 @@ export const STORIES: Story[] = [
     ],
   },
   {
-    // Down now: refusing connections for over two hours, on record. A long
+    // Down now: refusing connections for over two hours, on record. A 1h40m
     // outage nine days ago makes an outage day and a failing weekly report.
     id: 'checkout',
     name: 'Checkout',
@@ -114,7 +114,7 @@ export const STORIES: Story[] = [
     latency: [220, 90],
     cert: [41, 'DigiCert Global G2'],
     stretches: [
-      { at: 9, from: 10 * 60 + 5, minutes: 192, ...http503 },
+      { at: 9, from: 10 * 60 + 5, minutes: 100, ...http503 },
       { at: 'hour', from: -137, minutes: Infinity, ...conn },
     ],
   },

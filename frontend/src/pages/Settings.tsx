@@ -4,6 +4,7 @@ import Shell from '../components/Shell'
 import { Alert, Spinner } from '../components/ui'
 import { hydrateProfile, putMe } from '../lib/api'
 import { storeUser } from '../lib/auth'
+import { DEMO } from '../lib/demo'
 import type { User } from '../types'
 
 export default function Settings() {
@@ -73,7 +74,7 @@ export default function Settings() {
           <div className="panel mt-5 animate-fade-up p-5" style={{ animationDelay: '80ms' }}>
             <div className="flex items-center justify-between">
               <span className="font-display text-[15px] font-semibold tracking-[-0.01em] text-txt-hi">Identity</span>
-              <span className="rounded border border-white/[0.08] px-1.5 py-0.5 font-mono text-[9px] text-txt-lo">Cognito</span>
+              {!DEMO && <span className="rounded border border-white/[0.08] px-1.5 py-0.5 font-mono text-[9px] text-txt-lo">Cognito</span>}
             </div>
             <div className="hr-accent mt-3" />
 

@@ -105,7 +105,8 @@ export default function Sidebar() {
               label={DEMO ? 'Exit demo' : 'Log out'}
               onClick={() => {
                 logout()
-                navigate('/login')
+                // In the demo, logout() already left with a full load; a router push would land in /demo.
+                if (!DEMO) navigate('/login')
               }}
             >
               <LogOut className="h-[18px] w-[18px]" strokeWidth={1.75} />

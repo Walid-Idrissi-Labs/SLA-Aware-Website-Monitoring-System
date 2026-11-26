@@ -8,7 +8,7 @@ const MIN = 60_000
 const H = Date.UTC(2026, 10, 25, 14) // Wed 25 Nov 2026, 14:00 UTC
 const TIMES = { 'just after the hour': H + 30_000, 'mid-hour': H + 31 * MIN + 7_000, 'just before the next hour': H + 59 * MIN + 30_000 }
 
-/** Checkout's 3h12m outage nine days before 25 Nov, as the incident record holds it. */
+/** Checkout's 1h40m outage nine days before 25 Nov, as the incident record holds it. */
 const longOutage = (now) =>
   demoIncidents('checkout', 30, now).incidents.find((i) => new Date(i.start_time * 1000).toISOString().startsWith('2026-11-16'))
 
@@ -94,7 +94,7 @@ test('day tallies match the checks, and the long outage marks its day', () => {
   const outage = daily.days.find((d) => d.date === '2026-11-16')
   const incident = longOutage(now)
   assert.equal(outage.outage_sec, incident.duration_seconds)
-  assert.ok(Math.abs(incident.duration_seconds - 192 * 60) <= 5) // checks land a few seconds apart
+  assert.ok(Math.abs(incident.duration_seconds - 100 * 60) <= 5) // checks land a few seconds apart
   assert.equal(dayVerdict(outage, daily.since, demoProject('checkout', now).created_at, now).verdict, 'outage')
   // Seconds after midnight: no check yet today, and the open outage already marks the day.
   const midnight = Date.UTC(2026, 10, 26, 0, 0, 5)

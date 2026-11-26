@@ -12,11 +12,10 @@ import { STORIES, demoIncidents, demoProject, demoProjects, demoReports, demoSta
 /** The visitor's arrival: the stories hang off this hour for the whole visit. */
 const anchor = Date.now()
 
-/** An integer query parameter, clamped like the API's. */
-function param(value: string | null, fallback: number, lo: number, hi: number): number {
-  const n = Number(value ?? fallback)
-  if (!Number.isInteger(n)) throw new Error(`Expected an integer, got "${value}"`)
-  return Math.min(Math.max(n, lo), hi)
+/** An integer query parameter, clamped like the API's; anything Python's int() rejects is a 400 there. */
+function param(name: string, value: string | null, fallback: number, lo: number, hi: number): number {
+  if (value != null && !/^\s*[-+]?\d+\s*$/.test(value)) throw new Error(`${name} must be an integer`)
+  return Math.min(Math.max(value == null ? fallback : Number(value), lo), hi)
 }
 
 /** Only what GET /projects carries, so the demo cannot hide a page that leans on more. */
@@ -33,16 +32,17 @@ export async function handle<T>(method: string, path: string, _body?: unknown): 
   if (method === 'GET') {
     if (url.pathname === '/me') return DEMO_USER as T
     if (url.pathname === '/projects') {
-      const hours = url.searchParams.get('include') === 'status' ? param(url.searchParams.get('hours'), 24, 1, 72) : undefined
+      // The list caps its window at 24 h (in demoProjects), like the API.
+      const hours = url.searchParams.get('include') === 'status' ? param('hours', url.searchParams.get('hours'), 24, 1, 72) : undefined
       return demoProjects(now, hours, anchor).map(listItem) as T
     }
     if (root === 'projects' && id) {
       // The API answers 403 for a project that is not yours, so an unknown id reads the same.
       if (!STORIES.some((s) => s.id === id)) throw new Error('Forbidden')
       if (!sub) return demoProject(id, now, anchor) as T
-      if (sub === 'status') return demoStatus(id, param(url.searchParams.get('hours'), 24, 1, 72), now, 30, anchor) as T
+      if (sub === 'status') return demoStatus(id, param('hours', url.searchParams.get('hours'), 24, 1, 72), now, 30, anchor) as T
       if (sub === 'reports') return demoReports(id, now, anchor) as T
-      if (sub === 'incidents') return demoIncidents(id, param(url.searchParams.get('days'), 30, 1, 365), now, anchor) as T
+      if (sub === 'incidents') return demoIncidents(id, param('days', url.searchParams.get('days'), 30, 1, 365), now, anchor) as T
     }
   }
   throw new Error('Not available in the demo yet')
