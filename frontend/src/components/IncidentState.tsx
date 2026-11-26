@@ -1,4 +1,3 @@
-import { useMemo } from 'react'
 import { Radio } from 'lucide-react'
 import type { Check, Incident } from '../types'
 import { STATUS, formatDowntime, incidentState, nextPass, type IncidentStage, type Verdict } from '../lib/format'
@@ -40,26 +39,27 @@ interface Props {
  * when that time has passed.
  */
 export default function IncidentState({ checks, threshold, incidents, active, verdict, now, className = '' }: Props) {
-  const state = useMemo(
-    () => incidentState({ checks, threshold, incidents, active, verdict, now }),
-    [checks, threshold, incidents, active, verdict, now],
-  )
+  const state = incidentState({ checks, threshold, incidents, active, verdict, now })
   const n = Math.max(1, threshold)
   const lit = STAGES.find((stage) => stage.key === state.stage)
   const name = lit?.label ?? BLANK[state.blank ?? 'no_checks']
-  // A stale monitor cannot move the state: keep it, dimmed, as of the last check.
+  // A stale monitor cannot move the state: keep it, outlined, as of the last check.
+  // Not tied to the page window's checks, so every window shows the same panel.
+  const frozen = verdict === 'stale' && lit != null
   const latest = checks[checks.length - 1]
-  const frozen = verdict === 'stale' && lit != null && latest != null
-  const at = (ms: number | null) => (ms == null ? '' : when(ms, now))
+  const at = (ms: number) => when(ms, now)
+  // Only the state's own time can be cut off at the hour's edge; the record's times are exact.
+  const since = state.since == null ? '' : `${at(state.since)}${state.cut ? ' or earlier' : ''}`
+  const left = n - state.streak
 
   const sentence = {
-    healthy: 'The latest check passed, with no failures in a row.',
-    suspect: `${state.streak} of ${n} failed checks in a row since ${at(state.since)}. ${n - state.streak} more and an incident opens.`,
-    open: `Down${state.since ? ` since ${at(state.since)}` : ''}. The incident stays open until a check passes.`,
-    recovering: `Back up at ${at(state.since)} after ${formatDowntime(state.downFor ?? 0)} down.`,
+    healthy: 'The latest check passed. No failures in a row.',
+    suspect: `${state.streak} failed ${state.streak === 1 ? 'check' : 'checks'} in a row since ${since}. ${left} more ${left === 1 ? 'opens' : 'open'} an incident.`,
+    open: `Down${since ? ` since ${since}` : ''}. The incident stays open until a check passes.`,
+    recovering: `Back up at ${since}${state.downFor != null ? ` after ${formatDowntime(state.downFor)} down` : ''}.`,
     no_evidence: `The latest check gave no evidence${state.reset ? `, so the failure count reset (was ${state.reset} of ${n})` : ''}.`,
     no_checks: 'No checks in the last hour, so there is no state to show.',
-    off: 'Not monitored, so nothing opens or closes.',
+    off: 'Not monitored: no checks are running.',
     pending: 'Waiting for the first check.',
   }[state.stage ?? state.blank ?? 'no_checks']
 
@@ -87,7 +87,7 @@ export default function IncidentState({ checks, threshold, incidents, active, ve
     <div className={`panel-flush ${alarm ? 'border-crit/25' : ''} ${className}`.trim()}>
       <div className="panel-head">
         <div className="flex items-center gap-2.5">
-          {alarm && <Radio className="h-4 w-4 animate-pulse text-crit" strokeWidth={2} aria-hidden="true" />}
+          {alarm && <Radio className="h-4 w-4 text-crit motion-safe:animate-pulse" strokeWidth={2} aria-hidden="true" />}
           <HowCalculated
             label={<span className="whitespace-nowrap text-[13px] font-semibold text-txt-hi">Incident state</span>}
             topic="the incident state"
@@ -97,7 +97,7 @@ export default function IncidentState({ checks, threshold, incidents, active, ve
               { label: 'Open on record', value: 'since' in record ? `since ${at(record.since)}` : 'no' },
               { label: 'Next hourly pass', value: `${hhmm(nextPass(now))} UTC` },
             ]}
-            result={`${Math.min(state.streak, n)} of ${n} in a row · ${name}`}
+            result={state.stage === 'suspect' ? `${state.streak} of ${n} in a row · ${name}` : name}
             caveat="A passing or inconclusive check resets the count, and the first passing check ends an outage. Only the hourly pass writes the record, so it can trail the checks by up to an hour."
           />
         </div>
@@ -113,16 +113,19 @@ export default function IncidentState({ checks, threshold, incidents, active, ve
                 {i > 0 && <span aria-hidden="true" className="mx-2 hidden h-px min-w-3 flex-1 bg-white/10 sm:block" />}
                 <span
                   className={`inline-flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-[5px] text-[12px] font-medium sm:w-auto ${
-                    on ? (frozen ? 'opacity-60' : '') : 'border-white/[0.08] text-txt-lo'
+                    on ? (frozen ? 'border-dashed' : '') : 'border-white/[0.08] text-txt-lo'
                   }`}
+                  // Frozen: outlined only, so a stale state never reads as a live one.
                   style={
                     on
-                      ? {
-                          color: stage.color,
-                          borderColor: `${stage.color}59`,
-                          backgroundColor: `${stage.color}14`,
-                          boxShadow: frozen ? undefined : `0 0 14px -4px ${stage.color}`,
-                        }
+                      ? frozen
+                        ? { color: stage.color, borderColor: `${stage.color}80` }
+                        : {
+                            color: stage.color,
+                            borderColor: `${stage.color}59`,
+                            backgroundColor: `${stage.color}14`,
+                            boxShadow: `0 0 14px -4px ${stage.color}`,
+                          }
                       : undefined
                   }
                 >
@@ -150,13 +153,13 @@ export default function IncidentState({ checks, threshold, incidents, active, ve
           <div className="min-w-0">
             <p className="text-[13px] leading-snug text-txt-hi">
               {sentence}
-              {frozen && ` As of the last check, ${at(latest.timestamp)}.`}
+              {frozen && <span className="text-warn">{latest ? ` As of the last check, ${at(latest.timestamp)}.` : ' Stale: no recent checks.'}</span>}
             </p>
             <p className={`mt-1 text-[11.5px] leading-snug ${overdue ? 'text-warn' : 'text-txt-lo'}`}>{recordLine}</p>
           </div>
         </div>
         {/* Only the state's name, so it is announced when it changes, not on every poll. */}
-        <span className="sr-only" aria-live="polite">{`Incident state: ${name}`}</span>
+        <span className="sr-only" aria-live="polite">{`Incident state: ${name}${frozen ? ', stale' : ''}`}</span>
       </div>
     </div>
   )

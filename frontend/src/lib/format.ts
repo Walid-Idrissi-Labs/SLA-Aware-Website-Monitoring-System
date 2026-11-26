@@ -329,7 +329,9 @@ export interface IncidentState {
   reset: number
   /** Epoch ms: when the outage (open), the failing streak (suspect) or the recovery (recovering) began. */
   since: number | null
-  /** Recovering: seconds from the outage's start to the passing check. */
+  /** `since` is the first check of the hour read, so the real time may be earlier. */
+  cut: boolean
+  /** Recovering: seconds from the outage's start to the passing check, when both are known. */
   downFor: number | null
   record: IncidentRecord
 }
@@ -390,9 +392,10 @@ export function incidentState({
       return inc.start_time * 1000 <= run.end && end >= run.start
     })
 
+  // A paused endpoint's pass still runs the normal rules first, so only an
+  // outage nothing has ended yet closes as monitoring stopped.
   let record: IncidentRecord
-  if (!active) record = row ? { kind: 'stopping', since: rowStart!, pass: nextPass(now) } : { kind: 'none' }
-  else if (row && rowOver == null) record = { kind: 'open', since: rowStart! }
+  if (row && rowOver == null) record = active ? { kind: 'open', since: rowStart! } : { kind: 'stopping', since: rowStart!, pass: nextPass(now) }
   else if (run && !covered) record = { kind: 'missing', pass: nextPass(run.reached), overdue: now > nextPass(run.reached) + PASS_GRACE_MS }
   else if (row) record = { kind: 'closing', since: rowStart!, pass: nextPass(rowOver!), overdue: now > nextPass(rowOver!) + PASS_GRACE_MS }
   else record = { kind: 'none' }
@@ -401,16 +404,24 @@ export function incidentState({
   const latest = recent[recent.length - 1]
   const outageStart = record.kind === 'closing' ? record.since : run?.start ?? null
   const backUp = record.kind === 'closing' ? rowOver : record.kind === 'missing' ? runOver : null
-  const base = { streak, reset, record, since: null, downFor: null }
+  // A time read off the first check of the hour may be later than the truth: the checks before it are not read.
+  const cut = (ms: number | null) => ms != null && ms === recent[0]?.timestamp
+  const base = { streak, reset, record, since: null, cut: false, downFor: null }
 
   if (!active) return { ...base, stage: null, blank: 'off' }
   if (verdict === 'pending') return { ...base, stage: null, blank: 'pending' }
-  if (ongoing) return { ...base, stage: 'open', since: record.kind === 'open' ? record.since : run?.start ?? null }
+  if (ongoing) {
+    const since = record.kind === 'open' ? record.since : run?.start ?? null
+    return { ...base, stage: 'open', since, cut: record.kind !== 'open' && cut(since) }
+  }
   if (!latest) return { ...base, stage: null, blank: 'no_checks' }
   if (latest.status === 'failure') return { ...base, stage: 'suspect', since: recent[recent.length - streak].timestamp }
-  if (backUp != null && outageStart != null) {
+  // Recovering only while nothing has failed since the check that passed.
+  if (backUp != null && outageStart != null && reset === 0) {
+    const unknown = cut(backUp) || (record.kind === 'missing' && cut(outageStart))
     // Whole seconds, as the record stores both ends, so it matches the incident log once closed.
-    return { ...base, stage: 'recovering', since: backUp, downFor: Math.floor(backUp / 1000) - Math.floor(outageStart / 1000) }
+    const downFor = unknown ? null : Math.floor(backUp / 1000) - Math.floor(outageStart / 1000)
+    return { ...base, stage: 'recovering', since: backUp, cut: cut(backUp), downFor }
   }
   if (latest.status === 'inconclusive') return { ...base, stage: null, blank: 'no_evidence' }
   return { ...base, stage: 'healthy' }

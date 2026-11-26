@@ -75,3 +75,49 @@ test('not monitored, waiting, or no checks in the last hour light nothing', () =
   assert.deepEqual([state(old).stage, state(old).blank], [null, 'no_checks'])
   assert.equal(state(old, [openRow(NOW - 3 * 3_600_000)]).stage, 'open')
 })
+
+test('a time cut off at the hour\'s edge says so, and drops a duration it cannot know', () => {
+  const longOutage = state(seq('S' + 'F'.repeat(70)))
+  assert.deepEqual([longOutage.stage, longOutage.record.kind, longOutage.cut], ['open', 'missing', true])
+  const backLongAgo = state(seq('S'.repeat(61)), [openRow(NOW - 3 * 3_600_000)])
+  assert.deepEqual([backLongAgo.stage, backLongAgo.cut, backLongAgo.downFor], ['recovering', true, null])
+  assert.equal(state(seq('SFFF')).cut, false)
+})
+
+test('failures after the check that passed end Recovering', () => {
+  const checks = seq('FFFSFFI')
+  for (const incidents of [[], [openRow(checks[0].timestamp)]]) {
+    const s = state(checks, incidents)
+    assert.deepEqual([s.stage, s.blank, s.reset], [null, 'no_evidence', 2])
+  }
+  assert.equal(state(seq('FFFSI'), [openRow(seq('FFFSI')[0].timestamp)]).stage, 'recovering')
+})
+
+test('a record still closing turns overdue exactly 10 minutes after its pass', () => {
+  const checks = seq('FFFS', H + 50 * 60_000) // passed at H+50 min, so the pass at H+60 min closes it
+  const rows = [openRow(checks[0].timestamp)]
+  const at = (now) => state(checks, rows, { now }).record
+  assert.deepEqual(at(H + 70 * 60_000), { kind: 'closing', since: checks[0].timestamp, pass: H + 3_600_000, overdue: false })
+  assert.equal(at(H + 70 * 60_000 + 1).overdue, true)
+})
+
+test('a legacy row that starts after the first failure still covers its run', () => {
+  const down = seq('SFFFFF')
+  assert.deepEqual([state(down, [openRow(down[3].timestamp)]).stage, state(down, [openRow(down[3].timestamp)]).record.kind], ['open', 'open'])
+  const back = seq('SFFFFFS')
+  const s = state(back, [openRow(back[3].timestamp)])
+  assert.deepEqual([s.stage, s.record.kind], ['recovering', 'closing'])
+})
+
+test('threshold 1: one failure is an incident, and there is no Suspect', () => {
+  assert.equal(state(seq('SF'), [], { threshold: 1 }).stage, 'open')
+  assert.equal(state(seq('FS'), [], { threshold: 1 }).stage, 'recovering')
+  assert.equal(state(seq('SS'), [], { threshold: 1 }).stage, 'healthy')
+})
+
+test('a paused endpoint: nothing on record, or an outage that had already ended', () => {
+  assert.deepEqual(state(seq('SSS'), [], { active: false }).record, { kind: 'none' })
+  const checks = seq('FFFS')
+  const s = state(checks, [openRow(checks[0].timestamp)], { active: false })
+  assert.deepEqual([s.blank, s.record.kind], ['off', 'closing']) // the pass closes it as a recovery, not as monitoring stopped
+})
