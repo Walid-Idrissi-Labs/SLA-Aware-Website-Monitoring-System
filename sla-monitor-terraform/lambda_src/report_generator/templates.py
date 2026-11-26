@@ -449,7 +449,7 @@ def build_html_report(report: dict, project: dict) -> str:
         omitted = int(report.get("incidents_omitted") or 0)
         if omitted:
             body += (
-                f'<p class="lede" style="margin-top:8px">{omitted:,} more incidents are not listed; '
+                f'<p class="lede" style="margin-top:8px">{omitted:,} more incident{"s are" if omitted != 1 else " is"} not listed; '
                 'the open ones and the longest are. All of them count in the totals.</p>'
             )
     else:
@@ -595,9 +595,10 @@ def _email_button(href: str, label: str) -> str:
 
 
 def _email_logo() -> str:
-    """The hosted app icon when the dashboard URL is known, else a plain brand square."""
+    """The hosted app icon (frontend/public/logo-64.png, the same 64 px file the report embeds)
+    when the dashboard URL is known, else a plain brand square."""
     if DASHBOARD_URL:
-        return (f'<td style="width:20px;height:20px;"><img src="{_esc(DASHBOARD_URL)}/logo.png" width="20" height="20" '
+        return (f'<td style="width:20px;height:20px;"><img src="{_esc(DASHBOARD_URL)}/logo-64.png" width="20" height="20" '
                 'alt="" style="display:block;border-radius:5px;"></td>')
     return '<td style="width:20px;height:20px;background-color:#FA5C29;border-radius:6px;font-size:0;line-height:0;">&nbsp;</td>'
 
@@ -685,7 +686,7 @@ def build_report_email(
         f'padding:4px 12px;font-family:{_FONT};font-size:12px;font-weight:600;color:{v["color"]};">{v["title"]}</td>'
         f'{severity_pill}</tr></table>'
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{facts}</table>'
-        + (_email_button(DASHBOARD_URL, "View full report") if DASHBOARD_URL else "")
+        + (_email_button(_esc(DASHBOARD_URL), "View full report") if DASHBOARD_URL else "")
     )
 
     preheader = f"{safe_name}: {_pct(uptime)} availability, {report['incident_count']} incident(s) — {v['title']}."

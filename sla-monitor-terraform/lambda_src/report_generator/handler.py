@@ -613,7 +613,7 @@ def _run_rebuild(project_id: str, report_id: str) -> dict:
         from_sec, to_sec = int(window_start.timestamp()), int(window_end.timestamp())
         started_inside = [i for i in query_incidents_paginated(project_id, from_sec, to_sec) if int(i["start_time"]) >= from_sec]
         report.update(window_start=from_sec, window_end=to_sec, report_kind=report_kind,
-                      incidents=incident_rows(started_inside, from_sec, to_sec))
+                      **_listed_incidents(incident_rows(started_inside, from_sec, to_sec)))
 
     upload_report_files(report, project)
     logger.info(f"Rebuilt artifacts for {project_id}/{report_id}")
