@@ -1,10 +1,13 @@
+import ipaddress
 import json
 import logging
 import os
 import re
+import socket
 import uuid
 from decimal import Decimal
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 import boto3
 from boto3.dynamodb.conditions import Attr, Key
@@ -144,6 +147,44 @@ def validate_accepted_status(spec) -> str | None:
 # These values flow into every downstream Lambda (monitor loop arithmetic,
 # incident detection, HTML emails), so bad types here become cross-tenant
 # crashes there — reject them at the door.
+def is_public(address: str) -> bool:
+    """A public IPv4 address: the monitor's is_public, which this Lambda can't import."""
+    ip = ipaddress.ip_address(address)
+    return ip.version == 4 and ip.is_global and not ip.is_multicast
+
+
+def url_problem(url: str) -> str | None:
+    """Why the monitor shouldn't be pointed at this URL, or None.
+
+    Syntax only, no DNS: the monitor checks every address it resolves when it
+    connects, so a hostname is judged there. This turns away the obvious cases
+    early, with a message, instead of a check that never gets a verdict.
+    """
+    try:
+        parts = urlsplit(url)
+        parts.port  # raises ValueError for a port that isn't a number in range
+    except ValueError:
+        return "url must be a valid http:// or https:// address"
+    if parts.username is not None or parts.password is not None:
+        return "url must not contain a username or password"
+    host = (parts.hostname or "").rstrip(".")
+    if not host:
+        return "url must be a valid http:// or https:// address"
+    if ":" in host:  # an IPv6 literal: the monitor connects over IPv4 only
+        return "url must use a hostname or an IPv4 address"
+    if host == "localhost" or host.endswith(".localhost"):
+        return "url must point to a public address"
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        try:
+            # The forms a resolver also reads as an address: 127.1, 0x7f.1, 2130706433.
+            address = ipaddress.ip_address(socket.inet_aton(host))
+        except OSError:
+            return None  # a hostname
+    return None if is_public(str(address)) else "url must point to a public address"
+
+
 def validate_project_fields(body: dict) -> tuple[dict, str | None]:
     clean = {}
 
@@ -161,6 +202,9 @@ def validate_project_fields(body: dict) -> tuple[dict, str | None]:
             return {}, "url must start with http:// or https://"
         if len(url) > 2048:
             return {}, "url must be 2048 characters or fewer"
+        problem = url_problem(url.strip())
+        if problem:
+            return {}, problem
         clean["url"] = url.strip()
 
     if "failure_threshold" in body:
