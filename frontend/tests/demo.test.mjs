@@ -186,6 +186,22 @@ test('a visit\'s changes: add, delete while down, and a new threshold', () => {
   assert.equal(demoProjects(t0).length, STORIES.length)
 })
 
+test('the demo holds an account to 10 active endpoints, with the API\'s message', async () => {
+  resetDemoVisit()
+  try {
+    // Seven stories, all active (a stale one still counts): three more reach the limit.
+    for (const n of [1, 2, 3]) await handle('POST', '/projects', { name: `Extra ${n}`, url: `https://extra${n}.example.com` })
+    await assert.rejects(handle('POST', '/projects', { name: 'One more', url: 'https://more.example.com' }), {
+      message: 'This account is at its limit of 10 monitored endpoints. Delete one to make room.',
+    })
+    // A deleted endpoint frees its place.
+    await handle('DELETE', '/projects/extra-1')
+    assert.equal((await handle('POST', '/projects', { name: 'One more', url: 'https://more.example.com' })).project_id, 'one-more')
+  } finally {
+    resetDemoVisit()
+  }
+})
+
 test('the handler answers writes the way the API does, messages included', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] }) // the JSON download's revoke timer would hold the run open
   resetDemoVisit()

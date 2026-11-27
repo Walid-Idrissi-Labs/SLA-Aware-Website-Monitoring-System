@@ -12,7 +12,7 @@ import { BentoFigure, BentoArea, BentoBars, BentoTiles, BentoSteps } from '../co
 import ActionButton from '../components/ActionButton'
 import { Alert } from '../components/ui'
 import { getProjects, getProjectStatus } from '../lib/api'
-import { POLL_INTERVAL_MS, STATUS, verdictFor, type Verdict } from '../lib/format'
+import { MAX_ACTIVE_PROJECTS, POLL_INTERVAL_MS, STATUS, verdictFor, type Verdict } from '../lib/format'
 import type { Check, Project, ProjectStatus } from '../types'
 
 /** Consecutive failures at the end of the check list, newest first. */
@@ -488,6 +488,7 @@ export default function Dashboard() {
 
       {showAddModal && (
         <AddProjectModal
+          atLimit={activeProjects.length >= MAX_ACTIVE_PROJECTS}
           onClose={() => setShowAddModal(false)}
           onSuccess={(project) => {
             setShowAddModal(false)

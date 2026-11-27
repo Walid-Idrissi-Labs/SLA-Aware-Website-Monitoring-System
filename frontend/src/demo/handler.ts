@@ -1,5 +1,6 @@
 import type { Project, ProjectReport, User } from '../types'
 import { DEMO_USER } from '../lib/demo.ts'
+import { MAX_ACTIVE_PROJECTS } from '../lib/format.ts'
 import {
   type DemoFields,
   addDemoEndpoint,
@@ -153,6 +154,8 @@ export async function handle<T>(method: string, path: string, body?: unknown): P
         ...input,
         notification_email: input.notification_email || DEMO_USER.email,
       })
+      if (demoProjects(now, undefined, anchor).filter((p) => p.active).length >= MAX_ACTIVE_PROJECTS)
+        throw new Error(`This account is at its limit of ${MAX_ACTIVE_PROJECTS} monitored endpoints. Delete one to make room.`)
       return demoProject(addDemoEndpoint(fields, now), now, anchor) as T
     }
   }
