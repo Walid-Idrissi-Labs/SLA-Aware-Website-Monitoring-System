@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { X, Radar, Bell, Target } from 'lucide-react'
 import Stepper, { Step } from './Stepper'
 import { createProject } from '../lib/api'
 import { Alert } from './ui'
 import { MAX_ACTIVE_PROJECTS, PROJECT_DEFAULTS } from '../lib/format'
 import { DEMO } from '../lib/demo'
+import { useModalFocus } from '../lib/useModalFocus'
 import type { Project, CreateProjectInput } from '../types'
 
 interface Props {
@@ -29,6 +30,8 @@ export default function AddProjectModal({ onClose, onSuccess, atLimit = false }:
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const dialog = useRef<HTMLDivElement>(null)
+  useModalFocus(dialog)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !saving && onClose()
@@ -71,7 +74,7 @@ export default function AddProjectModal({ onClose, onSuccess, atLimit = false }:
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fade-in"
       onClick={(e) => e.target === e.currentTarget && !saving && onClose()}
     >
-      <div role="dialog" aria-modal="true" aria-label={atLimit ? 'Endpoint limit' : 'New endpoint'} className="w-full max-w-[480px] animate-scale-in">
+      <div ref={dialog} role="dialog" aria-modal="true" aria-label={atLimit ? 'Endpoint limit' : 'New endpoint'} className="w-full max-w-[480px] animate-scale-in">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-[12.5px] text-txt-lo">{atLimit ? 'Endpoint limit' : 'New endpoint'}</span>
           <button

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useModalFocus } from '../lib/useModalFocus'
 import {
   ArrowLeft,
   RefreshCw,
@@ -72,6 +73,8 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const dialog = useRef<HTMLDivElement>(null)
+  useModalFocus(dialog)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !saving && onClose()
@@ -97,7 +100,7 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-md animate-fade-in"
       onClick={(e) => e.target === e.currentTarget && !saving && onClose()}
     >
-      <div role="dialog" aria-modal="true" aria-label="Edit endpoint" className="panel frame-corners w-full max-w-lg animate-scale-in overflow-hidden">
+      <div ref={dialog} role="dialog" aria-modal="true" aria-label="Edit endpoint" className="panel frame-corners w-full max-w-lg animate-scale-in overflow-hidden">
         <div className="panel-head">
           <div className="flex items-center gap-2.5">
             <span className="grid h-6 w-6 place-items-center rounded-md bg-accent/[0.12] text-accent">
@@ -116,7 +119,7 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
         <div className="space-y-4 p-5">
           <div>
             <label className="field-label" htmlFor="edit-name">Name</label>
-            <input id="edit-name" type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="field" />
+            <input id="edit-name" type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="field" autoFocus />
           </div>
           <div>
             <label className="field-label" htmlFor="edit-url">Target URL</label>
