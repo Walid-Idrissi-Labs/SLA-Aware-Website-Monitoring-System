@@ -18,9 +18,10 @@ interface Props {
 }
 
 /** A change pill. `worseWhenUp` is the default for incident metrics; pass false
- *  for anything where growth is good. */
-function Delta({ from, to, worseWhenUp = true }: { from: number; to: number; worseWhenUp?: boolean }) {
-  if (from === 0 && to === 0) return <span className="text-[11.5px] text-txt-dim">—</span>
+ *  for anything where growth is good. `null` on either side means there is no
+ *  value to compare (no resolved incident, no outage), so no change is claimed. */
+function Delta({ from, to, worseWhenUp = true }: { from: number | null; to: number | null; worseWhenUp?: boolean }) {
+  if (from === null || to === null || (from === 0 && to === 0)) return <span className="text-[11.5px] text-txt-dim">—</span>
   if (from === 0) {
     return (
       <span
@@ -202,19 +203,19 @@ export default function IncidentReport({
             icon={<Timer className="h-3.5 w-3.5" strokeWidth={1.75} />}
             label="Mean time to recover"
             value={current.mttr != null ? formatDowntime(current.mttr) : '—'}
-            delta={<Delta from={previous?.mttr ?? 0} to={current.mttr ?? 0} />}
+            delta={<Delta from={previous?.mttr ?? null} to={current.mttr} />}
           />
           <Row
             icon={<Activity className="h-3.5 w-3.5" strokeWidth={1.75} />}
             label="Mean time between failures"
             value={current.mtbf != null ? formatDowntime(current.mtbf) : '—'}
-            delta={<Delta from={previous?.mtbf ?? 0} to={current.mtbf ?? 0} worseWhenUp={false} />}
+            delta={<Delta from={previous?.mtbf ?? null} to={current.mtbf} worseWhenUp={false} />}
           />
           <Row
             icon={<Hourglass className="h-3.5 w-3.5" strokeWidth={1.75} />}
             label="Longest outage"
             value={current.longest > 0 ? formatDowntime(current.longest) : '—'}
-            delta={<Delta from={previous?.longest ?? 0} to={current.longest} />}
+            delta={<Delta from={previous?.longest ?? 0} to={current.longest || null} />}
           />
           <Row
             icon={<Gauge className="h-3.5 w-3.5" strokeWidth={1.75} />}
