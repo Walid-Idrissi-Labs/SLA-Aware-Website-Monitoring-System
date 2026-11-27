@@ -58,6 +58,41 @@ function acceptedStatus(spec: unknown): string | null {
   return compact
 }
 
+/** IPv4 ranges Python's ipaddress counts as not global (3.12.4+), plus multicast: the monitor's is_public. */
+const NOT_PUBLIC: [number, number][] = [
+  ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
+  ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24],
+  ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4],
+].map(([base, bits]) => [toNumber(base as string), bits as number])
+
+function toNumber(dotted: string): number {
+  return dotted.split('.').reduce((n, part) => n * 256 + Number(part), 0)
+}
+
+function isPublicIPv4(dotted: string): boolean {
+  const n = toNumber(dotted)
+  // 192.0.0.9 and 192.0.0.10 are the registry's exceptions inside 192.0.0.0/24.
+  if (n === toNumber('192.0.0.9') || n === toNumber('192.0.0.10')) return true
+  return !NOT_PUBLIC.some(([base, bits]) => Math.floor(n / 2 ** (32 - bits)) === Math.floor(base / 2 ** (32 - bits)))
+}
+
+/** The project manager's url_problem: syntax only, no DNS, the same messages. */
+function urlProblem(url: string): string | null {
+  let parts: URL
+  try {
+    parts = new URL(url)
+  } catch {
+    return 'url must be a valid http:// or https:// address'
+  }
+  if (parts.username || parts.password) return 'url must not contain a username or password'
+  const host = parts.hostname.replace(/\.+$/, '')
+  if (!host) return 'url must be a valid http:// or https:// address'
+  if (host.startsWith('[')) return 'url must use a hostname or an IPv4 address'
+  if (host === 'localhost' || host.endsWith('.localhost')) return 'url must point to a public address'
+  // The URL parser has already rewritten 127.1, 0x7f.1 and 2130706433 as 127.0.0.1.
+  return /^\d+\.\d+\.\d+\.\d+$/.test(host) && !isPublicIPv4(host) ? 'url must point to a public address' : null
+}
+
 /** The project manager's validate_project_fields: the same fields, rules and messages. */
 function validate(body: Record<string, unknown>): DemoFields {
   const clean: DemoFields = {}
@@ -71,6 +106,8 @@ function validate(body: Record<string, unknown>): DemoFields {
     const url = body.url
     if (typeof url !== 'string' || !/^https?:\/\/\S+$/i.test(url)) throw new Error('url must start with http:// or https://')
     if (url.length > 2048) throw new Error('url must be 2048 characters or fewer')
+    const problem = urlProblem(url.trim())
+    if (problem) throw new Error(problem)
     clean.url = url.trim()
   }
   if ('failure_threshold' in body) {

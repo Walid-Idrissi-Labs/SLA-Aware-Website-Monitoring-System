@@ -235,6 +235,23 @@ class AcceptedStatusValidationTest(unittest.TestCase):
 
 
 
+class UrlValidationTest(unittest.TestCase):
+    """Create and edit turn away URLs the monitor would refuse to check (board #16)."""
+
+    def test_the_shared_url_cases(self):
+        # The same table drives the demo's test, so both give the same answers.
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "url_cases.json")) as f:
+            cases = json.load(f)["cases"]
+        for url, expected in cases:
+            clean, problem = projects.validate_project_fields({"url": url})
+            self.assertEqual(problem, expected, url)
+            self.assertEqual(clean.get("url"), None if expected else url, url)
+
+    def test_the_address_rule_matches_the_monitors(self):
+        for address in ("127.0.0.1", "10.0.0.1", "100.64.0.1", "169.254.169.254", "224.0.0.1", "240.0.0.1", "93.184.216.34", "8.8.8.8", "::1"):
+            self.assertEqual(projects.is_public(address), monitor.is_public(address), address)
+
+
 class ProjectLimitTest(unittest.TestCase):
     """An account monitors at most MAX_ACTIVE_PROJECTS endpoints at once (board #14)."""
 

@@ -192,6 +192,21 @@ test('the frontend\'s endpoint limit is the project manager\'s', () => {
   assert.equal(Number(handler.match(/^MAX_ACTIVE_PROJECTS = (\d+)$/m)?.[1]), MAX_ACTIVE_PROJECTS)
 })
 
+test('create and edit judge a URL as the project manager does', async () => {
+  // The same table drives the project manager's test, so both give the same answers.
+  const { cases } = JSON.parse(readFileSync(new URL('../../sla-monitor-terraform/lambda_src/tests/url_cases.json', import.meta.url), 'utf8'))
+  resetDemoVisit()
+  try {
+    for (const [url, expected] of cases) {
+      const attempt = handle('PUT', '/projects/storefront', { url })
+      if (expected) await assert.rejects(attempt, { message: expected }, url)
+      else assert.equal((await attempt).url, url, url)
+    }
+  } finally {
+    resetDemoVisit()
+  }
+})
+
 test('the demo holds an account to 10 active endpoints, with the API\'s message', async () => {
   resetDemoVisit()
   try {
