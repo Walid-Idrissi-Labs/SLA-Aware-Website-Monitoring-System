@@ -162,6 +162,28 @@ class TransitionTest(unittest.TestCase):
         items = self.checks("success", "failure", "failure", "success")
         self.assertIsNone(monitor.detect_transition(items, self.THRESHOLD))
 
+    # Board #30. Sequences are newest first, like the query.
+    def test_inconclusive_mid_outage_sends_no_second_down(self):
+        items = self.checks("failure", "failure", "failure", "inconclusive", "failure", "failure", "failure")
+        self.assertIsNone(monitor.detect_transition(items, self.THRESHOLD))
+
+    def test_first_full_run_after_a_broken_one_alerts(self):
+        items = self.checks("failure", "failure", "failure", "inconclusive", "failure", "failure")
+        self.assertEqual(monitor.detect_transition(items, self.THRESHOLD), "down")
+
+    def test_no_recovery_email_without_a_down(self):
+        items = self.checks("success", "failure", "inconclusive", "failure", "failure", "success")
+        self.assertIsNone(monitor.detect_transition(items, self.THRESHOLD))
+
+    def test_history_running_out_alerts_rather_than_misses(self):
+        # The fetch is 2N + 5 rows: N failures, then only inconclusive rows to the limit.
+        items = self.checks(*["failure"] * 3, *["inconclusive"] * 8)
+        self.assertEqual(monitor.detect_transition(items, self.THRESHOLD), "down")
+
+    def test_recovery_counts_failures_when_the_rows_run_out(self):
+        items = self.checks("success", *["failure", "inconclusive"] * 5)
+        self.assertEqual(monitor.detect_transition(items, self.THRESHOLD), "up")
+
     def test_first_failure_timestamp_skips_inconclusive(self):
         items = self.checks("failure", "failure", "inconclusive", "failure", "success")
         # timestamps run 1000, 999, 998, 997, 996 newest first: the run's oldest

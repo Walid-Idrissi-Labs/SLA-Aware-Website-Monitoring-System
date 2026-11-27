@@ -433,38 +433,44 @@ def _is_success(check: dict) -> bool:
     return check.get("status") == "success"
 
 
+def _alerted_before(older: list[dict], n: int) -> tuple[bool, int]:
+    """Looking back through `older` (newest first) to the last success: whether a run of
+    n failures in a row completed, which is when DOWN fired; and, when the rows run out
+    before any success, how many failures were in view."""
+    run = fails = 0
+    for check in older:
+        if _is_success(check):
+            return False, 0
+        run = run + 1 if _is_failure(check) else 0  # an inconclusive check breaks a run
+        fails += _is_failure(check)
+        if run == n:
+            return True, fails
+    return False, fails
+
+
 def detect_transition(items: list[dict], failure_threshold: int) -> str | None:
     if not items:
         return None
 
     current = items[0]
+    # An outage alerts once: when n failures in a row first complete after a success.
+    # An inconclusive check breaks a run but doesn't end the outage, so the DOWN and UP
+    # rules both ask whether that already happened before the current check.
+    alerted, loose = _alerted_before(items[1:], failure_threshold)
 
-    # DOWN: the last N checks (including the current one) all failed, and the
-    # run starts here — the check before the window is not a failure, or does
-    # not exist, meaning the project has been down since its first checks.
-    # An inconclusive check inside the window breaks it, so a blocked probe can
-    # never manufacture a DOWN alert.
+    # DOWN: the last N checks (including the current one) all failed, and no earlier
+    # run of N did since the last success. An inconclusive check inside the window
+    # breaks it, so a blocked probe can never manufacture a DOWN alert.
     window = items[:failure_threshold]
-    if len(window) == failure_threshold and all(_is_failure(c) for c in window):
-        before = items[failure_threshold] if len(items) > failure_threshold else None
-        if before is None or not _is_failure(before):
-            return "down"
+    if len(window) == failure_threshold and all(_is_failure(c) for c in window) and not alerted:
+        return "down"
 
-    # UP: the current check succeeded immediately after a failure run long
-    # enough to have triggered a DOWN alert. Anything shorter never alerted,
-    # so a recovery email would be noise; and only the first success after
-    # the run fires, so a sustained recovery doesn't repeat the email.
-    # Inconclusive checks are skipped, not counted: a transient block between
-    # the outage and the recovery must not swallow the recovery email.
-    if _is_success(current):
-        run = 0
-        for check in items[1:]:
-            if _is_failure(check):
-                run += 1
-            elif _is_success(check):
-                break
-        if run >= failure_threshold:
-            return "up"
+    # UP: the current check succeeded after an outage that sent a DOWN. Only the first
+    # success fires, and an inconclusive check between the outage and the recovery does
+    # not swallow it. When the rows end before the outage's start, its failures are
+    # counted instead: a duplicate email is better than a missed one.
+    if _is_success(current) and (alerted or loose >= failure_threshold):
+        return "up"
 
     return None
 
