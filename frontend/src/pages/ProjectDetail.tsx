@@ -119,7 +119,7 @@ function EditModal({ project, onClose, onSaved }: EditModalProps) {
         <div className="space-y-4 p-5">
           <div>
             <label className="field-label" htmlFor="edit-name">Name</label>
-            <input id="edit-name" type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="field" />
+            <input id="edit-name" type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="field" autoFocus />
           </div>
           <div>
             <label className="field-label" htmlFor="edit-url">Target URL</label>
