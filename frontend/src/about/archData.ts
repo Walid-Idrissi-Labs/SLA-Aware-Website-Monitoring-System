@@ -230,11 +230,11 @@ export const NODES: ArchNode[] = [
     ...box(60, Y2, W2),
     group: 'functions',
     layers: LAMBDA_LOGS,
-    what: 'Handles every write: creating, editing and pausing endpoints, your profile, and on-demand reports. It validates every field before anything is written.',
+    what: 'Handles every write: creating, editing and pausing endpoints, your profile, and on-demand reports. It validates every field before anything is written, and holds each account to 10 active endpoints.',
     trigger: '6 write routes, through API Gateway',
     grants: [
       'Users: GetItem, PutItem, UpdateItem',
-      'Projects: GetItem, PutItem, UpdateItem',
+      'Projects: GetItem, PutItem, UpdateItem, Query (user index only)',
       'Report Generator: InvokeFunction',
     ],
     routes: [

@@ -7,6 +7,7 @@ from decimal import Decimal
 from datetime import datetime, timezone
 
 import boto3
+from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger()
@@ -18,11 +19,37 @@ logger.setLevel(logging.INFO)
 dynamodb = boto3.resource("dynamodb")
 users_table =    dynamodb.Table(os.environ["USERS_TABLE_NAME"])
 projects_table = dynamodb.Table(os.environ["PROJECTS_TABLE_NAME"])
+PROJECT_GSI_NAME = os.environ["PROJECT_GSI_NAME"]
 
 lambda_client = boto3.client("lambda")
 REPORT_GENERATOR_FUNCTION_NAME = os.environ.get("REPORT_GENERATOR_FUNCTION_NAME", "")
 # The monitor tallies every check per UTC day on the project row (d20261125_up, …).
 DAY_KEY = re.compile(r"^d(\d{8})_(up|down|inconclusive)$")
+# Endpoints one account can monitor at once; deleted (inactive) ones don't count.
+# Mirrored by MAX_ACTIVE_PROJECTS in the frontend's lib/format.ts.
+MAX_ACTIVE_PROJECTS = 10
+LIMIT_MESSAGE = f"This account is at its limit of {MAX_ACTIVE_PROJECTS} monitored endpoints. Delete one to make room."
+
+
+def at_project_limit(user_id: str) -> bool:
+    """Whether the user already has MAX_ACTIVE_PROJECTS active projects, counted on the user index.
+
+    shortcut: count-then-put is not atomic and the index is eventually consistent, so
+    concurrent creates can overshoot by one or two; move to a conditional counter if it matters.
+    """
+    query = {
+        "IndexName": PROJECT_GSI_NAME,
+        "KeyConditionExpression": Key("user_id").eq(user_id),
+        "FilterExpression": Attr("active").eq(True),
+        "Select": "COUNT",
+    }
+    count = 0
+    while True:
+        response = projects_table.query(**query)
+        count += response["Count"]
+        if count >= MAX_ACTIVE_PROJECTS or "LastEvaluatedKey" not in response:
+            return count >= MAX_ACTIVE_PROJECTS
+        query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
 
 def floats_to_decimal(obj):
     """Recursively convert floats to Decimal for DynamoDB compatibility."""
@@ -285,6 +312,8 @@ def handle_post_projects(event: dict) -> dict:
         # No email in the body and none on the JWT — the project would silently
         # never receive alerts or reports.
         return error_response(400, "notification_email is required")
+    if at_project_limit(user_id):
+        return error_response(409, LIMIT_MESSAGE)
 
     project = {
         "project_id": str(uuid.uuid4()),
@@ -316,6 +345,9 @@ def handle_put_projects_id(event: dict) -> dict:
     clean, validation_error = validate_project_fields(body)
     if validation_error:
         return error_response(400, validation_error)
+    # Reactivating counts like creating, or deleting and restoring would walk around the limit.
+    if clean.get("active") is True and not project.get("active") and at_project_limit(user_id):
+        return error_response(409, LIMIT_MESSAGE)
 
     update_parts = []
     expression_values = {}

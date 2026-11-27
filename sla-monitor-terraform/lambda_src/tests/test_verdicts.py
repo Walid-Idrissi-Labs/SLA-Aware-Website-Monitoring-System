@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from unittest import mock
 
+from boto3.dynamodb.conditions import Attr
 from botocore.exceptions import ClientError
 
 # The handlers are imported from inside the Lambda source directories. Writing
@@ -231,6 +232,85 @@ class AcceptedStatusValidationTest(unittest.TestCase):
         for spec in (None, "", "abc", "99-200", "400-300", "200-", [], 200):
             self.assertIsNone(projects.validate_accepted_status(spec), spec)
 
+
+
+class ProjectLimitTest(unittest.TestCase):
+    """An account monitors at most MAX_ACTIVE_PROJECTS endpoints at once (board #14)."""
+
+    def setUp(self):
+        self.pages, self.queries, self.puts, self.updates = [], [], [], []
+        self.row = {"project_id": "p1", "user_id": "u1", "name": "x", "active": True}
+        test = self
+
+        class Projects:
+            def query(self, **kw):
+                test.queries.append(kw)
+                return test.pages[len(test.queries) - 1]
+
+            def put_item(self, Item):
+                test.puts.append(Item)
+
+            def get_item(self, Key):
+                return {"Item": test.row}
+
+            def update_item(self, **kw):
+                test.updates.append(kw)
+                return {"Attributes": dict(test.row)}
+
+        self.saved = projects.projects_table
+        projects.projects_table = Projects()
+
+    def tearDown(self):
+        projects.projects_table = self.saved
+
+    def active_already(self, *pages):
+        """The user index answers with these counts of active projects, one per page."""
+        self.pages = [{"Count": n, **({"LastEvaluatedKey": {"page": i}} if i < len(pages) - 1 else {})} for i, n in enumerate(pages)]
+
+    @staticmethod
+    def event(body, project_id=None):
+        claims = {"sub": "u1", "email": "u1@example.com"}
+        event = {"requestContext": {"authorizer": {"jwt": {"claims": claims}}}, "body": json.dumps(body)}
+        if project_id:
+            event["pathParameters"] = {"project_id": project_id}
+        return event
+
+    def create(self):
+        return projects.handle_post_projects(self.event({"name": "x", "url": "https://x.example"}))
+
+    def edit(self, body):
+        return projects.handle_put_projects_id(self.event(body, "p1"))
+
+    def test_creates_below_the_limit(self):
+        self.active_already(9)
+        self.assertEqual(self.create()["statusCode"], 201)
+        self.assertEqual(len(self.puts), 1)
+        query = self.queries[0]
+        self.assertEqual((query["IndexName"], query["Select"]), (projects.PROJECT_GSI_NAME, "COUNT"))
+        self.assertEqual(query["FilterExpression"], Attr("active").eq(True))  # deleted projects don't count
+
+    def test_refuses_at_the_limit_and_writes_nothing(self):
+        self.active_already(10)
+        response = self.create()
+        self.assertEqual(response["statusCode"], 409)
+        self.assertEqual(json.loads(response["body"])["error"], projects.LIMIT_MESSAGE)
+        self.assertEqual(self.puts, [])
+
+    def test_counts_across_pages(self):
+        self.active_already(6, 4)
+        self.assertEqual(self.create()["statusCode"], 409)
+        self.assertEqual(self.queries[1]["ExclusiveStartKey"], {"page": 0})
+
+    def test_reactivating_counts_like_creating(self):
+        self.row["active"] = False
+        self.active_already(10)
+        self.assertEqual(self.edit({"active": True})["statusCode"], 409)
+        self.assertEqual(self.updates, [])
+
+    def test_other_edits_at_the_limit_go_through_without_counting(self):
+        for body in ({"name": "renamed"}, {"active": True}):  # the second is already active
+            self.assertEqual(self.edit(body)["statusCode"], 200, body)
+        self.assertEqual(self.queries, [])
 
 
 class FakeChecksTable:

@@ -293,6 +293,7 @@ module "lambda_project_manager" {
   environment_variables = {
     USERS_TABLE_NAME               = module.dynamodb.users_table_name
     PROJECTS_TABLE_NAME            = module.dynamodb.projects_table_name
+    PROJECT_GSI_NAME               = module.dynamodb.projects_gsi_name
     REPORT_GENERATOR_FUNCTION_NAME = module.lambda_report_generator.function_name
   }
 
