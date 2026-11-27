@@ -36,6 +36,12 @@ export function fmtUtcTime(tsMs: number): string {
   return new Date(tsMs).toISOString().slice(11, 19) + ' UTC'
 }
 
+/** Epoch ms → "16 Nov 10:05 UTC": a moment with its UTC day, for lists that span days. */
+export function fmtUtcStamp(tsMs: number): string {
+  const d = new Date(tsMs)
+  return `${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })} ${d.toISOString().slice(11, 16)} UTC`
+}
+
 /** "YYYY-MM-DD" (a UTC day) → "Tue 25 Nov". */
 export function fmtUtcDay(date: string): string {
   return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', {

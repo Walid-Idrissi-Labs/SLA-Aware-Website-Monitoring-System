@@ -1,7 +1,7 @@
 // A UTC day's verdict (lib/format.ts dayVerdict). Run with `npm test`.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { dayVerdict } from '../src/lib/format.ts'
+import { dayVerdict, fmtUtcStamp } from '../src/lib/format.ts'
 
 const NOW = Date.parse('2026-11-25T12:00:00Z') // noon on "today"
 const CREATED = '2026-10-01T09:30:00.000000+00:00'
@@ -44,4 +44,9 @@ test('today, the creation day and the first tracked day are partial, never thin'
   assert.equal(judge(day('2026-11-10', { up: 60 })).thin, false) // first tracked day
   assert.equal(judge(day('2026-10-01', { up: 300 }), '2026-09-01').thin, false) // created at 09:30
   assert.equal(judge(day('2026-10-01', { up: 300 }), '2026-09-01').expected, 870)
+})
+
+test('an incident time carries its UTC day, even near midnight', () => {
+  assert.equal(fmtUtcStamp(Date.parse('2026-11-16T10:05:21Z')), '16 Nov 10:05 UTC')
+  assert.equal(fmtUtcStamp(Date.parse('2026-11-16T23:30:00Z')), '16 Nov 23:30 UTC') // already the 17th east of UTC
 })

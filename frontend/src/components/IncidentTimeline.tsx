@@ -1,6 +1,6 @@
 import { CircleCheck, CircleOff, Radio } from 'lucide-react'
 import type { Incident } from '../types'
-import { ERROR_TYPE, fmtUtcTime, formatDowntime } from '../lib/format'
+import { ERROR_TYPE, fmtUtcStamp, formatDowntime } from '../lib/format'
 
 /** Downtime incident history — one row per detected outage, newest first.
  *  Mirrors the SLA Reports table styling. Incident timestamps are epoch
@@ -44,8 +44,8 @@ export default function IncidentTimeline({ incidents }: { incidents: Incident[] 
                     key={inc.start_time}
                     className="border-b border-white/[0.04] transition-colors last:border-0 hover:bg-white/[0.02]"
                   >
-                    <td className="px-4 py-3 text-left font-mono text-[12px] font-semibold text-txt-hi">
-                      {fmtUtcTime(inc.start_time * 1000)}
+                    <td className="whitespace-nowrap px-4 py-3 text-left font-mono text-[12px] font-semibold text-txt-hi">
+                      {fmtUtcStamp(inc.start_time * 1000)}
                     </td>
                     <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">
                       {inc.resolved && inc.duration_seconds != null ? (
