@@ -1088,9 +1088,10 @@ export default function ProjectDetail() {
 
         {/* Generate toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-2.5">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-[12px] text-txt-lo">Period</span>
             <RubberSegment
+              className="shrink-0"
               items={['1d', '7d', '30d']}
               value={`${genDays}d`}
               onChange={(next) => setGenDays(Number(next.replace('d', '')) as 1 | 7 | 30)}
