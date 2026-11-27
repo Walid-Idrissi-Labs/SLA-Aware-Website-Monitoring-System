@@ -90,7 +90,7 @@ export default function Sidebar() {
               <LayoutDashboard className="h-[18px] w-[18px]" strokeWidth={1.75} />
             </Item>
             <div className="my-2 h-px w-full bg-white/[0.07]" />
-            <Item to="/about" label="About" active={pathname === '/about'}>
+            <Item to="/about" label="About" active={pathname.startsWith('/about')}>
               <Boxes className="h-[18px] w-[18px]" strokeWidth={1.75} />
             </Item>
             <Item to="/settings" label="Settings" active={pathname === '/settings'}>

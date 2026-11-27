@@ -640,6 +640,24 @@ body {
   background-clip: padding-box;
 }
 
+/* About diagram: a lit path draws once along its direction of travel, then rests.
+   pathLength="1" on the path makes the dash one full length. */
+@keyframes arch-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes arch-head {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.arch-draw {
+  stroke-dasharray: 1 1;
+  animation: arch-draw 420ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.arch-head {
+  animation: arch-head 120ms ease-out 330ms both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -647,5 +665,8 @@ body {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+  .arch-head {
+    animation-delay: 0s !important;
   }
 }
