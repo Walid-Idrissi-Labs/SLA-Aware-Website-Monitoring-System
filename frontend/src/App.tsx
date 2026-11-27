@@ -7,7 +7,6 @@ import Signup from './pages/Signup'
 import Callback from './pages/Callback'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
-import About from './pages/About'
 
 // `motion` (~180 kB minified) is only reachable through RubberSegment and
 // CodeSlots. Both live behind routes, so those routes are split out and Rollup
@@ -15,6 +14,7 @@ import About from './pages/About'
 // people actually land on — never downloads it.
 const ConfirmSignup = lazy(() => import('./pages/ConfirmSignup'))
 const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
+const About = lazy(() => import('./pages/About'))
 
 const routeFallback = <div className="grid min-h-screen place-items-center text-txt-lo">Loading…</div>
 
@@ -72,10 +72,12 @@ export default function App() {
           }
         />
         <Route
-          path="/about"
+          path="/about/:view?"
           element={
             <ProtectedRoute>
-              <About />
+              <Suspense fallback={routeFallback}>
+                <About />
+              </Suspense>
             </ProtectedRoute>
           }
         />

@@ -1,0 +1,64 @@
+{
+  "browser": [
+    { "path": "frontend/src/lib/api.ts", "symbol": "Bearer", "label": "token on every call" }
+  ],
+  "vercel": [
+    { "path": "frontend/vercel.json", "symbol": "rewrites", "label": "hosting config" }
+  ],
+  "google": [
+    { "path": "sla-monitor-terraform/modules/cognito/main.tf", "symbol": "aws_cognito_identity_provider", "label": "Google provider" }
+  ],
+  "sites": [
+    { "path": "sla-monitor-terraform/lambda_src/monitor/handler.py", "symbol": "perform_http_check", "label": "the probe" }
+  ],
+  "cognito": [
+    { "path": "sla-monitor-terraform/modules/cognito/main.tf", "symbol": "aws_cognito_user_pool", "label": "user pool" },
+    { "path": "frontend/src/lib/cognito.ts", "symbol": "signIn", "label": "SRP sign-in" }
+  ],
+  "apigw": [
+    { "path": "sla-monitor-terraform/modules/apigateway/main.tf", "symbol": "aws_apigatewayv2_authorizer", "label": "JWT authorizer" },
+    { "path": "sla-monitor-terraform/modules/apigateway/main.tf", "symbol": "aws_apigatewayv2_route", "label": "the 14 routes" }
+  ],
+  "s3": [
+    { "path": "sla-monitor-terraform/modules/s3/main.tf", "symbol": "aws_s3_bucket_public_access_block", "label": "private bucket" },
+    { "path": "sla-monitor-terraform/lambda_src/api/handler.py", "symbol": "generate_presigned_url", "label": "5-minute link" }
+  ],
+  "eventbridge": [
+    { "path": "sla-monitor-terraform/main.tf", "symbol": "aws_cloudwatch_event_rule", "label": "the three schedules" }
+  ],
+  "ssm": [
+    { "path": "sla-monitor-terraform/main.tf", "symbol": "aws_ssm_parameter", "label": "sender address" }
+  ],
+  "ses": [
+    { "path": "sla-monitor-terraform/lambda_src/monitor/handler.py", "symbol": "send_email", "label": "alert email" },
+    { "path": "sla-monitor-terraform/lambda_src/report_generator/handler.py", "symbol": "send_report_email", "label": "weekly email" }
+  ],
+  "pm": [
+    { "path": "sla-monitor-terraform/lambda_src/project_manager/handler.py", "symbol": "validate_project_fields", "label": "field rules" },
+    { "path": "sla-monitor-terraform/modules/iam/main.tf", "symbol": "project_manager_lambda_policy", "label": "IAM role" }
+  ],
+  "api": [
+    { "path": "sla-monitor-terraform/lambda_src/api/handler.py", "symbol": "lambda_handler", "label": "read routes" },
+    { "path": "sla-monitor-terraform/modules/iam/main.tf", "symbol": "api_lambda_policy", "label": "IAM role" }
+  ],
+  "reporter": [
+    { "path": "sla-monitor-terraform/lambda_src/report_generator/handler.py", "symbol": "evaluate_sla", "label": "the verdict" },
+    { "path": "sla-monitor-terraform/modules/iam/main.tf", "symbol": "report_generator_lambda_policy", "label": "IAM role" }
+  ],
+  "processor": [
+    { "path": "sla-monitor-terraform/lambda_src/sla_processor/handler.py", "symbol": "find_failure_runs", "label": "failure runs" },
+    { "path": "sla-monitor-terraform/modules/iam/main.tf", "symbol": "sla_processor_lambda_policy", "label": "IAM role" }
+  ],
+  "monitor": [
+    { "path": "sla-monitor-terraform/lambda_src/monitor/handler.py", "symbol": "classify_response", "label": "the verdict rule" },
+    { "path": "sla-monitor-terraform/lambda_src/monitor/handler.py", "symbol": "detect_transition", "label": "the streak rule" },
+    { "path": "sla-monitor-terraform/modules/iam/main.tf", "symbol": "monitor_lambda_policy", "label": "IAM role" }
+  ],
+  "dynamo": [
+    { "path": "sla-monitor-terraform/modules/dynamodb/main.tf", "symbol": "aws_dynamodb_table", "label": "the five tables" }
+  ],
+  "logs": [
+    { "path": "sla-monitor-terraform/modules/lambda/main.tf", "symbol": "aws_cloudwatch_log_group", "label": "log groups" },
+    { "path": "sla-monitor-terraform/modules/apigateway/main.tf", "symbol": "access_log_settings", "label": "access log" }
+  ]
+}

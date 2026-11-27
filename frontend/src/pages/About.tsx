@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
+  ArrowUpRight,
   KeyRound,
   Network,
   Zap,
@@ -16,6 +18,9 @@ import {
   FileClock,
 } from 'lucide-react'
 import Shell from '../components/Shell'
+import RubberSegment from '../components/RubberSegment'
+import ArchDiagram, { type LayerChoice } from '../about/ArchDiagram'
+import { LAYERS, REPO, STEPS, nodeById } from '../about/archData'
 
 interface Service {
   name: string
@@ -62,10 +67,10 @@ const STACK: Service[] = [
     desc: 'Sends the downtime and recovery alerts and the weekly SLA report, straight from Lambda to your inbox.',
   },
   {
-    name: 'S3 + CloudFront',
-    tag: 'Delivery',
+    name: 'S3',
+    tag: 'Report files',
     icon: <Globe className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'S3 stores this dashboard and the generated report files. CloudFront serves the front end over HTTPS from the edge.',
+    desc: 'Keeps every report as HTML and JSON in a private bucket. A download is a link signed for five minutes.',
   },
   {
     name: 'SSM Parameter Store',
@@ -77,7 +82,7 @@ const STACK: Service[] = [
     name: 'CloudWatch Logs',
     tag: 'Observability',
     icon: <ScrollText className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'Every function logs here as structured JSON, with retention set per group so the logs never pile up forever.',
+    desc: 'Every function logs here, and API Gateway writes an access log. Retention is set per group, so the logs never pile up forever.',
   },
   {
     name: 'IAM',
@@ -117,7 +122,7 @@ const JOBS: Job[] = [
     cadence: 'every Monday, 08:00 UTC',
     title: 'Report Generator',
     icon: <FileClock className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'Rolls the past seven days into one SLA report with uptime, average and p95 latency, incident count, and total downtime, then emails it.',
+    desc: 'Rolls the past seven days into one SLA report with uptime, average and p95 latency, incident count, and total downtime, then emails it. You can also generate one on demand for the last 1, 7 or 30 days.',
   },
 ]
 
@@ -157,29 +162,85 @@ function PanelTitle({ children }: { children: ReactNode }) {
   )
 }
 
+const VIEWS = [
+  { value: 'architecture', label: 'Architecture', blurb: 'Every service it runs on, and what crosses each line. Select a box for its job, its permissions and its code.' },
+  { value: 'check', label: 'Life of a check', blurb: 'One check, from the minute tick to the incident record, in eight steps.' },
+]
+
 export default function About() {
+  const { view } = useParams()
+  const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
+  const mode = view === 'check' ? 'check' : 'architecture'
+
+  // Every state is a link: ?layer=&node= on the architecture, ?step= on the walkthrough.
+  const layerParam = params.get('layer')
+  const layer = (LAYERS.some((l) => l.id === layerParam) ? layerParam : 'all') as LayerChoice
+  const nodeParam = params.get('node')
+  const selected = nodeParam && nodeById.has(nodeParam) ? nodeParam : null
+  const stepParam = Number(params.get('step'))
+  const step = Number.isInteger(stepParam) && stepParam >= 1 && stepParam <= STEPS.length ? stepParam - 1 : 0
+  const patch = (next: Record<string, string | null>) => {
+    const p = new URLSearchParams(params)
+    for (const [k, v] of Object.entries(next)) {
+      if (v == null) p.delete(k)
+      else p.set(k, v)
+    }
+    setParams(p, { replace: true })
+  }
+
   return (
     <Shell>
-      <div className="mx-auto w-full max-w-5xl">
+      <div className="mx-auto w-full max-w-[1360px]">
         {/* Header */}
-        <div className="animate-fade-up">
-          <p className="mb-1.5 text-[12px] font-medium text-accent">Architecture</p>
-          <h1 className="font-display text-[24px] font-semibold tracking-[-0.02em] text-txt-hi">About this project</h1>
-          <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-txt-lo">
-            A serverless uptime and SLA monitor, built on AWS end to end. Here is what it does and how the pieces fit
-            together.
-          </p>
+        <div className="flex flex-wrap items-end justify-between gap-3 animate-fade-up">
+          <div>
+            <p className="mb-1.5 text-[12px] font-medium text-accent">Architecture</p>
+            <h1 className="font-display text-[24px] font-semibold tracking-[-0.02em] text-txt-hi">About this project</h1>
+            <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-txt-lo">
+              A serverless uptime and SLA monitor: AWS behind the API, a static React app in front. Here is what it does
+              and how the pieces fit together.
+            </p>
+          </div>
+          <a href={REPO} target="_blank" rel="noreferrer" className="btn-ghost h-8 shrink-0 px-3 text-[12.5px]">
+            Source on GitHub
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </a>
         </div>
 
         {/* Spec row */}
         <div className="mt-4 flex flex-wrap gap-2 animate-fade-up" style={{ animationDelay: '60ms' }}>
-          <SpecChip>10 AWS services</SpecChip>
           <SpecChip>5 Lambda functions</SpecChip>
           <SpecChip>5 DynamoDB tables</SpecChip>
+          <SpecChip>14 API routes</SpecChip>
           <SpecChip>1 region</SpecChip>
           <SpecChip>100% Terraform</SpecChip>
         </div>
 
+        {/* The diagram */}
+        <div className="mt-5 animate-fade-up" style={{ animationDelay: '100ms' }}>
+          <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <RubberSegment
+              items={VIEWS.map(({ value, label }) => ({ value, label }))}
+              value={mode}
+              onChange={(v) => navigate(v === 'check' ? '/about/check' : '/about')}
+              size="md"
+              aria-label="View"
+            />
+            <p className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-txt-lo">{VIEWS.find((v) => v.value === mode)!.blurb}</p>
+          </div>
+          <ArchDiagram
+            mode={mode}
+            layer={layer}
+            onLayer={(l) => patch({ layer: l === 'all' ? null : l })}
+            selected={selected}
+            onSelect={(id) => patch({ node: id })}
+            step={step}
+            onStep={(i) => patch({ step: String(i + 1) })}
+          />
+        </div>
+
+        <div className="max-w-5xl">
         {/* What it does */}
         <div className="panel mt-5 animate-fade-up p-5" style={{ animationDelay: '100ms' }}>
           <PanelTitle>What it does</PanelTitle>
@@ -187,8 +248,8 @@ export default function About() {
             <p>
               SLA Monitor watches the websites you care about and tells you the moment one breaks. Every minute it runs
               an HTTP check against each endpoint you register, measures how long the response took, and keeps a full
-              history of the results. When a site goes down you get an email within about a minute, and when it recovers
-              you get another.
+              history of the results. When a site fails a few checks in a row (three by default) you get an email, and when
+              it recovers you get another.
             </p>
             <p>
               Once a week it rolls all of that into an SLA report: uptime percentage, average and p95 latency, how many
@@ -254,7 +315,8 @@ export default function About() {
           </div>
           <p className="mt-4 border-t border-white/[0.06] pt-4 text-[12px] leading-relaxed text-txt-mid">
             Everything you see here is the on-demand side. When you open the dashboard, the browser calls API Gateway
-            with your token. Read requests go to one function and writes go to another, and both talk only to DynamoDB.
+            with your token. Read requests go to one function and writes go to another. Both work against DynamoDB, and report
+            downloads and on-demand reports also reach S3 and the Report Generator.
           </p>
         </div>
 
@@ -269,6 +331,7 @@ export default function About() {
               </div>
             ))}
           </div>
+        </div>
         </div>
       </div>
     </Shell>
