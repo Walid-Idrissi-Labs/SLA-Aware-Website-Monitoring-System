@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Check } from '../types'
 import { STATUS, fmtUtcTime } from '../lib/format'
+import { measuredLatency } from './CheckCard'
 
 interface Props {
   checks: Check[]
@@ -57,7 +58,10 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
 
   const model = useMemo(() => {
     if (sorted.length === 0 || width == null) return null
-    const maxRaw = Math.max(...sorted.map((c) => c.latency_ms), 50)
+    // An unanswered check stores a 10 s placeholder: the scale and the line use measured checks
+    // only, and unanswered ones sit as dots on the baseline at their real place in time.
+    const measured = sorted.map(measuredLatency)
+    const maxRaw = Math.max(...measured.filter((v): v is number => v != null), 50)
     // round the top gridline to a friendly number
     const magnitude = Math.pow(10, Math.floor(Math.log10(maxRaw)))
     const top = Math.ceil(maxRaw / magnitude) * magnitude
@@ -72,19 +76,21 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
     let lastIndex = -1
     for (let start = 0; start < sorted.length; start += perBucket) {
       const end = Math.min(start + perBucket, sorted.length)
-      let worst = start
-      for (let i = start + 1; i < end; i++) {
-        if (sorted[i].latency_ms > sorted[worst].latency_ms) worst = i
+      let worst = -1
+      for (let i = start; i < end; i++) {
+        const v = measured[i]
+        if (v != null && (worst < 0 || v > (measured[worst] as number))) worst = i
       }
-      pts.push([x(worst), y(sorted[worst].latency_ms)] as const)
+      if (worst < 0) continue // nothing measured in this bucket
+      pts.push([x(worst), y(measured[worst] as number)] as const)
       lastIndex = worst
     }
     // Keep the line touching "now" even when the final bucket peaks early.
-    if (lastIndex !== sorted.length - 1) {
-      const tail = sorted[sorted.length - 1]
-      pts.push([x(sorted.length - 1), y(tail.latency_ms)] as const)
+    const tail = measured[sorted.length - 1]
+    if (lastIndex !== sorted.length - 1 && tail != null) {
+      pts.push([x(sorted.length - 1), y(tail)] as const)
     }
-    return { top, x, y, pts }
+    return { top, x, y, pts, measured }
   }, [sorted, chartW, chartH, width])
 
   const line = model ? smoothPath(model.pts) : ''
@@ -125,9 +131,10 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
     return <div ref={wrapRef} style={{ height }} />
   }
 
-  const { top, x, y } = model
+  const { top, x, y, pts, measured } = model
   const baseline = padT + chartH
-  const area = `${line} L ${x(sorted.length - 1).toFixed(2)} ${baseline} L ${padL} ${baseline} Z`
+  // Close the area under the line's own ends: past them, unanswered checks have no height to fill.
+  const area = line ? `${line} L ${pts[pts.length - 1][0].toFixed(2)} ${baseline} L ${pts[0][0].toFixed(2)} ${baseline} Z` : ''
   const gridVals = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(top * f))
 
   const handleMove = (e: React.MouseEvent) => {
@@ -139,8 +146,9 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
   }
 
   const hoverCheck = hover !== null ? sorted[hover] : null
+  const hoverLatency = hover !== null ? measured[hover] : null
   const hoverX = hover !== null ? x(hover) : 0
-  const hoverY = hoverCheck ? y(hoverCheck.latency_ms) : 0
+  const hoverY = hoverLatency != null ? y(hoverLatency) : baseline
   const tipLeft = Math.min(Math.max(hoverX, 60), width - 60)
 
   return (
@@ -199,7 +207,7 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
             <circle
               key={i}
               cx={x(i)}
-              cy={y(c.latency_ms)}
+              cy={measured[i] != null ? y(measured[i] as number) : baseline}
               r="3"
               fill={c.status === 'inconclusive' ? STATUS.neutral : STATUS.crit}
               stroke="#0e1115"
@@ -244,7 +252,7 @@ export default function LatencyChart({ checks, height = 260 }: Props) {
                       : STATUS.crit,
               }}
             />
-            <span className="data text-[13px] font-bold text-txt-hi">{hoverCheck.latency_ms}ms</span>
+            <span className="data text-[13px] font-bold text-txt-hi">{hoverLatency != null ? `${hoverLatency}ms` : 'no latency'}</span>
           </div>
           <div className="mt-0.5 font-mono text-[9px] text-txt-lo">
             {fmtUtcTime(hoverCheck.timestamp)} ·{' '}

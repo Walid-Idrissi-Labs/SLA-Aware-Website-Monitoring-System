@@ -11,6 +11,7 @@ import {
 import StatusStrip from './StatusStrip'
 import DayStrip from './DayStrip'
 import { BentoArea, BentoFigure } from './BentoVisuals'
+import { measuredLatency } from './CheckCard'
 
 interface Props {
   project: Project
@@ -30,17 +31,20 @@ interface Props {
  */
 export default function ProjectCard({ project, checks, verdict, daily, now }: Props) {
   const current = verdict === 'up' || verdict === 'down'
-  const latency = project.last_latency_ms
+  // An unanswered check stores a 10 s placeholder, not a measurement: the newest check speaks
+  // for itself, and the project row is the fallback only when the window has no checks.
+  const newest = checks.length ? checks.reduce((a, b) => (b.timestamp > a.timestamp ? b : a)) : null
+  const latency = newest ? measuredLatency(newest) : project.last_latency_ms
   const threshold = project.thresholds?.max_avg_latency_ms ?? PROJECT_DEFAULTS.max_avg_latency_ms
   const uptime = uptimeFromChecks(checks)
   const overThreshold = latency != null && latency > threshold
 
-  // Inconclusive checks record a synthetic latency; plotting it would invent a
-  // measurement nobody observed.
+  // Inconclusive and unanswered checks record a synthetic latency; plotting it would
+  // invent a measurement nobody observed.
   const latencyValues = [...checks]
     .sort((a, b) => a.timestamp - b.timestamp)
-    .filter((c) => c.status !== 'inconclusive' && c.latency_ms != null)
-    .map((c) => c.latency_ms)
+    .map(measuredLatency)
+    .filter((v): v is number => v != null)
 
   // Only a current verdict may colour the chart: old or missing evidence stays neutral.
   const color = !current ? STATUS.neutral : verdict === 'down' ? STATUS.crit : overThreshold ? STATUS.warn : STATUS.ok
