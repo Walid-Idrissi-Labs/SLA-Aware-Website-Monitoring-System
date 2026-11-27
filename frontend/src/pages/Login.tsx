@@ -20,6 +20,7 @@ const FACTS = [
 interface LoginState {
   email?: string
   justConfirmed?: boolean
+  passwordReset?: boolean
 }
 
 export default function Login() {
@@ -36,7 +37,9 @@ export default function Login() {
   const [notice, setNotice] = useState<string | null>(
     state?.justConfirmed
       ? 'Email verified — you can sign in now.'
-      : expired
+      : state?.passwordReset
+        ? 'Password changed. Sign in with the new one.'
+        : expired
         ? 'Your session expired. Sign in again.'
         : null
   )
@@ -152,11 +155,16 @@ export default function Login() {
         </div>
 
         <div>
-          <label className="field-label" htmlFor="password">
-            <span className="inline-flex items-center gap-1.5">
-              <Lock className="h-3 w-3" strokeWidth={1.75} /> Password
-            </span>
-          </label>
+          <div className="flex items-baseline justify-between">
+            <label className="field-label" htmlFor="password">
+              <span className="inline-flex items-center gap-1.5">
+                <Lock className="h-3 w-3" strokeWidth={1.75} /> Password
+              </span>
+            </label>
+            <Link to="/reset" state={{ email: email.trim() }} className="text-[11.5px] text-txt-lo hover:text-accent">
+              Forgot password?
+            </Link>
+          </div>
           <div className="relative">
             <input
               id="password"

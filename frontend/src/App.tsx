@@ -13,6 +13,7 @@ import Settings from './pages/Settings'
 // hoists motion into one async chunk shared by them. The dashboard — the page
 // people actually land on — never downloads it.
 const ConfirmSignup = lazy(() => import('./pages/ConfirmSignup'))
+const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
 const About = lazy(() => import('./pages/About'))
 
@@ -39,6 +40,14 @@ export default function App() {
               element={
                 <Suspense fallback={routeFallback}>
                   <ConfirmSignup />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/reset"
+              element={
+                <Suspense fallback={routeFallback}>
+                  <ResetPassword />
                 </Suspense>
               }
             />
