@@ -313,13 +313,13 @@ class ProjectListStatusTest(unittest.TestCase):
 class MonitorScanTest(unittest.TestCase):
     """Slow targets cannot starve the projects scanned after them (board #27)."""
 
-    PATCHED = ("load_active_projects", "run_check", "write_check", "count_check", "alert_on_transition", "certificate_due", "WRITE_RESERVE_SECONDS")
+    PATCHED = ("load_active_projects", "run_check", "write_check", "claim_and_count", "alert_on_transition", "certificate_due", "WRITE_RESERVE_SECONDS")
 
     def setUp(self):
         self.saved = {name: getattr(monitor, name) for name in self.PATCHED}
         self.calls = []
         monitor.write_check = lambda project, result: self.calls.append(("write", project["project_id"]))
-        monitor.count_check = lambda project, result: self.calls.append(("count", project["project_id"]))
+        monitor.claim_and_count = lambda project, result: self.calls.append(("claim", project["project_id"]))
         monitor.alert_on_transition = lambda project, result: self.calls.append(("alert", project["project_id"]))
         monitor.certificate_due = lambda project: False
         monitor.WRITE_RESERVE_SECONDS = 5
@@ -363,19 +363,29 @@ class MonitorScanTest(unittest.TestCase):
         self.scan({"bad": None, "a": 0.01})
         self.assertEqual(self.written(), ["a"])
 
-    def test_every_check_is_stored_before_any_alert(self):
+    def test_every_check_is_claimed_and_stored_before_any_alert(self):
         self.scan({"a": 0.01, "b": 0.01, "c": 0.01})
         kinds = [kind for kind, _ in self.calls]
-        self.assertEqual(kinds, ["write", "count"] * 3 + ["alert"] * 3)
+        self.assertEqual(kinds, ["claim", "write"] * 3 + ["alert"] * 3)
 
     def test_a_failed_rollup_costs_no_check_and_no_alert(self):
         def broken(project, result):
             raise RuntimeError("throttled")
 
-        monitor.count_check = broken
+        monitor.claim_and_count = broken
         self.scan({"a": 0.01, "b": 0.01})
         self.assertEqual(sorted(pid for kind, pid in self.calls if kind == "alert"), ["a", "b"])
         self.assertEqual(sorted(self.written()), ["a", "b"])
+
+    def test_a_run_another_invocation_made_stores_nothing(self):
+        def claimed(project, result):
+            if project["project_id"] == "a":
+                raise ClientError({"Error": {"Code": "ConditionalCheckFailedException", "Message": "taken"}}, "UpdateItem")
+
+        monitor.claim_and_count = claimed
+        self.scan({"a": 0.01, "b": 0.01})
+        self.assertEqual(self.written(), ["b"])
+        self.assertEqual([pid for kind, pid in self.calls if kind == "alert"], ["b"])
 
 
 def fake_session(outcome, entered=None):
@@ -427,7 +437,7 @@ class CheckTraceTest(unittest.TestCase):
         rows = []
         patched = {
             "load_active_projects": lambda: [{"project_id": p, "name": p, "url": f"https://{p}.example"} for p in ("a", "b")],
-            "count_check": lambda project, result: None,
+            "claim_and_count": lambda project, result: None,
             "alert_on_transition": lambda project, result: None,
             "certificate_due": lambda project: False,
             "checks_table": type("Checks", (), {"put_item": lambda self, Item: rows.append(Item)})(),
@@ -451,6 +461,55 @@ class CheckTraceTest(unittest.TestCase):
             self.assertTrue(all(isinstance(m, int) for m in moments), moments)
             self.assertEqual(moments, sorted(moments), row["project_id"])
             self.assertGreaterEqual(row["timestamp"] - row["probe_started_at"], 10)  # the fake GET's 10 ms
+
+
+class DuplicateRunTest(unittest.TestCase):
+    """A second invocation of the same tick stores no second check (board #15)."""
+
+    def setUp(self):
+        self.rows, self.runs = [], {}
+        test = self
+
+        class Projects:
+            # Honours the claim the way DynamoDB would: last_run_at must be older than :floor.
+            def update_item(self, Key, ExpressionAttributeValues, **kwargs):
+                last = test.runs.get(Key["project_id"])
+                values = ExpressionAttributeValues
+                if last is not None and not (last < values[":floor"] or last == values[":run"]):
+                    raise ClientError({"Error": {"Code": "ConditionalCheckFailedException", "Message": "taken"}}, "UpdateItem")
+                test.runs[Key["project_id"]] = ExpressionAttributeValues[":run"]
+
+        patched = {
+            "load_active_projects": lambda: [{"project_id": p, "name": p, "url": f"https://{p}.example"} for p in ("a", "b")],
+            "alert_on_transition": lambda project, result: None,
+            "certificate_due": lambda project: False,
+            "projects_table": Projects(),
+            "checks_table": type("Checks", (), {"put_item": lambda self, Item: test.rows.append(Item)})(),
+        }
+        self.saved = {name: getattr(monitor, name) for name in patched}
+        for name, value in patched.items():
+            setattr(monitor, name, value)
+        self.session = mock.patch.object(monitor.requests, "Session", fake_session(200))
+        self.session.start()
+
+    def tearDown(self):
+        self.session.stop()
+        for name, value in self.saved.items():
+            setattr(monitor, name, value)
+
+    def run_monitor(self):
+        monitor.lambda_handler({}, type("Context", (), {"get_remaining_time_in_millis": lambda self: 30_000})())
+
+    def test_a_duplicate_moments_later_stores_nothing(self):
+        self.run_monitor()
+        self.run_monitor()
+        self.assertEqual(sorted(r["project_id"] for r in self.rows), ["a", "b"])
+
+    def test_the_next_tick_stores_again(self):
+        self.run_monitor()
+        self.runs = {pid: run - 60_000 for pid, run in self.runs.items()}  # as if a minute had passed
+        self.run_monitor()
+        self.assertEqual(sorted(r["project_id"] for r in self.rows), ["a", "a", "b", "b"])
 
 
 class FakeIncidentsTable:
@@ -854,6 +913,8 @@ class MttrTest(unittest.TestCase):
 class DailyRollupTest(unittest.TestCase):
     """The monitor tallies each check per UTC day on the project row (board #5)."""
 
+    RUN = 1_795_785_288_873
+
     def count(self, project, status="success", when="2026-11-25T23:59:30+00:00"):
         from datetime import datetime
 
@@ -861,7 +922,8 @@ class DailyRollupTest(unittest.TestCase):
         saved = monitor.projects_table
         monitor.projects_table = type("Projects", (), {"update_item": lambda self, **kw: calls.append(kw)})()
         try:
-            monitor.count_check(project, {"status": status, "timestamp": int(datetime.fromisoformat(when).timestamp() * 1000)})
+            check = {"status": status, "timestamp": int(datetime.fromisoformat(when).timestamp() * 1000), "run_started_at": self.RUN}
+            monitor.claim_and_count(project, check)
         finally:
             monitor.projects_table = saved
         return calls[0]
@@ -869,9 +931,14 @@ class DailyRollupTest(unittest.TestCase):
     def test_adds_to_the_utc_day_and_records_the_first_day(self):
         kw = self.count({"project_id": "p1"})
         self.assertEqual(kw["ExpressionAttributeNames"]["#count"], "d20261125_up")
-        self.assertEqual(kw["UpdateExpression"], "ADD #count :one SET #since = if_not_exists(#since, :day)")
-        self.assertEqual(kw["ExpressionAttributeValues"], {":one": 1, ":day": "2026-11-25"})
-        self.assertEqual(kw["ConditionExpression"], "attribute_exists(#pid)")
+        self.assertEqual(kw["UpdateExpression"], "ADD #count :one SET #since = if_not_exists(#since, :day), #run = :run")
+        self.assertEqual(kw["ExpressionAttributeValues"], {":one": 1, ":day": "2026-11-25", ":run": self.RUN, ":floor": self.RUN - 30_000})
+
+    def test_claims_the_run_unless_another_ran_within_the_gap(self):
+        # Board #15: a duplicate delivery or a retry must not store a second check.
+        kw = self.count({"project_id": "p1"})
+        self.assertEqual(kw["ExpressionAttributeNames"]["#run"], "last_run_at")
+        self.assertEqual(kw["ConditionExpression"], "attribute_exists(#pid) AND (attribute_not_exists(#run) OR #run < :floor OR #run = :run)")
 
     def test_status_names(self):
         self.assertEqual(self.count({"project_id": "p1"}, "failure")["ExpressionAttributeNames"]["#count"], "d20261125_down")
