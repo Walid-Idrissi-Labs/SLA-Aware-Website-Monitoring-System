@@ -985,7 +985,9 @@ export default function ProjectDetail() {
                 {status.daily.days.length}d
               </span>
             </div>
-            <span className="text-[11.5px] text-txt-lo">UTC days · an incident marks the day as an outage</span>
+            <span className="whitespace-nowrap text-[11.5px] text-txt-lo">
+              UTC days<span className="hidden sm:inline"> · an incident marks the day as an outage</span>
+            </span>
           </div>
           <div className="px-4 pb-4 pt-3">
             <DayStrip daily={status.daily} createdAt={project?.created_at} now={now} interactive size="h-7 gap-[3px]" />
