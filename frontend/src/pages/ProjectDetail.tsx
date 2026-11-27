@@ -1142,6 +1142,8 @@ export default function ProjectDetail() {
               <tbody>
                 {sortedReports.map((r) => {
                   const sev = SEVERITY[r.severity] ?? SEVERITY.healthy
+                  // The report's own three-way verdict; rows from before slo_status fall back to sla_pass.
+                  const verdict = r.slo_status ?? (r.sla_pass ? 'met' : 'missed')
                   return (
                     <tr key={r.report_id} className="border-b border-white/[0.04] transition-colors last:border-0 hover:bg-white/[0.02]">
                       <td className="px-4 py-3 text-left font-mono text-[12px] font-semibold text-txt-hi">{r.report_id}</td>
@@ -1151,25 +1153,25 @@ export default function ProjectDetail() {
                       <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{r.incident_count}</td>
                       <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{formatDowntime(r.total_downtime_sec)}</td>
                       <td className="px-4 py-3 text-left">
-                        <span
-                          className="inline-flex items-center gap-1.5 rounded border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider"
-                          style={{ color: sev.color, borderColor: `${sev.color}40`, background: sev.dim }}
-                        >
-                          <span className="w-[3px] rounded-full" style={{ height: '0.6rem', background: sev.color }} />
-                          {sev.label}
-                        </span>
+                        {verdict === 'unproven' ? (
+                          // Too little evidence to judge: a severity would be read off a 0% that no check measured.
+                          <span className="font-mono text-[11px] text-txt-dim">—</span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1.5 rounded border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider"
+                            style={{ color: sev.color, borderColor: `${sev.color}40`, background: sev.dim }}
+                          >
+                            <span className="w-[3px] rounded-full" style={{ height: '0.6rem', background: sev.color }} />
+                            {sev.label}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {/* The report's own three-way verdict; rows from before slo_status fall back to sla_pass. */}
-                        {(() => {
-                          const verdict = r.slo_status ?? (r.sla_pass ? 'met' : 'missed')
-                          const tone = verdict === 'met' ? 'text-ok' : verdict === 'missed' ? 'text-crit' : 'text-txt-mid'
-                          return (
-                            <span className={`font-mono text-[11px] font-bold ${tone}`}>
-                              {verdict === 'unproven' ? 'NOT PROVEN' : verdict.toUpperCase()}
-                            </span>
-                          )
-                        })()}
+                        <span
+                          className={`font-mono text-[11px] font-bold ${verdict === 'met' ? 'text-ok' : verdict === 'missed' ? 'text-crit' : 'text-txt-mid'}`}
+                        >
+                          {verdict === 'unproven' ? 'NOT PROVEN' : verdict.toUpperCase()}
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex items-center gap-1">
