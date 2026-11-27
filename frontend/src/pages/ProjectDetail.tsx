@@ -439,7 +439,9 @@ export default function ProjectDetail() {
     }
     const rows = sortedReports.map((r) => {
       const fig = reportFigures(r)
-      const shown = { ...r, uptime_pct: fig.uptime, avg_latency_ms: fig.avg, p95_latency_ms: fig.p95 }
+      // No severity without evidence either, as the table shows it.
+      const severity = r.slo_status === 'unproven' ? null : r.severity
+      const shown = { ...r, uptime_pct: fig.uptime, avg_latency_ms: fig.avg, p95_latency_ms: fig.p95, severity }
       return cols.map((c) => esc(shown[c])).join(',')
     })
     const csv = [cols.join(','), ...rows].join('\n')
