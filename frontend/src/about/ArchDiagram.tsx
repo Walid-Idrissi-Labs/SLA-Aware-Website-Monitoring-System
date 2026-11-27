@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
-import { ArrowRight, ChevronLeft, ChevronRight, List, Maximize2, Minus, Plus, Workflow } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, List, Maximize2, Minus, Pause, Play, Plus, RotateCcw, Workflow } from 'lucide-react'
 import { EDGES, FRAME, H, LAYERS, NODES, STEPS, TABLES, W, nodeById, type ArchEdge, type ArchNode, type LayerId } from './archData'
 import { useViewport } from './useViewport'
 import NodeDetail from './NodeDetail'
@@ -16,7 +16,12 @@ interface Props {
   /** Life of a check: the step on screen, 0-based. */
   step: number
   onStep: (step: number) => void
+  /** Life of a check: walk the steps on its own until the reader takes over. */
+  autoplay?: boolean
 }
+
+const EASE = '[transition-timing-function:cubic-bezier(0.23,1,0.32,1)]'
+const LAST = STEPS.length - 1
 
 type EdgeState = 'idle' | 'dim' | 'hover' | 'lit' | 'earlier'
 type NodeState = 'idle' | 'dim' | 'lit' | 'selected'
@@ -92,8 +97,55 @@ export default function ArchDiagram(props: Props) {
   const list = small && asList
   const current = STEPS[step]
 
+  // Autoplay: one timeout per step, and only while the panel is on screen in a visible tab.
+  // It stops at the last step, and for good once the reader touches the rail or the canvas.
+  const panel = useRef<HTMLDivElement>(null)
+  const [playing, setPlaying] = useState(() => mode === 'check' && !!props.autoplay && !window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  const [seen, setSeen] = useState(true)
+  useEffect(() => {
+    if (mode !== 'check') return
+    let onScreen = true
+    const sync = () => setSeen(onScreen && !document.hidden)
+    const io = new IntersectionObserver(([entry]) => {
+      onScreen = entry.isIntersecting
+      sync()
+    })
+    if (panel.current) io.observe(panel.current)
+    document.addEventListener('visibilitychange', sync)
+    return () => {
+      io.disconnect()
+      document.removeEventListener('visibilitychange', sync)
+    }
+  }, [mode])
+  const advance = useRef(onStep)
+  advance.current = onStep
+  useEffect(() => {
+    if (mode !== 'check' || !playing || !seen || step >= LAST) return
+    // Step 1 holds longer, so the reader finds the diagram before it moves.
+    const t = setTimeout(() => {
+      advance.current(step + 1)
+      // Landing on the last step ends the run here, not in a later render that could race a replay.
+      if (step + 1 === LAST) setPlaying(false)
+    }, step === 0 ? 3500 : 3000)
+    return () => clearTimeout(t)
+  }, [mode, playing, seen, step])
+  const stop = () => setPlaying(false)
+  const pick = (i: number) => {
+    stop()
+    onStep(i)
+  }
+
+  // Dots the fill sweeps past change as it reaches them, not all at once.
+  const before = useRef(step)
+  const from = before.current
+  useEffect(() => {
+    before.current = step
+  }, [step])
+  const delay = (i: number) =>
+    (i - from) * (step - from) > 0 && Math.abs(i - from) <= Math.abs(step - from) ? Math.round((Math.abs(i - from) / Math.abs(step - from)) * 500) : 0
+
   return (
-    <div className="panel-flush">
+    <div ref={panel} className="panel-flush">
       <div className="panel-head">
         {list && mode === 'architecture' ? (
           <p className="min-w-0 truncate text-[12.5px] text-txt-mid">By where it runs</p>
@@ -152,48 +204,70 @@ export default function ArchDiagram(props: Props) {
       {mode === 'check' && (
         <div className="border-b border-white/[0.06] px-4 py-3">
           <div className="flex items-center gap-3">
-            <button type="button" className="btn-ghost h-8 px-2.5" onClick={() => onStep(Math.max(0, step - 1))} disabled={step === 0} aria-label="Previous step">
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <ol className="flex min-w-0 flex-1 items-center" aria-label="Steps">
-              {STEPS.map((s, i) => (
-                <li key={s.title} className="flex flex-1 items-center last:flex-none">
-                  <button
-                    type="button"
-                    onClick={() => onStep(i)}
-                    aria-label={`Step ${i + 1}: ${s.title}`}
-                    aria-current={i === step ? 'step' : undefined}
-                    className={`grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full border font-mono text-[10.5px] transition-colors ${
-                      i === step
-                        ? 'border-transparent bg-accent text-white'
-                        : i < step
-                          ? 'border-accent/40 text-txt-mid hover:text-txt-hi'
-                          : 'border-white/[0.1] text-txt-lo hover:text-txt-mid'
-                    }`}
-                  >
-                    {i + 1}
-                  </button>
-                  {i < STEPS.length - 1 && <span className={`mx-1 h-px flex-1 ${i < step ? 'bg-accent/40' : 'bg-white/[0.08]'}`} />}
-                </li>
-              ))}
-            </ol>
             <button
               type="button"
               className="btn-ghost h-8 px-2.5"
-              onClick={() => onStep(Math.min(STEPS.length - 1, step + 1))}
-              disabled={step === STEPS.length - 1}
-              aria-label="Next step"
+              onClick={() => {
+                if (playing) return stop()
+                if (step === LAST) onStep(0)
+                setPlaying(true)
+              }}
+              aria-label={playing ? 'Pause the walkthrough' : step === LAST ? 'Replay the walkthrough' : 'Play the walkthrough'}
             >
+              {playing ? <Pause className="h-4 w-4" /> : step === LAST ? <RotateCcw className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            </button>
+            <button type="button" className="btn-ghost h-8 px-2.5" onClick={() => pick(Math.max(0, step - 1))} disabled={step === 0} aria-label="Previous step">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            {/* The fill and the disc move by transform alone, so a step change costs the compositor half a second and nothing at rest. */}
+            {/* On a phone the dots don't fit beside the buttons: the line alone shows progress, and the header carries the count. */}
+            <div className="relative h-[22px] min-w-0 flex-1">
+              <span aria-hidden className="absolute left-[11px] right-[11px] top-[11px] h-px bg-white/[0.08]" />
+              <span
+                aria-hidden
+                className={`absolute left-[11px] right-[11px] top-[11px] h-px origin-left bg-accent/50 transition-transform duration-500 ${EASE}`}
+                style={{ transform: `scaleX(${step / LAST})` }}
+              />
+              <ol className="relative hidden justify-between sm:flex" aria-label="Steps">
+                {STEPS.map((s, i) => (
+                  <li key={s.title}>
+                    <button
+                      type="button"
+                      onClick={() => pick(i)}
+                      aria-label={`Step ${i + 1}: ${s.title}`}
+                      aria-current={i === step ? 'step' : undefined}
+                      className={`grid h-[22px] w-[22px] place-items-center rounded-full border bg-[#0d1014] font-mono text-[10.5px] transition-colors duration-200 ${
+                        i <= step ? 'border-accent/40 text-txt-mid hover:text-txt-hi' : 'border-white/[0.1] text-txt-lo hover:text-txt-mid'
+                      }`}
+                      style={{ transitionDelay: `${delay(i)}ms` }}
+                    >
+                      {i + 1}
+                    </button>
+                  </li>
+                ))}
+              </ol>
+              <span
+                aria-hidden
+                className={`pointer-events-none absolute inset-x-0 top-0 hidden transition-transform duration-500 sm:block ${EASE}`}
+                style={{ transform: `translateX(calc(${step / LAST} * (100% - 22px)))` }}
+              >
+                <span className="grid h-[22px] w-[22px] place-items-center rounded-full bg-accent font-mono text-[10.5px] text-white shadow-[0_0_12px_-2px_rgba(250,92,41,0.7)]">
+                  {step + 1}
+                </span>
+              </span>
+            </div>
+            <button type="button" className="btn-ghost h-8 px-2.5" onClick={() => pick(Math.min(LAST, step + 1))} disabled={step === LAST} aria-label="Next step">
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
-          <p className="mt-2.5 max-w-3xl text-[13px] leading-relaxed text-txt-mid" aria-live="polite">
+          {/* Announced once paused, not on every automatic step. */}
+          <p className="mt-2.5 max-w-3xl text-[13px] leading-relaxed text-txt-mid" aria-live={playing ? 'off' : 'polite'}>
             {current.body}
           </p>
         </div>
       )}
 
-      {list ? <ArchList {...props} /> : <Canvas {...props} small={small} />}
+      {list ? <ArchList {...props} /> : <Canvas {...props} small={small} onInteract={stop} />}
 
       {!list && (
         <div className="flex min-h-9 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-white/[0.06] px-4 py-2 font-mono text-[10.5px] text-txt-lo">
@@ -264,8 +338,8 @@ function useLighting({ mode, layer, selected, step }: Props, hover: string | nul
   }, [mode, layer, selected, step, hover])
 }
 
-function Canvas(props: Props & { small: boolean }) {
-  const { mode, selected, onSelect, small } = props
+function Canvas(props: Props & { small: boolean; onInteract: () => void }) {
+  const { mode, selected, onSelect, small, onInteract } = props
   const { ref, view, fit, zoomAt, panBy } = useViewport(W, H, small ? 'height' : 'fit')
   const [hover, setHover] = useState<string | null>(null)
   const [smooth, setSmooth] = useState(false)
@@ -289,6 +363,7 @@ function Canvas(props: Props & { small: boolean }) {
       e.preventDefault()
       const r = el.getBoundingClientRect()
       setSmooth(false)
+      onInteract()
       // Firefox reports lines, not pixels.
       zoomAt(Math.exp(-e.deltaY * (e.deltaMode === 1 ? 16 : 1) * 0.01), e.clientX - r.left, e.clientY - r.top)
     }
@@ -341,12 +416,14 @@ function Canvas(props: Props & { small: boolean }) {
       const r = ref.current!.getBoundingClientRect()
       if (before > 0) zoomAt(after / before, (e.clientX + other.x) / 2 - r.left, (e.clientY + other.y) / 2 - r.top)
       drag.current.moved = true
+      onInteract()
     } else {
       const dx = e.clientX - last.x
       const dy = e.clientY - last.y
       drag.current.dist += Math.abs(dx) + Math.abs(dy)
       if (!drag.current.moved && drag.current.dist > 4) {
         drag.current.moved = true
+        onInteract()
         // Captured only once it is a drag, so a plain click still reaches the box.
         e.currentTarget.setPointerCapture(e.pointerId)
       }
@@ -374,6 +451,7 @@ function Canvas(props: Props & { small: boolean }) {
     const run = keys[e.key]
     if (!run) return
     e.preventDefault()
+    onInteract()
     glide(run)
   }
 
@@ -520,17 +598,26 @@ function Canvas(props: Props & { small: boolean }) {
       </div>
 
       <div className={`absolute right-3 flex items-center rounded-md border border-white/[0.08] bg-ink-800/95 ${small ? 'bottom-3' : 'top-3'}`}>
-        <button type="button" aria-label="Zoom out" onClick={() => glide(() => zoomAt(1 / 1.2))} className="grid h-7 w-7 place-items-center text-txt-mid hover:text-txt-hi">
+        <button type="button" aria-label="Zoom out" onClick={() => {
+            onInteract()
+            glide(() => zoomAt(1 / 1.2))
+          }} className="grid h-7 w-7 place-items-center text-txt-mid hover:text-txt-hi">
           <Minus className="h-3.5 w-3.5" />
         </button>
         <span className="w-11 text-center font-mono text-[11px] text-txt-mid">
           {view ? Math.round(view.s * 100) : 100}%
         </span>
-        <button type="button" aria-label="Zoom in" onClick={() => glide(() => zoomAt(1.2))} className="grid h-7 w-7 place-items-center text-txt-mid hover:text-txt-hi">
+        <button type="button" aria-label="Zoom in" onClick={() => {
+            onInteract()
+            glide(() => zoomAt(1.2))
+          }} className="grid h-7 w-7 place-items-center text-txt-mid hover:text-txt-hi">
           <Plus className="h-3.5 w-3.5" />
         </button>
         <span className="h-4 w-px bg-white/[0.08]" />
-        <button type="button" aria-label="Fit to view" onClick={() => glide(fit)} className="flex h-7 items-center gap-1.5 px-2 text-[11.5px] text-txt-mid hover:text-txt-hi">
+        <button type="button" aria-label="Fit to view" onClick={() => {
+            onInteract()
+            glide(fit)
+          }} className="flex h-7 items-center gap-1.5 px-2 text-[11.5px] text-txt-mid hover:text-txt-hi">
           <Maximize2 className="h-3 w-3" />
           Fit
         </button>
