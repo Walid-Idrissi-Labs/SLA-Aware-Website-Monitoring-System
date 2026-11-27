@@ -70,7 +70,7 @@ export default function TrendChart({
     const y = (value: number) => PAD_T + (1 - value / top) * chartH
     const lines = series.map((line) => {
       const pts = line.values.slice(0, count).map((value, index) => [x(index), y(value)] as const)
-      const path = smoothPath(pts)
+      const path = smoothPath(pts, true) // downtime can't go below 0m, so the curve mustn't either
       return { ...line, path, fill: `${path} L ${x(count - 1).toFixed(2)} ${(PAD_T + chartH).toFixed(2)} L ${x(0).toFixed(2)} ${(PAD_T + chartH).toFixed(2)} Z` }
     })
     return { top, x, y, lines, flat: peak === 0 }
