@@ -9,7 +9,7 @@ interface Props {
   children: ReactNode
   /** Small line under the card, e.g. a link to the other auth page. */
   footer?: ReactNode
-  /** Beside the card from lg up, under it on smaller screens. Its brand replaces the one above the card there. */
+  /** Beside the card from lg up, hidden below. Its brand replaces the one above the card there. */
   aside?: ReactNode
 }
 
@@ -22,9 +22,9 @@ export default function AuthLayout({ kicker, title, subtitle, children, footer, 
   return (
     <div className="grid h-full place-items-center overflow-y-auto overflow-x-hidden px-6 py-12">
       <div className={aside ? 'grid w-full max-w-[960px] items-center gap-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-16' : 'w-full max-w-[380px]'}>
-        {aside && <div className="order-2 mx-auto w-full max-w-[380px] lg:order-1 lg:max-w-none">{aside}</div>}
+        {aside && <div className="hidden lg:block">{aside}</div>}
 
-        <div className="order-1 mx-auto w-full max-w-[380px] lg:order-2">
+        <div className="mx-auto w-full max-w-[380px]">
           {/* Brand */}
           <div className={`mb-6 flex flex-col items-center gap-3 ${aside ? 'lg:hidden' : ''}`}>
             <span className="block" style={{ filter: 'drop-shadow(0 6px 20px rgba(250,92,41,0.35))' }}>

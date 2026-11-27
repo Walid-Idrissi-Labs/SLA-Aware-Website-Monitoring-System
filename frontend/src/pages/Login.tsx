@@ -12,9 +12,9 @@ import { hydrateProfile } from '../lib/api'
 
 /** What it does, in the system's real numbers: no sample figures on the first screen. */
 const FACTS = [
-  { when: 'Every minute', what: 'Each endpoint you add gets an HTTP check, called up, down or no evidence.' },
-  { when: '3 failures in a row', what: 'An incident opens and you get an email; the first passing check closes it. Three is the default; set it per endpoint.' },
-  { when: 'Mondays, 08:00 UTC', what: 'An SLA report against your own targets: uptime, latency, incidents and a verdict.' },
+  { label: 'Uptime checks', what: 'Each endpoint you add gets an HTTP check every minute, marked up, down or no evidence.' },
+  { label: 'Incident detection', what: 'Three failed checks in a row, by default, open an incident and email you; the first passing check closes it.' },
+  { label: 'SLA reports', what: 'Weekly and on-demand reports against your own targets: uptime, latency, incidents and a verdict.' },
 ]
 
 interface LoginState {
@@ -87,7 +87,6 @@ export default function Login() {
       subtitle="Access your endpoints, uptime history, and SLA reports."
       aside={
         <div>
-          <div className="hidden lg:block">
             <span className="block w-fit" style={{ filter: 'drop-shadow(0 6px 20px rgba(250,92,41,0.35))' }}>
               <Logo size={40} className="block" />
             </span>
@@ -96,23 +95,12 @@ export default function Login() {
             </h1>
             <dl className="mt-7 space-y-4">
               {FACTS.map((f) => (
-                <div key={f.when} className="flex gap-4">
-                  <dt className="w-36 shrink-0 pt-px font-mono text-[11px] uppercase tracking-wide text-accent">{f.when}</dt>
+                <div key={f.label} className="flex gap-4">
+                  <dt className="w-36 shrink-0 pt-px font-mono text-[11px] uppercase tracking-wide text-accent">{f.label}</dt>
                   <dd className="text-[13px] leading-relaxed text-txt-mid">{f.what}</dd>
                 </div>
               ))}
             </dl>
-          </div>
-          {/* A full load, not a router link: the demo runs under its own base path. */}
-          <div className="lg:mt-9 lg:max-w-[320px]">
-            <a
-              href="/demo"
-              className="btn-outline"
-            >
-              <Compass className="h-4 w-4" strokeWidth={2} /> Explore the demo
-            </a>
-            <p className="mt-2 text-center text-[11.5px] text-txt-lo lg:text-left">Sample data, no account needed.</p>
-          </div>
         </div>
       }
       footer={
@@ -201,6 +189,18 @@ export default function Login() {
       </form>
 
       <GoogleSignIn onError={setError} />
+
+      {/* The demo is not a sign-in method: its own divider says why it is here. */}
+      <div className="my-5 flex items-center gap-3">
+        <div className="h-px flex-1 bg-white/[0.08]" />
+        <span className="text-[11px] text-txt-dim">no account?</span>
+        <div className="h-px flex-1 bg-white/[0.08]" />
+      </div>
+      {/* A full load, not a router link: the demo runs under its own base path. */}
+      <a href="/demo" className="btn-outline">
+        <Compass className="h-4 w-4" strokeWidth={2} /> Explore the demo
+      </a>
+      <p className="mt-2 text-center text-[11.5px] leading-relaxed text-txt-lo">Sample data only.</p>
     </AuthLayout>
   )
 }
