@@ -519,6 +519,19 @@ data "aws_iam_policy_document" "project_manager_lambda_policy" {
     ]
   }
 
+  # Count the user's active projects before a create or a reactivation (the
+  # 10-endpoint limit). Read-only, and on the user index only, not the table.
+  statement {
+    sid    = "CountUserProjects"
+    effect = "Allow"
+    actions = [
+      "dynamodb:Query",
+    ]
+    resources = [
+      var.projects_gsi_arn,
+    ]
+  }
+
   # Trigger on-demand report generation (async) for a single project.
   statement {
     sid    = "InvokeReportGenerator"
