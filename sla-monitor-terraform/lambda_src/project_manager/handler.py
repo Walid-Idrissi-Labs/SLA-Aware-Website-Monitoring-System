@@ -171,7 +171,8 @@ def url_problem(url: str) -> str | None:
     # Read the host the way a browser's URL parser would: percent-decoded, with look-alike
     # digits and dots (１２７, ①, 。) folded to ASCII, so a disguised address is still caught.
     host = unicodedata.normalize("NFKC", unquote(parts.hostname or "")).replace("。", ".").lower().rstrip(".")
-    if not host:
+    # A control character or lone surrogate (%00, %0a, \ud800): a browser's parser refuses that host too.
+    if not host or any(unicodedata.category(c) in ("Cc", "Cs") for c in host):
         return "url must be a valid http:// or https:// address"
     if ":" in host:  # an IPv6 literal: the monitor connects over IPv4 only
         return "url must use a hostname or an IPv4 address"
