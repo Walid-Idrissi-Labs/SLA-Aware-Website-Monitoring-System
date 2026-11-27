@@ -3,11 +3,19 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Mail, Lock, Eye, EyeOff, LogIn, Compass } from 'lucide-react'
 import ActionButton from '../components/ActionButton'
 import AuthLayout from '../components/AuthLayout'
+import Logo from '../components/Logo'
 import GoogleSignIn from '../components/GoogleSignIn'
 import { Alert } from '../components/ui'
 import { isAuthenticated, setToken } from '../lib/auth'
 import { signIn, friendlyAuthMessage } from '../lib/cognito'
 import { hydrateProfile } from '../lib/api'
+
+/** What it does, in the system's real numbers: no sample figures on the first screen. */
+const FACTS = [
+  { when: 'Every minute', what: 'Each endpoint you add gets an HTTP check, called up, down or no evidence.' },
+  { when: '3 failures in a row', what: 'An incident opens and you get an email; the first passing check closes it.' },
+  { when: 'Mondays, 08:00 UTC', what: 'An SLA report against your own targets: uptime, latency, incidents and a verdict.' },
+]
 
 interface LoginState {
   email?: string
@@ -64,7 +72,8 @@ export default function Login() {
         navigate('/confirm', { state: { email: email.trim() } })
         return
       }
-      setError(message)
+      // Static, so it says nothing about whether the account exists (decision E: Google accounts have no password).
+      setError(code === 'NotAuthorizedException' || code === 'UserNotFoundException' ? `${message} Signed up with Google? Use Continue with Google instead.` : message)
       setLoading(false)
     }
   }
@@ -73,6 +82,36 @@ export default function Login() {
     <AuthLayout
       title="Sign in"
       subtitle="Access your endpoints, uptime history, and SLA reports."
+      aside={
+        <div>
+          <div className="hidden lg:block">
+            <span className="block w-fit" style={{ filter: 'drop-shadow(0 6px 20px rgba(250,92,41,0.35))' }}>
+              <Logo size={40} className="block" />
+            </span>
+            <h1 className="mt-6 max-w-md font-display text-[28px] font-semibold leading-[1.15] tracking-[-0.02em] text-txt-hi">
+              Know when your site is down, and whether it met its SLA.
+            </h1>
+            <dl className="mt-7 space-y-4">
+              {FACTS.map((f) => (
+                <div key={f.when} className="flex gap-4">
+                  <dt className="w-36 shrink-0 pt-px font-mono text-[11px] uppercase tracking-wide text-accent">{f.when}</dt>
+                  <dd className="text-[13px] leading-relaxed text-txt-mid">{f.what}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+          {/* A full load, not a router link: the demo runs under its own base path. */}
+          <div className="lg:mt-9 lg:max-w-[320px]">
+            <a
+              href="/demo"
+              className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-md border border-white/[0.1] bg-white/[0.02] text-[13px] font-medium text-txt-mid transition-all duration-150 hover:border-white/20 hover:bg-white/[0.04] hover:text-txt-hi active:scale-[0.98]"
+            >
+              <Compass className="h-4 w-4" strokeWidth={2} /> Explore the demo
+            </a>
+            <p className="mt-2 text-center text-[11.5px] text-txt-lo lg:text-left">Sample data, no account needed.</p>
+          </div>
+        </div>
+      }
       footer={
         <>
           New to SLA Monitor?{' '}
@@ -154,15 +193,6 @@ export default function Login() {
       </form>
 
       <GoogleSignIn onError={setError} />
-
-      {/* A full load, not a router link: the demo runs under its own base path. */}
-      <a
-        href="/demo"
-        className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-md border border-white/[0.1] bg-white/[0.02] font-mono text-[12px] font-semibold text-txt-mid transition-all duration-150 hover:border-white/20 hover:bg-white/[0.04] hover:text-txt-hi active:scale-[0.98]"
-      >
-        <Compass className="h-4 w-4" strokeWidth={2} /> Explore the demo
-      </a>
-      <p className="mt-2 text-center text-[11.5px] text-txt-lo">Sample data, no account needed.</p>
     </AuthLayout>
   )
 }

@@ -35,7 +35,7 @@ export default function GoogleSignIn({ onError }: Props) {
         type="button"
         onClick={handleClick}
         disabled={loading}
-        className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-md border border-white/[0.1] bg-white/[0.02] font-mono text-[12px] font-semibold text-txt-mid transition-all duration-150 hover:border-white/20 hover:bg-white/[0.04] hover:text-txt-hi active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60"
+        className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-md border border-white/[0.1] bg-white/[0.02] text-[13px] font-medium text-txt-mid transition-all duration-150 hover:border-white/20 hover:bg-white/[0.04] hover:text-txt-hi active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60"
       >
         {loading ? (
           <Spinner size={16} />
@@ -45,6 +45,10 @@ export default function GoogleSignIn({ onError }: Props) {
           </>
         )}
       </button>
+      {/* Decision E: the two never merge, so say it where people choose. */}
+      <p className="mt-2 text-center text-[11.5px] leading-relaxed text-txt-lo">
+        Google and email-password sign-ins are separate accounts, even on the same address.
+      </p>
     </>
   )
 }

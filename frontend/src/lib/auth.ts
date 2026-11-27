@@ -75,7 +75,10 @@ export async function buildGoogleLoginUrl(): Promise<string> {
 
   const codeVerifier = generateRandomString(64);
   const codeChallenge = await generateCodeChallenge(codeVerifier);
+  // CSRF binding (constraint F): /callback only finishes a sign-in that comes back with this value.
+  const state = generateRandomString(32);
   sessionStorage.setItem('pkce_verifier', codeVerifier);
+  sessionStorage.setItem('oauth_state', state);
 
   const params = new URLSearchParams({
     client_id: clientId,
@@ -85,6 +88,7 @@ export async function buildGoogleLoginUrl(): Promise<string> {
     identity_provider: 'Google',
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
+    state,
   });
 
   return `${cognitoUrl}/oauth2/authorize?${params.toString()}`;

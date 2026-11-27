@@ -5,7 +5,7 @@ import AuthLayout from '../components/AuthLayout'
 import CodeSlots, { type CodeSlotsStatus } from '../components/CodeSlots'
 import { Alert } from '../components/ui'
 import ActionButton from '../components/ActionButton'
-import { confirmSignUp, resendConfirmationCode, friendlyAuthMessage } from '../lib/cognito'
+import { confirmSignUp, resendConfirmationCode, friendlyAuthMessage, CODE_SENDER } from '../lib/cognito'
 
 interface ConfirmState {
   email?: string
@@ -61,7 +61,7 @@ export default function ConfirmSignup() {
     setNotice(null)
     try {
       await resendConfirmationCode(email.trim())
-      setNotice('A new code is on its way to your inbox.')
+      setNotice('Code sent again. Check spam or junk too.')
     } catch (err) {
       setError(friendlyAuthMessage(err).message)
     } finally {
@@ -158,7 +158,10 @@ export default function ConfirmSignup() {
         </ActionButton>
       </form>
 
-      <div className="mt-4 text-center text-[12px] text-txt-lo">
+      <p className="mt-4 text-center text-[11.5px] leading-relaxed text-txt-lo">
+        No email after a minute? Check spam or junk. It comes from <span className="text-txt-mid">{CODE_SENDER}</span>.
+      </p>
+      <div className="mt-2 text-center text-[12px] text-txt-lo">
         Didn’t get it?{' '}
         <button
           type="button"
