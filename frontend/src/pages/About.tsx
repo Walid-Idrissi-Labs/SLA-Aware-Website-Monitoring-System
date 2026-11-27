@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowUpRight } from 'lucide-react'
 import Shell from '../components/Shell'
+import GitHubIcon from '../components/GitHubIcon'
 import RubberSegment from '../components/RubberSegment'
 import ArchDiagram, { type LayerChoice } from '../about/ArchDiagram'
 import VerdictsView from '../about/VerdictsView'
@@ -72,8 +72,9 @@ export default function About() {
             </p>
           </div>
           <a href={REPO} target="_blank" rel="noreferrer" className="btn-ghost h-8 shrink-0 px-3 text-[12.5px]">
+            <GitHubIcon className="h-3.5 w-3.5" />
             Source on GitHub
-            <ArrowUpRight className="h-3.5 w-3.5" />
+            <span className="sr-only">(opens in a new tab)</span>
           </a>
         </div>
 
@@ -103,7 +104,9 @@ export default function About() {
 
           {(view === 'architecture' || view === 'check') && (
             <ArchDiagram
+              key={view}
               mode={view}
+              autoplay={view === 'check' && !params.has('step')}
               layer={layer}
               onLayer={(l) => patch({ layer: l === 'all' ? null : l })}
               selected={selected}
