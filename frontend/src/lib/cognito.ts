@@ -54,8 +54,11 @@ export function friendlyAuthMessage(err: unknown): { code: string; message: stri
   const code = e?.code || e?.name || 'UnknownError'
   switch (code) {
     case 'NotAuthorizedException':
+      // Cognito also locks out repeated attempts under this code; say so instead of "incorrect".
+      if (/attempts exceeded/i.test(e?.message ?? '')) return { code: 'PasswordAttemptsExceeded', message: 'Too many failed attempts. Wait a few minutes, or reset your password.' }
+      return { code, message: 'Incorrect email or password.' }
     case 'UserNotFoundException':
-      // Deliberately identical to avoid leaking whether an account exists.
+      // Deliberately identical to the wrong-password message, so it says nothing about whether an account exists.
       return { code, message: 'Incorrect email or password.' }
     case 'UserNotConfirmedException':
       return { code, message: 'Your email isn’t verified yet — enter the code we sent you.' }
@@ -130,6 +133,28 @@ export function resendConfirmationCode(email: string): Promise<void> {
     cognitoUser(email).resendConfirmationCode((err) => {
       if (err) return reject(err)
       resolve()
+    })
+  })
+}
+
+/** Starts a password reset: Cognito emails a 6-digit code to the account's address. */
+export function forgotPassword(email: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    cognitoUser(email).forgotPassword({
+      onSuccess: () => resolve(),
+      // Called instead of onSuccess once the code is on its way.
+      inputVerificationCode: () => resolve(),
+      onFailure: (err) => reject(err),
+    })
+  })
+}
+
+/** Finishes a password reset with the emailed code. */
+export function confirmNewPassword(email: string, code: string, password: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    cognitoUser(email).confirmPassword(code.trim(), password, {
+      onSuccess: () => resolve(),
+      onFailure: (err) => reject(err),
     })
   })
 }
