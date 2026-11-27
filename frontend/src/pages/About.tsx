@@ -1,148 +1,21 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import {
-  ArrowUpRight,
-  KeyRound,
-  Network,
-  Zap,
-  Database,
-  CalendarClock,
-  Mail,
-  Globe,
-  Lock,
-  ScrollText,
-  ShieldCheck,
-  Layers,
-  Radar,
-  Timer,
-  FileClock,
-} from 'lucide-react'
+import { ArrowUpRight } from 'lucide-react'
 import Shell from '../components/Shell'
 import RubberSegment from '../components/RubberSegment'
 import ArchDiagram, { type LayerChoice } from '../about/ArchDiagram'
+import VerdictsView from '../about/VerdictsView'
+import CoverageView from '../about/CoverageView'
 import { LAYERS, REPO, STEPS, nodeById } from '../about/archData'
+import { ABOUT_VIEWS } from '../about/views'
 
-interface Service {
-  name: string
-  tag?: string
-  icon: ReactNode
-  desc: string
-}
-
-const STACK: Service[] = [
-  {
-    name: 'Cognito',
-    tag: 'Auth',
-    icon: <KeyRound className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'Handles sign-up, login, and Google sign-in. Every request to the API carries a Cognito token that gets checked before any code runs.',
-  },
-  {
-    name: 'API Gateway',
-    tag: 'HTTP API',
-    icon: <Network className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'The front door for the API. It validates the token, and only then routes the request to the function that owns that route.',
-  },
-  {
-    name: 'Lambda',
-    tag: '5 functions',
-    icon: <Zap className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'All of the logic, split into five functions with one job each: checking sites, detecting incidents, writing reports, reads, and writes.',
-  },
-  {
-    name: 'DynamoDB',
-    tag: '5 tables',
-    icon: <Database className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'Where the state lives: users, projects, checks, incidents, and reports. On-demand billing, so there is no capacity to tune.',
-  },
-  {
-    name: 'EventBridge',
-    tag: 'Scheduler',
-    icon: <CalendarClock className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'The clock behind the automation. It fires the monitor every minute, the processor every hour, and the reporter every Monday.',
-  },
-  {
-    name: 'SES',
-    tag: 'Email',
-    icon: <Mail className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'Sends the downtime and recovery alerts and the weekly SLA report, straight from Lambda to your inbox.',
-  },
-  {
-    name: 'S3',
-    tag: 'Report files',
-    icon: <Globe className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'Keeps every report as HTML and JSON in a private bucket. A download is a link signed for five minutes.',
-  },
-  {
-    name: 'SSM Parameter Store',
-    tag: 'Config',
-    icon: <Lock className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'Keeps the sender email address out of the source and out of plain-text environment variables.',
-  },
-  {
-    name: 'CloudWatch Logs',
-    tag: 'Observability',
-    icon: <ScrollText className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'Every function logs here, and API Gateway writes an access log. Retention is set per group, so the logs never pile up forever.',
-  },
-  {
-    name: 'IAM',
-    tag: 'Access',
-    icon: <ShieldCheck className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'One role per function, each scoped to exactly the tables and actions it needs. Nothing shares a role.',
-  },
-  {
-    name: 'Terraform',
-    tag: 'Infra as code',
-    icon: <Layers className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'The whole system is defined as code. A single apply builds every resource above from nothing, and can tear it back down.',
-  },
-]
-
-interface Job {
-  cadence: string
-  title: string
-  icon: ReactNode
-  desc: string
-}
-
-const JOBS: Job[] = [
-  {
-    cadence: 'every minute',
-    title: 'Monitor',
-    icon: <Radar className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'Sends an HTTP check to every active endpoint, records the status and latency, and emails you the moment a site goes down or comes back.',
-  },
-  {
-    cadence: 'every hour',
-    title: 'SLA Processor',
-    icon: <Timer className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'Reads the recent checks, groups runs of failures into incidents, and closes them out again once the site recovers.',
-  },
-  {
-    cadence: 'every Monday, 08:00 UTC',
-    title: 'Report Generator',
-    icon: <FileClock className="h-4 w-4" strokeWidth={1.75} />,
-    desc: 'Rolls the past seven days into one SLA report with uptime, average and p95 latency, incident count, and total downtime, then emails it. You can also generate one on demand for the last 1, 7 or 30 days.',
-  },
-]
+type View = (typeof ABOUT_VIEWS)[number]['value']
 
 const PRINCIPLES: { title: string; body: string }[] = [
-  {
-    title: 'Fully serverless',
-    body: 'No EC2, no containers, no database to keep alive. It scales down to nothing when idle and costs close to nothing at rest.',
-  },
-  {
-    title: 'One job per function',
-    body: 'The function that checks sites never writes reports, so a problem in one path cannot quietly corrupt another.',
-  },
-  {
-    title: 'Least privilege',
-    body: 'Each function can only reach the exact tables and actions it uses. A leaked role gives away as little as possible.',
-  },
-  {
-    title: 'Reproducible',
-    body: 'Terraform is the one source of truth for the infrastructure, so the environment can be rebuilt the same way every time.',
-  },
+  { title: 'No servers to keep alive', body: 'Functions, managed tables and a static front end. Idle, it costs close to nothing.' },
+  { title: 'One job per function', body: 'The function that checks sites never writes reports, so a fault in one path cannot quietly corrupt another.' },
+  { title: 'Least privilege', body: 'Each role reaches only the tables and actions its function uses. Select a function above to see its list.' },
+  { title: 'Rebuilt from code', body: 'Terraform defines every AWS resource, so the stack can be built from nothing and torn down with one apply.' },
 ]
 
 function SpecChip({ children }: { children: ReactNode }) {
@@ -153,25 +26,20 @@ function SpecChip({ children }: { children: ReactNode }) {
   )
 }
 
-function PanelTitle({ children }: { children: ReactNode }) {
-  return (
-    <>
-      <span className="font-display text-[15px] font-semibold tracking-[-0.01em] text-txt-hi">{children}</span>
-      <div className="hr-accent mt-3" />
-    </>
-  )
-}
-
-const VIEWS = [
-  { value: 'architecture', label: 'Architecture', blurb: 'Every service it runs on, and what crosses each line. Select a box for its job, its permissions and its code.' },
-  { value: 'check', label: 'Life of a check', blurb: 'One check, from the minute tick to the incident record, in eight steps.' },
-]
-
 export default function About() {
-  const { view } = useParams()
+  const { view: param } = useParams()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const mode = view === 'check' ? 'check' : 'architecture'
+  const current = ABOUT_VIEWS.find((v) => v.value === param) ?? ABOUT_VIEWS[0]
+  const view: View = current.value
+
+  // On a phone the switch scrolls sideways: keep the chosen view in sight, without moving the page.
+  const strip = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = strip.current
+    const on = el?.querySelector<HTMLElement>('[aria-checked="true"]')
+    if (el && on && el.scrollWidth > el.clientWidth) el.scrollLeft = on.offsetLeft - (el.clientWidth - on.offsetWidth) / 2
+  }, [view])
 
   // Every state is a link: ?layer=&node= on the architecture, ?step= on the walkthrough.
   const layerParam = params.get('layer')
@@ -192,14 +60,15 @@ export default function About() {
   return (
     <Shell>
       <div className="mx-auto w-full max-w-[1360px]">
-        {/* Header */}
         <div className="flex flex-wrap items-end justify-between gap-3 animate-fade-up">
-          <div>
-            <p className="mb-1.5 text-[12px] font-medium text-accent">Architecture</p>
-            <h1 className="font-display text-[24px] font-semibold tracking-[-0.02em] text-txt-hi">About this project</h1>
-            <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-txt-lo">
-              A serverless uptime and SLA monitor: AWS behind the API, a static React app in front. Here is what it does
-              and how the pieces fit together.
+          <div className="max-w-3xl">
+            <p className="mb-1.5 text-[12px] font-medium text-accent">About</p>
+            <h1 className="font-display text-[24px] font-semibold tracking-[-0.02em] text-txt-hi">How SLA Monitor works</h1>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-txt-lo">
+              A serverless uptime and SLA monitor: AWS behind the API, a static React app in front. Every minute it checks each endpoint you
+              add and calls the answer up, down or no evidence. A few failures in a row email you and become an incident, and the first
+              passing check closes it. Every Monday it rolls the week into an SLA report against your own targets, and you can ask for one
+              over the last day, week or month at any time.
             </p>
           </div>
           <a href={REPO} target="_blank" rel="noreferrer" className="btn-ghost h-8 shrink-0 px-3 text-[12.5px]">
@@ -208,7 +77,6 @@ export default function About() {
           </a>
         </div>
 
-        {/* Spec row */}
         <div className="mt-4 flex flex-wrap gap-2 animate-fade-up" style={{ animationDelay: '60ms' }}>
           <SpecChip>5 Lambda functions</SpecChip>
           <SpecChip>5 DynamoDB tables</SpecChip>
@@ -217,121 +85,47 @@ export default function About() {
           <SpecChip>100% Terraform</SpecChip>
         </div>
 
-        {/* The diagram */}
         <div className="mt-5 animate-fade-up" style={{ animationDelay: '100ms' }}>
           <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-            <RubberSegment
-              items={VIEWS.map(({ value, label }) => ({ value, label }))}
-              value={mode}
-              onChange={(v) => navigate(v === 'check' ? '/about/check' : '/about')}
-              size="md"
-              aria-label="View"
+            {/* Its natural width, scrolled sideways on a phone rather than squeezed. */}
+            <div ref={strip} className="-mx-1 max-w-full overflow-x-auto px-1 pb-0.5">
+              <RubberSegment
+                className="w-max"
+                items={ABOUT_VIEWS.map(({ value, label }) => ({ value, label }))}
+                value={view}
+                onChange={(v) => navigate(ABOUT_VIEWS.find((x) => x.value === v)!.path)}
+                size="md"
+                aria-label="View"
+              />
+            </div>
+            <p className="min-w-0 flex-1 basis-64 text-[12.5px] leading-relaxed text-txt-lo">{current.blurb}</p>
+          </div>
+
+          {(view === 'architecture' || view === 'check') && (
+            <ArchDiagram
+              mode={view}
+              layer={layer}
+              onLayer={(l) => patch({ layer: l === 'all' ? null : l })}
+              selected={selected}
+              onSelect={(id) => patch({ node: id })}
+              step={step}
+              onStep={(i) => patch({ step: String(i + 1) })}
             />
-            <p className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-txt-lo">{VIEWS.find((v) => v.value === mode)!.blurb}</p>
-          </div>
-          <ArchDiagram
-            mode={mode}
-            layer={layer}
-            onLayer={(l) => patch({ layer: l === 'all' ? null : l })}
-            selected={selected}
-            onSelect={(id) => patch({ node: id })}
-            step={step}
-            onStep={(i) => patch({ step: String(i + 1) })}
-          />
-        </div>
+          )}
+          {view === 'verdicts' && <VerdictsView />}
+          {view === 'coverage' && <CoverageView />}
 
-        <div className="max-w-5xl">
-        {/* What it does */}
-        <div className="panel mt-5 animate-fade-up p-5" style={{ animationDelay: '100ms' }}>
-          <PanelTitle>What it does</PanelTitle>
-          <div className="mt-4 space-y-3 text-[13px] leading-relaxed text-txt-mid">
-            <p>
-              SLA Monitor watches the websites you care about and tells you the moment one breaks. Every minute it runs
-              an HTTP check against each endpoint you register, measures how long the response took, and keeps a full
-              history of the results. When a site fails a few checks in a row (three by default) you get an email, and when
-              it recovers you get another.
-            </p>
-            <p>
-              Once a week it rolls all of that into an SLA report: uptime percentage, average and p95 latency, how many
-              incidents happened, and total downtime measured against your own thresholds. The report is stored, saved
-              to S3, and sent to your inbox. None of it needs a server running in the background, and none of it needs
-              you to be watching.
-            </p>
-          </div>
-        </div>
-
-        {/* The AWS stack */}
-        <div className="panel mt-3 animate-fade-up p-5" style={{ animationDelay: '140ms' }}>
-          <PanelTitle>The AWS stack</PanelTitle>
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {STACK.map((s) => (
-              <div
-                key={s.name}
-                className="group rounded-[14px] border border-white/[0.07] bg-white/[0.02] p-4 transition-colors hover:border-accent/30 hover:bg-white/[0.04]"
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-white/[0.08] bg-white/[0.02] text-accent transition-colors group-hover:border-accent/30 group-hover:bg-accent/[0.08]">
-                    {s.icon}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate font-display text-[13px] font-semibold text-txt-hi">{s.name}</p>
-                    {s.tag && (
-                      <p className="text-[11px] text-txt-lo">{s.tag}</p>
-                    )}
-                  </div>
+          {view === 'architecture' && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {PRINCIPLES.map((p) => (
+                <div key={p.title} className="rounded-lg border border-white/[0.07] bg-white/[0.02] p-4">
+                  <p className="font-display text-[13px] font-semibold text-txt-hi">{p.title}</p>
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-txt-mid">{p.body}</p>
                 </div>
-                <p className="mt-3 text-[12px] leading-relaxed text-txt-mid">{s.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* How the pipeline runs */}
-        <div className="panel mt-3 animate-fade-up p-5" style={{ animationDelay: '180ms' }}>
-          <PanelTitle>How the pipeline runs</PanelTitle>
-          <p className="mt-4 text-[12px] leading-relaxed text-txt-lo">
-            Three scheduled jobs do the work on their own. EventBridge is the trigger for each one.
-          </p>
-          <div className="mt-4 space-y-3">
-            {JOBS.map((j) => (
-              <div
-                key={j.title}
-                className="flex gap-3 rounded-[14px] border border-white/[0.07] bg-white/[0.02] p-4"
-              >
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-accent/25 bg-accent/[0.08] text-accent">
-                  {j.icon}
-                </span>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-display text-[13px] font-semibold text-txt-hi">{j.title}</p>
-                    <span className="rounded-md bg-accent/[0.1] px-1.5 py-0.5 text-[11px] font-medium text-accent">
-                      {j.cadence}
-                    </span>
-                  </div>
-                  <p className="mt-1.5 text-[12px] leading-relaxed text-txt-mid">{j.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-          <p className="mt-4 border-t border-white/[0.06] pt-4 text-[12px] leading-relaxed text-txt-mid">
-            Everything you see here is the on-demand side. When you open the dashboard, the browser calls API Gateway
-            with your token. Read requests go to one function and writes go to another. Both work against DynamoDB, and report
-            downloads and on-demand reports also reach S3 and the Report Generator.
-          </p>
-        </div>
-
-        {/* Principles */}
-        <div className="panel mt-3 mb-2 animate-fade-up p-5" style={{ animationDelay: '220ms' }}>
-          <PanelTitle>Why it's built this way</PanelTitle>
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {PRINCIPLES.map((p) => (
-              <div key={p.title} className="rounded-[14px] border border-white/[0.07] bg-white/[0.02] p-4">
-                <p className="font-display text-[13px] font-semibold text-txt-hi">{p.title}</p>
-                <p className="mt-1.5 text-[12px] leading-relaxed text-txt-mid">{p.body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+              ))}
+            </div>
+          )}
+          <p className="mb-2 mt-4 text-[11.5px] text-txt-lo">These views are illustrative: none of them reads your endpoints.</p>
         </div>
       </div>
     </Shell>

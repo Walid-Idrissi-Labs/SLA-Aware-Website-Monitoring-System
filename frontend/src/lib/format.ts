@@ -114,6 +114,29 @@ export function verdictFor(
   return now - monitor.last_checked_at > STALE_AFTER_MS ? 'stale' : verdictFromStatus(monitor.current_status)
 }
 
+/** Below this share of the expected checks an SLO is unproven, not met or missed (report generator: SLO_MIN_COVERAGE_PCT). */
+export const SLO_MIN_COVERAGE = 95
+
+const round2 = (v: number) => Math.round(v * 100) / 100
+
+/** The report generator's availability (compute_availability_metrics), from counts: uptime over
+ *  conclusive checks only (null without any), coverage over the checks the schedule expected. */
+export function availability(up: number, down: number, expected: number) {
+  const conclusive = up + down
+  return {
+    uptime: conclusive ? round2((up / conclusive) * 100) : null,
+    coverage: round2((conclusive / Math.max(expected, conclusive, 1)) * 100),
+  }
+}
+
+/** The report generator's verdict (evaluate_sla): severity follows uptime, and too little evidence is unproven. */
+export function sloResult(target: { min_uptime_pct: number; max_avg_latency_ms: number }, uptime: number, avgLatency: number, coverage: number) {
+  const sla_pass = uptime >= target.min_uptime_pct && avgLatency <= target.max_avg_latency_ms
+  const severity = sla_pass ? 'healthy' : uptime >= 99 ? 'degraded' : uptime >= 95 ? 'major' : 'critical'
+  const slo_status = coverage < SLO_MIN_COVERAGE ? 'unproven' : sla_pass ? 'met' : 'missed'
+  return { sla_pass, severity, slo_status } as const
+}
+
 /** Verdict display metadata. `textClass` for Tailwind text, `color` for inline SVG. */
 export const VERDICT = {
   up: { label: 'Operational', short: 'UP', textClass: 'text-ok', color: STATUS.ok },
