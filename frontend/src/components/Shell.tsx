@@ -73,7 +73,7 @@ export default function Shell({ ticker, children }: Props) {
             </div>
           )}
           {/* Command bar */}
-          <header className="flex h-12 flex-none items-center gap-4 border-b border-white/[0.07] pl-4 pr-3">
+          <header className="flex h-12 flex-none items-center gap-3 border-b border-white/[0.07] pl-4 pr-3 sm:gap-4">
             <div className="flex min-w-0 flex-1 items-center gap-5 overflow-hidden">{ticker}</div>
 
             {/* Also the entry point on touch, where there is no keyboard. */}
@@ -85,7 +85,7 @@ export default function Shell({ ticker, children }: Props) {
               className="flex h-7 flex-none items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 text-txt-lo transition-colors hover:bg-white/[0.06] hover:text-txt-hi"
             >
               <Search className="h-3.5 w-3.5" strokeWidth={2} />
-              <kbd className="font-mono text-[11px]">{PALETTE_KEY}</kbd>
+              <kbd className="hidden font-mono text-[11px] sm:inline">{PALETTE_KEY}</kbd>
             </button>
 
             <div className="hidden h-4 w-px shrink-0 bg-white/[0.08] sm:block" />
