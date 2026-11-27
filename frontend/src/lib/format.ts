@@ -1,4 +1,4 @@
-import type { Check, DailyTally, Incident } from '../types'
+import type { Check, DailyTally, Incident, ProjectReport } from '../types'
 
 /** Status palette — the single source for status hexes used in inline SVG/styles.
  *  Mirrors the `ok`/`warn`/`crit`/`accent` tokens in tailwind.config.js. */
@@ -459,4 +459,17 @@ export function incidentState({
   }
   if (latest.status === 'inconclusive') return { ...base, stage: null, blank: 'no_evidence' }
   return { ...base, stage: 'healthy' }
+}
+
+/** A report's figures as its HTML shows them (report_generator templates.py): no uptime without a
+ *  conclusive check, no latency without a successful one. Rows from before the counts keep theirs. */
+export function reportFigures(r: ProjectReport) {
+  const { checks_up: up, checks_down: down } = r
+  const counted = up != null && down != null
+  const noLatency = counted && up === 0
+  return {
+    uptime: counted && up + down === 0 ? null : r.uptime_pct,
+    avg: noLatency ? null : r.avg_latency_ms,
+    p95: noLatency ? null : r.p95_latency_ms,
+  }
 }
