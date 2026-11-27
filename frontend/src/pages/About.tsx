@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Shell from '../components/Shell'
 import GitHubIcon from '../components/GitHubIcon'
 import RubberSegment from '../components/RubberSegment'
@@ -114,6 +114,14 @@ export default function About() {
               step={step}
               onStep={(i) => patch({ step: String(i + 1) })}
             />
+          )}
+          {view === 'check' && (
+            <p className="mt-3 text-[12.5px] text-txt-lo">
+              Your own checks go through these stages every minute.{' '}
+              <Link to="/pipeline" className="font-medium text-accent hover:underline">
+                See them in Pipeline
+              </Link>
+            </p>
           )}
           {view === 'verdicts' && <VerdictsView />}
           {view === 'coverage' && <CoverageView />}

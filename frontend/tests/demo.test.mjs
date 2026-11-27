@@ -64,9 +64,34 @@ test('the same moment always gives the same data', () => {
   const now = TIMES['mid-hour']
   assert.deepEqual(demoProjects(now, 1), demoProjects(now, 1))
   assert.deepEqual(demoReports('checkout', now), demoReports('checkout', now))
-  // A minute later the window slides, but the minutes it shares are unchanged.
-  const shared = (list) => list.filter((c) => c.timestamp >= now - 30 * MIN && c.timestamp < now - MIN)
+  // A minute later the window slides, but the minutes it shares are unchanged. The newest
+  // three are left out: Docs' two timeouts are always its latest checks (board #39), and a
+  // timeout holds the writes of every row in its run.
+  const shared = (list) => list.filter((c) => c.timestamp >= now - 30 * MIN && c.timestamp < now - 3 * MIN)
   assert.deepEqual(shared(demoChecks('storefront', now - 60 * MIN, now, now)), shared(demoChecks('storefront', now - 59 * MIN, now + MIN, now + MIN)))
+})
+
+test('demo rows carry stage times the way the monitor stamps them', () => {
+  const now = TIMES['mid-hour']
+  const rows = STORIES.flatMap(({ id }) => demoChecks(id, now - 60 * MIN, now, now))
+  const runs = new Map()
+  for (const c of rows) {
+    assert.ok(c.run_started_at <= c.probe_started_at && c.probe_started_at <= c.timestamp && c.timestamp <= c.write_started_at, `${c.timestamp}: stages in order`)
+    runs.set(c.run_started_at, [...(runs.get(c.run_started_at) ?? []), c])
+  }
+  for (const [start, run] of runs) {
+    assert.equal(new Set(run.map((c) => Math.floor(c.timestamp / MIN))).size, 1, 'a run is one minute')
+    // Nothing is written until the slowest probe of the run is back.
+    const slowest = Math.max(...run.map((c) => c.timestamp))
+    assert.ok(run.every((c) => c.write_started_at > slowest), `run at ${start}: rows wait for the slowest probe`)
+  }
+  // Docs' latest timeout holds every row of the newest run for about ten seconds.
+  const newest = runs.get(Math.max(...runs.keys()))
+  assert.ok(newest.every((c) => c.write_started_at - c.run_started_at > 10_000))
+  // A refused connection stores the 10 s placeholder but takes milliseconds.
+  const refused = demoChecks('checkout', now - 5 * MIN, now, now).at(-1)
+  assert.equal(refused.latency_ms, 10_000)
+  assert.ok(refused.timestamp - refused.probe_started_at < 100)
 })
 
 test('every recorded incident is a run of failures the checks show', () => {
