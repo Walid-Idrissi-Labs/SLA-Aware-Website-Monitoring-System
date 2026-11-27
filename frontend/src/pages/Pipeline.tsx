@@ -19,7 +19,7 @@ const VERDICT_TONE: Record<Check['status'], { label: string; color: string }> = 
 }
 
 /** The hold reads as waiting: hatched, not a colour of its own. */
-const HELD_FILL = 'repeating-linear-gradient(135deg, rgba(255,255,255,0.34) 0 2px, rgba(255,255,255,0.08) 2px 5px)'
+const HELD_FILL = 'repeating-linear-gradient(135deg, rgba(255,255,255,0.16) 0 2px, rgba(255,255,255,0.04) 2px 5px)'
 const STARTUP_FILL = 'rgba(255,255,255,0.2)'
 
 const EVENT_TONE: Record<EventKind, { label: string; color: string }> = {
@@ -40,9 +40,10 @@ const hm = (ms: number) => new Date(ms).toISOString().slice(11, 16)
 function Panel({ title, caption, children, className = '' }: { title: string; caption?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <section className={`panel-flush ${className}`}>
-      <div className="panel-head">
+      {/* On a phone the caption wraps under the title rather than being cut: it says what the panel is. */}
+      <div className="panel-head h-auto min-h-11 flex-wrap gap-y-0.5 py-2.5 sm:h-11 sm:flex-nowrap sm:py-0">
         <h2 className="shrink-0 text-[13px] font-semibold text-txt-hi">{title}</h2>
-        {caption && <span className="min-w-0 truncate text-[11.5px] text-txt-lo">{caption}</span>}
+        {caption && <span className="text-[11.5px] text-txt-lo sm:min-w-0 sm:truncate">{caption}</span>}
       </div>
       {children}
     </section>
@@ -86,7 +87,7 @@ interface Latest {
 
 function StageBar({ check, scale }: { check: Check; scale: number }) {
   const stages = stagesOf(check)
-  if (!stages) return <p className="text-[11.5px] italic text-txt-lo">No stage times on this check: it was stored before the monitor recorded them.</p>
+  if (!stages) return <p className="font-mono text-[12px] text-txt-lo">—</p>
   const tone = VERDICT_TONE[check.status]
   const pct = (ms: number) => `max(2px, ${(ms / scale) * 100}%)`
   return (
@@ -100,10 +101,10 @@ function StageBar({ check, scale }: { check: Check; scale: number }) {
         <span className="h-full transition-[width] duration-500" style={{ width: pct(stages.probe), background: tone.color }} />
         <span className="h-full transition-[width] duration-500" style={{ width: pct(stages.hold), background: HELD_FILL }} />
       </div>
-      <p className="mt-1.5 flex flex-wrap gap-x-1.5 font-mono text-[10.5px] text-txt-lo">
-        <span className="whitespace-nowrap">start-up {fmtMs(stages.startup)} ·</span>
+      <p className="mt-1.5 flex flex-wrap gap-x-3 font-mono text-[10.5px] text-txt-lo">
+        <span className="whitespace-nowrap">start-up {fmtMs(stages.startup)}</span>
         <span className="whitespace-nowrap">
-          probe <span className="text-txt-mid">{fmtMs(stages.probe)}</span> ·
+          probe <span className="text-txt-mid">{fmtMs(stages.probe)}</span>
         </span>
         <span className="whitespace-nowrap">held {fmtMs(stages.hold)}</span>
       </p>
@@ -145,7 +146,13 @@ function LastRun({ rows }: { rows: Latest[] }) {
             <div className="text-right">
               <p className="font-mono text-[12.5px] tabular-nums text-txt-hi">{stages ? fmtMs(stages.total) : '—'}</p>
               <p className="mt-0.5 font-mono text-[10.5px] tabular-nums text-txt-lo">
-                {check ? (verdict === 'stale' ? `${timeAgo(check.timestamp)} ago` : hms(check.timestamp)) : ''}
+                {!check
+                  ? ''
+                  : verdict === 'stale'
+                    ? `${timeAgo(check.timestamp)} ago`
+                    : check.run_started_at != null
+                      ? `run ${hms(check.run_started_at)}`
+                      : `checked ${hms(check.timestamp)}`}
               </p>
             </div>
           </li>
@@ -186,18 +193,19 @@ function RunCard({ slot, anchor, leaving }: { slot: RunSlot; anchor: DOMRect; le
             <HoverRow label="Stored">
               {slot.rows.length} of {Math.max(slot.expected, slot.rows.length)}
             </HoverRow>
-            <HoverRow label="To last write">{slot.duration != null ? fmtMs(slot.duration) : <span className="text-txt-lo">not recorded</span>}</HoverRow>
+            <HoverRow label="Last write at">{slot.duration != null ? `+${fmtMs(slot.duration)}` : <span className="text-txt-lo">not recorded</span>}</HoverRow>
             {slowest && <HoverRow label="Slowest probe">{`${fmtMs(slowest.ms)}`}</HoverRow>}
             {slot.runs > 1 && <HoverRow label="Runs">{slot.runs}, an invocation ran twice</HoverRow>}
           </dl>
           <div className="my-1.5 h-px bg-white/[0.06]" />
           <ul className="space-y-0.5">
-            {slot.rows.slice(0, 8).map(({ project, check }) => (
-              <li key={project.project_id} className="flex items-center gap-1.5">
+            {slot.rows.slice(0, 8).map(({ project, check }, i) => (
+              <li key={i} className="flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 flex-none rounded-[1px]" style={{ backgroundColor: VERDICT_TONE[check.status].color }} />
                 <span className="min-w-0 flex-1 truncate text-txt-mid">{project.name}</span>
               </li>
             ))}
+            {slot.rows.length > 8 && <li className="text-txt-lo">+{slot.rows.length - 8} more</li>}
           </ul>
         </>
       )}
@@ -210,11 +218,11 @@ function RunStrip({ slots }: { slots: RunSlot[] }) {
   return (
     <BarStrip
       items={slots}
-      slots={60}
+      slots={slots.length}
       keyOf={(s) => s.minute}
       interactive
-      size="h-16 gap-[2px]"
-      label="One bar per minute of the last hour, filled by your checks' verdicts in that run; its height is the time to the run's last stored row."
+      size="h-16 gap-px sm:gap-[2px]"
+      label="One bar per minute of the last hour, filled by your checks' verdicts in that run; taller bars took longer to store their rows."
       describe={(s) =>
         `${hm(s.minute * 60_000)} UTC: ${
           s.rows.length
@@ -229,10 +237,10 @@ function RunStrip({ slots }: { slots: RunSlot[] }) {
       }}
       barStyle={(s) => {
         if (!s.rows.length) return undefined
-        // Linear, with a floor tall enough to read the verdicts: a held run stands out, a fast one stays legible.
-        const share = s.duration != null ? s.duration / longest : 0.4
+        // 40% for the verdicts to stay legible, the rest in proportion to the time to the last write.
+        const share = s.duration != null ? s.duration / longest : 0
         return {
-          height: `${Math.max(40, Math.round(share * 100))}%`,
+          height: `${40 + Math.round(share * 60)}%`,
           background: runFill(s),
         }
       }}
@@ -268,14 +276,17 @@ function EventRow({ event }: { event: PipelineEvent }) {
   )
 }
 
-/** What the next pass will write, judging by your checks. */
+/** What the next pass should write, judging by your checks. */
 function passLine({ open, close }: { open: number; close: number }): string {
   const incidents = (n: number) => `${n} incident${n === 1 ? '' : 's'}`
-  if (open && close) return `It will open ${incidents(open)} and close ${incidents(close)}`
-  if (open) return `It will open ${incidents(open)}`
-  if (close) return `It will close ${incidents(close)}`
-  return 'Nothing in your checks waits for it'
+  if (open && close) return `By your checks: opens ${incidents(open)}, closes ${close}`
+  if (open) return `By your checks: opens ${incidents(open)}`
+  if (close) return `By your checks: closes ${incidents(close)}`
+  return 'By your checks: nothing to open or close'
 }
+
+/** The page lists this many events, newest first. */
+const EVENT_LIMIT = 50
 
 // ─── Page ───────────────────────────────────────────────────────────────────
 
@@ -341,12 +352,15 @@ export default function Pipeline() {
   const failing = latestRows.filter((r) => r.verdict === 'down').length
   const pass = nextPass(now)
   const minutesToPass = Math.max(1, Math.ceil((pass - now) / 60_000))
-  const second = offset ? `:${String(Math.floor(offset.ms / 1000)).padStart(2, '0')}` : null
+  const second = offset ? Math.floor(offset.ms / 1000) : null
+  // Rows from before the stage times existed only say when their probe ended.
+  const lastLabel = newest?.start != null ? 'Last run' : 'Last check'
+  const lastAt = newest ? (newest.start ?? newest.rows[0].check.timestamp) : null
 
   const ticker = (
     <>
       <TickerStat label="Runs" value={loaded && runsDue ? `${runsSeen}/${runsDue}` : '—'} color={runsSeen < runsDue ? STATUS.warn : undefined} />
-      <TickerStat label="Last run" value={newest ? hms(newest.start ?? newest.rows[0].check.timestamp) : '—'} className="hidden sm:flex" />
+      <TickerStat label={lastLabel} value={lastAt != null ? hms(lastAt) : '—'} className="hidden sm:flex" />
       <TickerStat label="Failing" value={String(failing)} color={failing ? STATUS.crit : STATUS.ok} className="hidden md:flex" />
       <TickerStat label="Next pass" value={hm(pass)} className="hidden lg:flex" />
     </>
@@ -400,11 +414,11 @@ export default function Pipeline() {
           index="01"
           service="EventBridge"
           name="Schedule"
-          what="Starts a monitor run once a minute, at the same second each time. Nothing queues between the timer and the run."
+          what="Invokes the monitor once a minute, at the same second each time. There is no queue of ours in between."
           live={
-            second ? (
+            second != null ? (
               <>
-                {offset?.stamped ? 'Runs start' : 'Checks land'} about {second} past the minute
+                {offset?.stamped ? 'Runs start' : 'Checks land'} about {second} s into each minute
                 <br />
                 <span className="text-txt-mid">
                   Checks of yours in {runsSeen} of the last {runsDue} minutes
@@ -421,16 +435,15 @@ export default function Pipeline() {
           index="02"
           service="Monitor Lambda"
           name="Probe, store, alert"
-          what="Probes your endpoints all at once, stores a row with each verdict once every probe is back, then applies the alert rules."
+          what="Probes your endpoints in parallel, stores a row with each verdict once every probe is back, then applies the alert rules."
           live={
-            newest ? (
+            newest && lastAt != null ? (
               <>
-                Last run {hms(newest.start ?? newest.rows[0].check.timestamp)} UTC
+                {lastLabel} {hms(lastAt)} UTC
                 <br />
                 <span className="text-txt-mid">
-                  {newest.rows.length} check
-                  {newest.rows.length === 1 ? '' : 's'}
-                  {newest.duration != null ? `, stored within ${fmtMs(newest.duration)}` : ''}
+                  {newest.rows.length} check{newest.rows.length === 1 ? '' : 's'}
+                  {newest.duration != null ? `, last write at +${fmtMs(newest.duration)}` : ''}
                 </span>
               </>
             ) : (
@@ -482,11 +495,16 @@ export default function Pipeline() {
         <>
           <Panel title="Last run" caption="each endpoint's newest check" className="mt-3 animate-fade-up">
             <LastRun rows={latestRows} />
+            {latestRows.some((r) => r.check && !stagesOf(r.check)) && (
+              <p className="border-t border-white/[0.05] px-4 py-2.5 text-[11px] text-txt-lo">
+                Rows marked — were stored before the monitor recorded stage times.
+              </p>
+            )}
             {latestRows.some((r) => r.check && stagesOf(r.check)) && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-white/[0.05] px-4 py-2.5 text-[11px] text-txt-lo">
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-2 w-3 rounded-[1px]" style={{ background: STARTUP_FILL }} />
-                  Start-up: scan, then a free worker
+                  Start-up: list endpoints, wait for a worker
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-2 w-3 rounded-[1px] bg-ok" />
@@ -500,7 +518,7 @@ export default function Pipeline() {
             )}
           </Panel>
 
-          <Panel title="Runs, last hour" caption="one bar per minute · height: time to the run's last stored row" className="mt-3">
+          <Panel title="Runs, last hour" caption="one bar per minute · taller bars took longer to store" className="mt-3">
             <div className="px-4 pb-3 pt-4">
               <RunStrip slots={slots} />
               <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-txt-lo">
@@ -532,12 +550,17 @@ export default function Pipeline() {
           <Panel title="Events" caption="worked out from check rows by the alert rules · not a log" className="mt-3">
             {events.length > 0 ? (
               <ol className="divide-y divide-white/[0.05]">
-                {events.map((event) => (
+                {events.slice(0, EVENT_LIMIT).map((event) => (
                   <EventRow key={`${event.project.project_id}:${event.kind}:${event.at}`} event={event} />
                 ))}
               </ol>
             ) : (
-              <p className="px-4 py-6 text-center text-[12.5px] text-txt-lo">Nothing to report in the last hour: {checksSeen} checks, no failures, no gaps.</p>
+              <p className="px-4 py-6 text-center text-[12.5px] text-txt-lo">Nothing to report: {checksSeen} checks in the last hour, all up.</p>
+            )}
+            {events.length > EVENT_LIMIT && (
+              <p className="border-t border-white/[0.05] px-4 py-2.5 text-[11px] text-txt-lo">
+                Showing the newest {EVENT_LIMIT} of {events.length}.
+              </p>
             )}
             <p className="border-t border-white/[0.05] px-4 py-2.5 text-[11px] leading-relaxed text-txt-lo">
               “Alert rule met” is the monitor's decision to send an email. Whether one was delivered is not recorded here.

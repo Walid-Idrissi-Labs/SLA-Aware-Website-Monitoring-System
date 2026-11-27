@@ -10,6 +10,8 @@ import type { Check, Project } from '../types'
 
 const MIN = 60_000
 const HOUR = 3_600_000
+/** The monitor Lambda's timeout: a run's rows are stored by then or not at all. */
+const RUN_TIMEOUT_MS = 30_000
 
 /** One check's measured stages, in ms. */
 export interface Stages {
@@ -64,12 +66,13 @@ export interface RunSlot {
 }
 
 /**
- * The last hour as one slot per minute, oldest first, ending at the minute of
- * the newest run with your checks. Only minutes whose run falls inside the
- * hour of checks the API returns are listed, so a run cut off by the window's
- * edge never reads as missing. An empty slot only says no row of yours came
- * from that minute: a run that never happened and a run that skipped your
- * endpoints look the same from here.
+ * The last hour as one slot per minute, oldest first, ending at the last run
+ * that should have stored its rows by now, so a monitor that stopped shows its
+ * silent minutes. Only minutes whose run falls inside the hour of checks the
+ * API returns are listed, so a run cut off by the window's edge never reads as
+ * missing. An empty slot only says no row of yours came from that minute: a
+ * run that never happened and a run that skipped your endpoints look the same
+ * from here.
  */
 export function runSlots(projects: Project[], now: number): RunSlot[] {
   const active = projects.filter((p) => p.active)
@@ -80,7 +83,9 @@ export function runSlots(projects: Project[], now: number): RunSlot[] {
       const minute = runMinute(check)
       byMinute.set(minute, [...(byMinute.get(minute) ?? []), { project, check }])
     }
-  const last = byMinute.size ? Math.max(...byMinute.keys()) : Math.floor(now / MIN)
+  // A run has stored its rows by the Lambda's 30 s timeout at the latest.
+  const due = Math.floor((now - offset - RUN_TIMEOUT_MS) / MIN)
+  const last = Math.max(due, ...byMinute.keys())
   const created = active.map((p) => Date.parse(p.created_at))
 
   const slots: RunSlot[] = []
@@ -146,13 +151,17 @@ const GAP_MS = 90_000
  * Alerts say the rule was met, because whether an email went out is recorded
  * nowhere the page can read.
  */
-export function deriveEvents(projects: Project[], now: number, limit = 50): PipelineEvent[] {
+export function deriveEvents(projects: Project[], now: number): PipelineEvent[] {
   const events: PipelineEvent[] = []
   for (const project of projects.filter((p) => p.active)) {
     const n = Math.max(1, project.failure_threshold ?? 3)
     const checks = recent(project, now)
-    if (!checks.length) continue
     const emit = (at: number, kind: EventKind, text: string, check?: Check) => events.push({ at, kind, project, text, check })
+    if (!checks.length) {
+      // Past its first minutes, an endpoint with no row all hour is one the monitor is not reaching.
+      if (Date.parse(project.created_at) < now - 2 * MIN) emit(now - HOUR, 'gap', 'No check in the last hour.')
+      continue
+    }
     // The endpoint's first ever check: nothing came before it.
     const fresh = checks[0].timestamp - Date.parse(project.created_at) < GAP_MS
     if (fresh) emit(checks[0].timestamp, 'first', 'First check.', checks[0])
@@ -195,10 +204,11 @@ export function deriveEvents(projects: Project[], now: number, limit = 50): Pipe
         else if (failsKnown && streak < n && fails === streak) emit(check.timestamp, 'failing', `Failure ${streak} of ${n} in a row.`, check)
         return
       }
-      const plus = failsKnown ? '' : '+'
-      if (fails >= n) emit(check.timestamp, 'up', `Back up after ${fails}${plus} failures: the recovery alert rule is met.`, check)
-      else if (!failsKnown && !streakKnown) emit(check.timestamp, 'recovered', `Back up after a run of failures that began before ${since} UTC.`, check)
-      else if (fails > 0) emit(check.timestamp, 'recovered', `Back up after ${fails} failure${fails === 1 ? '' : 's'}, short of the alert threshold.`, check)
+      const failures = `${failsKnown ? '' : 'at least '}${fails} failure${fails === 1 ? '' : 's'}`
+      if (fails >= n) emit(check.timestamp, 'up', `Back up after ${failures}: the recovery alert rule is met.`, check)
+      // Failures out of view may count too, so the threshold can't be judged.
+      else if (fails > 0 && !failsKnown) emit(check.timestamp, 'recovered', `Back up after ${failures}.`, check)
+      else if (fails > 0) emit(check.timestamp, 'recovered', `Back up after ${failures}, short of the alert threshold.`, check)
       streak = 0
       fails = 0
       streakKnown = true
@@ -207,15 +217,14 @@ export function deriveEvents(projects: Project[], now: number, limit = 50): Pipe
     flushBlank()
 
     const last = checks[checks.length - 1]
-    if (last.status !== 'failure' || events[events.length - 1]?.check === last) continue // the last check already spoke
+    // The next run's row would be in by now: the endpoint has gone quiet.
+    if (now - last.timestamp > GAP_MS) emit(last.timestamp + MIN, 'gap', `No check since ${fmtHm(last.timestamp)} UTC.`)
+    if (last.status !== 'failure' || events.some((e) => e.check === last)) continue // the last check already spoke
     if (!streakKnown) emit(last.timestamp, 'still', `Still failing, since before ${since} UTC.`, last)
-    else if (fails > n) emit(last.timestamp, 'still', `Still failing: ${fails}${failsKnown ? '' : '+'} failures since the last passing check.`, last)
+    else if (fails > n) emit(last.timestamp, 'still', `Still failing: ${failsKnown ? '' : 'at least '}${fails} failures since the last passing check.`, last)
   }
   // Newest first; at the same moment, the later-told event goes on top.
-  return events
-    .reverse()
-    .sort((a, b) => b.at - a.at)
-    .slice(0, limit)
+  return events.reverse().sort((a, b) => b.at - a.at)
 }
 
 /** Epoch ms → "HH:MM", UTC. */
@@ -230,10 +239,12 @@ export interface PassQueue {
 }
 
 /**
- * Counts what the processor's next pass will record, by its rule: any check
- * that is not a failure ends a failure run, and a run of N or more is an
- * incident. A run the window cut at its start is counted only when the window
- * alone holds N of its failures.
+ * Counts what the processor's next pass will record, by its rules: a run of N
+ * failures opens an incident (any check that is not a failure ends a run, but
+ * a run that starts while an incident is open adds nothing), and the first
+ * passing check closes it. An outage already going when the window opened is
+ * never counted as new, and is counted as closing only when the window alone
+ * holds N of its failures.
  */
 export function passQueue(projects: Project[], now: number): PassQueue {
   const lastPass = Math.floor(now / HOUR) * HOUR
@@ -241,30 +252,27 @@ export function passQueue(projects: Project[], now: number): PassQueue {
   for (const project of projects.filter((p) => p.active)) {
     const n = Math.max(1, project.failure_threshold ?? 3)
     const checks = recent(project, now)
-    let run: Check[] = []
-    const settle = (next: Check | undefined) => {
-      if (run.length >= n) {
-        const reached = run[n - 1].timestamp
-        if (reached >= lastPass) queue.open += 1
-        // Recorded at the last pass, but only a passing check ends it there.
-        else if (next?.status === 'success' && next.timestamp >= lastPass) queue.close += 1
+    const fresh = checks.length > 0 && checks[0].timestamp - Date.parse(project.created_at) < GAP_MS
+    let run = 0
+    let incident: { reached: number; cut: boolean } | null = null
+    for (const [i, check] of checks.entries()) {
+      if (check.status === 'failure') {
+        run += 1
+        if (!incident && run >= n) incident = { reached: check.timestamp, cut: i + 1 === run && !fresh }
+        continue
       }
-      run = []
+      run = 0
+      if (check.status !== 'success' || !incident) continue
+      if (incident.reached >= lastPass && !incident.cut) queue.open += 1 // opened and closed by the same pass
+      else if (check.timestamp >= lastPass) queue.close += 1
+      incident = null
     }
-    checks.forEach((check, i) => {
-      if (check.status === 'failure') run.push(check)
-      else {
-        // An incident stays open past a check without a verdict: it is the next passing check that closes it.
-        const next = check.status === 'success' ? check : checks.slice(i + 1).find((c) => c.status === 'success')
-        settle(next)
-      }
-    })
-    settle(undefined)
+    if (incident && incident.reached >= lastPass && !incident.cut) queue.open += 1
   }
   return queue
 }
 
-/** A duration in ms → "312 ms" or "10.3 s". */
+/** A duration in ms → "312 ms" or "10.3 s", with a no-break space so the unit never wraps alone. */
 export function fmtMs(ms: number): string {
-  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(ms < 10_000 ? 2 : 1)} s`
+  return ms < 1000 ? `${Math.round(ms)}\u00a0ms` : `${(ms / 1000).toFixed(ms < 10_000 ? 2 : 1)}\u00a0s`
 }

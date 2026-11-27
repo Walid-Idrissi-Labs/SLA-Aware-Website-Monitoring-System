@@ -158,7 +158,9 @@ test('a run already going when the window opens is not counted from its middle',
   assert.deepEqual(events('FFFF'), ['still'])
   assert.deepEqual(events('FFS'), ['recovered'])
   const list = deriveEvents([project('a', seq('FFFFS'))], NOW)
-  assert.match(list[0].text, /after 4\+ failures/)
+  assert.match(list[0].text, /after at least 4 failures: the recovery alert rule is met/)
+  // Failures before the window may count toward the recovery rule, so no threshold claim either way.
+  for (const pattern of ['FFIS', 'IFFS']) assert.equal(deriveEvents([project('a', seq(pattern))], NOW)[0].text, 'Back up after at least 2 failures.')
 })
 
 test('a new endpoint starts counting at its first check', () => {
@@ -176,10 +178,25 @@ test('missing minutes and runs of no verdict fold into one line each', () => {
   assert.equal(list[1].text, 'No verdict for 3 checks in a row.')
 })
 
-test('events come newest first and stop at the limit', () => {
-  const list = deriveEvents([project('a', seq('SFFSFFS')), project('b', seq('SFS'))], NOW, 3)
-  assert.equal(list.length, 3)
+test('events come newest first', () => {
+  const list = deriveEvents([project('a', seq('SFFSFFS')), project('b', seq('SFS'))], NOW)
+  assert.equal(list.length, 8)
   assert.ok(list.every((e, i) => i === 0 || list[i - 1].at >= e.at))
+})
+
+test('an endpoint that went quiet says so', () => {
+  const quiet = seq('SSS', { end: NOW - 10 * MIN })
+  assert.deepEqual(deriveEvents([project('a', quiet)], NOW).map((e) => e.text), ['No check since 13:15 UTC.'])
+  assert.deepEqual(deriveEvents([project('a', [])], NOW).map((e) => e.text), ['No check in the last hour.'])
+  // Not one created a moment ago, whose first check is still due.
+  assert.deepEqual(deriveEvents([project('a', [], { created_at: new Date(NOW - 30_000).toISOString() })], NOW), [])
+})
+
+test('a monitor that stopped leaves its silent minutes in the strip', () => {
+  const slots = runSlots([project('a', seq('S'.repeat(30), { end: NOW - 30 * MIN }))], NOW)
+  assert.equal(slots.at(-1).rows.length, 0)
+  assert.equal(slots.filter((s) => s.rows.length).length, 30)
+  assert.ok(slots.length >= 59)
 })
 
 test('the next pass opens what reached the threshold since the last one, and closes what recovered', () => {
@@ -202,10 +219,14 @@ test('the next pass opens what reached the threshold since the last one, and clo
     open: 0,
     close: 0,
   })
+  // A check without a verdict splits the run, not the incident: the processor opens one.
+  assert.deepEqual(passQueue([project('a', seq('S'.repeat(10) + 'FFFIFFF' + 'S'.repeat(8)))], NOW), { open: 1, close: 0 })
+  // An outage already going an hour ago is not new, even when the window's own third failure lands after the pass.
+  assert.deepEqual(passQueue([project('a', seq('F'.repeat(60)))], NOW), { open: 0, close: 0 })
 })
 
 test('durations read in ms, then seconds', () => {
-  assert.equal(fmtMs(312.4), '312 ms')
-  assert.equal(fmtMs(1_234), '1.23 s')
-  assert.equal(fmtMs(10_340), '10.3 s')
+  assert.equal(fmtMs(312.4), '312\u00a0ms')
+  assert.equal(fmtMs(1_234), '1.23\u00a0s')
+  assert.equal(fmtMs(10_340), '10.3\u00a0s')
 })
