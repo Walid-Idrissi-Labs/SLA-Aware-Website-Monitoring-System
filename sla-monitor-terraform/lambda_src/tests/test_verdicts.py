@@ -479,13 +479,17 @@ def fake_session(outcome, entered=None):
         def mount(self, prefix, adapter):
             pass
 
+        def get_redirect_target(self, response):
+            return None
+
         def get(self, url, **kwargs):
             if entered is not None:
                 entered.append(int(time.time() * 1000))
             time.sleep(0.01)
             if isinstance(outcome, Exception):
                 raise outcome
-            return type("Response", (), {"status_code": outcome, "headers": {}})()
+            raw = type("Raw", (), {"read1": lambda self, amount: b""})()
+            return type("Response", (), {"status_code": outcome, "headers": {}, "raw": raw, "is_redirect": False, "url": url, "close": lambda self: None})()
 
         def close(self):
             pass
@@ -493,35 +497,67 @@ def fake_session(outcome, entered=None):
     return Session
 
 
-class PublicAddressTest(unittest.TestCase):
-    """The monitor connects only to public addresses, checked at connect time (board #16).
-
-    A real HTTP server on 127.0.0.1 stands in for an internal service: the monitor
-    must never reach it. "public.test" resolves to a public address that the patched
-    connect routes to the same server, so a permitted fetch can run offline too.
-    """
+class LocalServerCase(unittest.TestCase):
+    """A real HTTP server on 127.0.0.1, standing in for an internal service the monitor
+    must never reach, and for any site once "public.test" is routed to it: that name
+    resolves to a public address which the patched connect sends to this server."""
 
     PUBLIC = "93.184.216.34"
+    BIG = 64 << 20  # far past the monitor's 1 MiB cap
 
     @classmethod
     def setUpClass(cls):
+        import gzip
         import threading
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-        cls.seen, cls.connections = [], []
+        cls.seen, cls.connections, cls.sent = [], [], {}
+        bomb = gzip.compress(bytes(cls.BIG))  # 64 MiB of zeros in about 64 KiB
 
         class Handler(BaseHTTPRequestHandler):
             def setup(self):
                 cls.connections.append(self.client_address)  # any TCP connection, HTTP or not
                 super().setup()
 
+            def stream(self, size, pause=0.0, step=65536):
+                """Send `size` bytes in `step`s until the client hangs up, counting what went out."""
+                sent = 0
+                try:
+                    while sent < size:
+                        self.wfile.write(bytes(min(step, size - sent)))
+                        self.wfile.flush()
+                        sent += min(step, size - sent)
+                        time.sleep(pause)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                cls.sent[self.path] = sent
+
             def do_GET(self):
                 cls.seen.append(self.path)
-                if self.path == "/redir":
-                    self.send_response(302)
-                    self.send_header("Location", f"http://127.0.0.1:{cls.port}/")
-                else:
-                    self.send_response(200)
+                redirect = {"/redir": f"http://127.0.0.1:{cls.port}/", "/bigredir": "/", "/loop": "/loop", "/emptyloc": ""}.get(self.path)
+                self.send_response(302 if redirect is not None else 200)
+                if redirect is not None:
+                    self.send_header("Location", redirect)
+                if self.path in ("/big", "/bigredir"):
+                    self.send_header("Content-Length", str(cls.BIG))
+                    self.end_headers()
+                    return self.stream(cls.BIG)
+                if self.path == "/stall":
+                    self.send_header("Content-Length", "100")
+                    self.end_headers()
+                    self.wfile.write(bytes(10))
+                    self.wfile.flush()
+                    time.sleep(3)  # then nothing: the monitor's read times out
+                    return
+                if self.path == "/drip":
+                    self.send_header("Content-Length", "50")
+                    self.end_headers()
+                    return self.stream(50, pause=0.3, step=1)
+                if self.path == "/bomb":
+                    self.send_header("Content-Encoding", "gzip")
+                    self.send_header("Content-Length", str(len(bomb)))
+                    self.end_headers()
+                    return self.stream(len(bomb))
                 self.send_header("Content-Length", "0")
                 self.end_headers()
 
@@ -540,6 +576,7 @@ class PublicAddressTest(unittest.TestCase):
     def setUp(self):
         self.seen.clear()
         self.connections.clear()
+        self.sent.clear()
         self.lookups = []
         real_lookup, real_connect = socket.getaddrinfo, socket.create_connection
         answers = {"public.test": [self.PUBLIC], "mixed.test": [self.PUBLIC, "127.0.0.1"]}
@@ -562,6 +599,11 @@ class PublicAddressTest(unittest.TestCase):
         for patch in patches:
             patch.start()
             self.addCleanup(patch.stop)
+
+
+
+class PublicAddressTest(LocalServerCase):
+    """The monitor connects only to public addresses, checked at connect time (board #16)."""
 
     def check(self, host, path="/", scheme="http"):
         return monitor.perform_http_check(f"{scheme}://{host}:{self.port}{path}")
@@ -616,6 +658,60 @@ class PublicAddressTest(unittest.TestCase):
             self.assertTrue(monitor.is_public(address), address)
 
 
+class BoundedBodyTest(LocalServerCase):
+    """A check reads at most 1 MiB of any body, within its deadline (board #16)."""
+
+    def check(self, path):
+        return monitor.perform_http_check(f"http://public.test:{self.port}{path}")
+
+    def sent_on(self, path):
+        """What the server wrote on `path` before the monitor hung up; it notices a moment later."""
+        deadline = time.monotonic() + 5
+        while path not in self.sent and time.monotonic() < deadline:
+            time.sleep(0.02)
+        return self.sent[path]
+
+    def test_a_huge_body_is_read_only_to_the_cap(self):
+        self.assertEqual(self.check("/big")["status"], "success")
+        self.assertLess(self.sent_on("/big"), 16 << 20)  # the monitor hung up long before 64 MiB
+
+    def test_a_redirect_body_is_capped_too(self):
+        # requests on its own would read a redirect's whole body into memory.
+        self.assertEqual(self.check("/bigredir")["status"], "success")
+        self.assertEqual(self.seen, ["/bigredir", "/"])
+        self.assertLess(self.sent_on("/bigredir"), 16 << 20)
+
+    def test_a_compressed_body_is_never_inflated(self):
+        import zlib
+
+        with mock.patch.object(zlib, "decompressobj", side_effect=AssertionError("inflated")):
+            self.assertEqual(self.check("/bomb")["status"], "success")
+
+    def test_a_slow_body_is_cut_at_the_deadline(self):
+        with mock.patch.object(monitor, "HTTP_TIMEOUT_SECONDS", 1):
+            started = time.monotonic()
+            result = self.check("/drip")
+        self.assertEqual((result["status"], result["error_type"]), ("failure", "timeout"))
+        self.assertLess(time.monotonic() - started, 2.5)
+
+    def test_a_body_that_stalls_is_a_timeout(self):
+        with mock.patch.object(monitor, "HTTP_TIMEOUT_SECONDS", 1):
+            started = time.monotonic()
+            result = self.check("/stall")
+        self.assertEqual((result["status"], result["error_type"]), ("failure", "timeout"))
+        self.assertLess(time.monotonic() - started, 2.5)
+
+    def test_a_redirect_with_an_empty_location_is_the_answer(self):
+        # requests stops at an empty Location and so does the monitor: the 302 is the answer.
+        self.assertEqual(self.check("/emptyloc")["status"], "success")
+        self.assertEqual(self.seen, ["/emptyloc"])
+
+    def test_too_many_redirects_still_fail(self):
+        result = self.check("/loop")
+        self.assertEqual((result["status"], result["error_type"]), ("failure", "conn"))
+        self.assertEqual(self.seen, ["/loop"] * 4)  # the first request and three redirects
+
+
 class CheckTraceTest(unittest.TestCase):
     """Every check row carries its stage times (board #13)."""
 
@@ -623,7 +719,7 @@ class CheckTraceTest(unittest.TestCase):
 
     def probe(self, outcome):
         entered = []
-        with mock.patch.object(monitor.requests, "Session", fake_session(outcome, entered)):
+        with mock.patch.object(monitor, "CheckSession", fake_session(outcome, entered)):
             before = int(time.time() * 1000)
             result = monitor.perform_http_check("https://example.com")
             return before, result, entered[0]
@@ -654,7 +750,7 @@ class CheckTraceTest(unittest.TestCase):
         try:
             for name, value in patched.items():
                 setattr(monitor, name, value)
-            with mock.patch.object(monitor.requests, "Session", fake_session(200)):
+            with mock.patch.object(monitor, "CheckSession", fake_session(200)):
                 monitor.lambda_handler({}, context)
         finally:
             for name, value in saved.items():
@@ -696,7 +792,7 @@ class DuplicateRunTest(unittest.TestCase):
         self.saved = {name: getattr(monitor, name) for name in patched}
         for name, value in patched.items():
             setattr(monitor, name, value)
-        self.session = mock.patch.object(monitor.requests, "Session", fake_session(200))
+        self.session = mock.patch.object(monitor, "CheckSession", fake_session(200))
         self.session.start()
 
     def tearDown(self):

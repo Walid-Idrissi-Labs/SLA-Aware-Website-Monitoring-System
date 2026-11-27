@@ -10,10 +10,11 @@ import logging
 import decimal
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import boto3
 import requests
+import urllib3
 from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
 from requests.adapters import HTTPAdapter
@@ -36,6 +37,9 @@ checks_table = dynamodb.Table(os.environ["CHECKS_TABLE_NAME"])
 FAILURE_THRESHOLD_DEFAULT = int(os.environ.get("FAILURE_THRESHOLD_DEFAULT", "3"))
 HTTP_TIMEOUT_SECONDS = int(os.environ.get("HTTP_TIMEOUT_SECONDS", "10"))
 MAX_REDIRECTS = 3
+# A check reads at most this much of a body, on the wire: enough to time a normal
+# page, never enough to exhaust a 256 MB Lambda.
+MAX_BODY_BYTES = 1 << 20  # 1 MiB
 # Which HTTP statuses count as "up" when a project does not override them.
 # Stored per project and snapshotted onto every check, so editing it later never
 # reinterprets checks that were already recorded.
@@ -175,15 +179,16 @@ class PublicOnlyAdapter(HTTPAdapter):
 
 
 def classify_error(exc: Exception) -> str:
-    """Map a requests exception to a coarse failure cause.
+    """Map a requests or urllib3 exception to a coarse failure cause.
 
     requests uses multiple inheritance — ConnectTimeout is both a ConnectionError
     and a Timeout, and SSLError subclasses ConnectionError — so the specific bases
     must be tested before the general ConnectionError.
     """
-    if isinstance(exc, requests.exceptions.Timeout):
+    # The body is read through urllib3 directly, so its own exceptions arrive unwrapped.
+    if isinstance(exc, (requests.exceptions.Timeout, urllib3.exceptions.TimeoutError)):
         return "timeout"
-    if isinstance(exc, requests.exceptions.SSLError):
+    if isinstance(exc, (requests.exceptions.SSLError, urllib3.exceptions.SSLError)):
         return "tls"
     if isinstance(exc, requests.exceptions.ConnectionError):
         text = str(exc).lower()
@@ -274,10 +279,59 @@ def probe_certificate(url: str, timeout: int = 5) -> dict | None:
         return None
 
 
+class CheckSession(requests.Session):
+    """A session that never resolves redirects itself. Even with allow_redirects=False,
+    requests runs this to fill in response.next, and it reads the redirect's whole body
+    into memory first; fetch follows redirects by hand instead."""
+
+    def resolve_redirects(self, *args, **kwargs):
+        return iter(())
+
+
+def drain(response, start_time: float) -> None:
+    """Read and discard the body, at most MAX_BODY_BYTES and within the check's deadline.
+
+    Bytes come off the wire undecompressed (raw.read1), so a gzip bomb never
+    inflates. The deadline is checked between reads, and a read can block no
+    longer than its hop's socket timeout (the time that was left), so a body
+    dripping a byte at a time is cut near HTTP_TIMEOUT_SECONDS.
+    """
+    read = 0
+    while read < MAX_BODY_BYTES:
+        if time.time() - start_time > HTTP_TIMEOUT_SECONDS:
+            raise requests.exceptions.ReadTimeout("The body did not finish within the check's deadline")
+        chunk = response.raw.read1(16384)
+        if not chunk:
+            return
+        read += len(chunk)
+
+
+def fetch(session, url: str, start_time: float):
+    """GET, following up to MAX_REDIRECTS redirects by hand.
+
+    requests would read each redirect's whole body into memory, decompressed;
+    here every response, a redirect's included, goes through drain.
+    """
+    for _ in range(MAX_REDIRECTS + 1):
+        # One budget for the whole answer: each hop gets only the time left.
+        left = HTTP_TIMEOUT_SECONDS - (time.time() - start_time)
+        if left <= 0:
+            raise requests.exceptions.ReadTimeout("The check ran out of time across redirects")
+        response = session.get(url, timeout=left, allow_redirects=False, stream=True)
+        try:
+            drain(response, start_time)
+        finally:
+            response.close()
+        target = session.get_redirect_target(response)
+        if not target:  # not a redirect, or one with an empty Location: requests stops there too
+            return response
+        url = urljoin(response.url, target)
+    raise requests.exceptions.TooManyRedirects(f"Exceeded {MAX_REDIRECTS} redirects")
+
+
 def perform_http_check(url: str, accepted_statuses: str | None = None) -> dict:
     ranges = parse_accepted_statuses(accepted_statuses)
-    session = requests.Session()
-    session.max_redirects = MAX_REDIRECTS
+    session = CheckSession()
     # No proxy or .netrc from the environment: the address check must see the target itself.
     session.trust_env = False
     adapter = PublicOnlyAdapter()
@@ -285,7 +339,7 @@ def perform_http_check(url: str, accepted_statuses: str | None = None) -> dict:
     session.mount("https://", adapter)
     start_time = time.time()
     try:
-        response   = session.get(url, timeout=HTTP_TIMEOUT_SECONDS, allow_redirects=True)
+        response   = fetch(session, url, start_time)
         latency_ms = int((time.time() - start_time) * 1000)
         http_status = response.status_code
         status, error_type = classify_response(http_status, response.headers, ranges)
@@ -296,7 +350,7 @@ def perform_http_check(url: str, accepted_statuses: str | None = None) -> dict:
         http_status = 0
         status = "inconclusive"
         error_type = "private"
-    except requests.exceptions.RequestException as exc:
+    except (requests.exceptions.RequestException, urllib3.exceptions.HTTPError) as exc:
         latency_ms  = HTTP_TIMEOUT_SECONDS * 1000
         http_status = 0
         # A timeout, refused connection or TLS failure is evidence about the
