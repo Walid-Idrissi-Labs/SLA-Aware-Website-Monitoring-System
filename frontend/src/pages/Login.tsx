@@ -190,11 +190,17 @@ export default function Login() {
 
       <GoogleSignIn onError={setError} />
 
+      {/* The demo is not a sign-in method: its own divider says why it is here. */}
+      <div className="my-5 flex items-center gap-3">
+        <div className="h-px flex-1 bg-white/[0.08]" />
+        <span className="text-[11px] text-txt-dim">no account?</span>
+        <div className="h-px flex-1 bg-white/[0.08]" />
+      </div>
       {/* A full load, not a router link: the demo runs under its own base path. */}
-      <a href="/demo" className="btn-outline mt-4">
+      <a href="/demo" className="btn-outline">
         <Compass className="h-4 w-4" strokeWidth={2} /> Explore the demo
       </a>
-      <p className="mt-2 text-center text-[11.5px] leading-relaxed text-txt-lo">Sample data, no account needed.</p>
+      <p className="mt-2 text-center text-[11.5px] leading-relaxed text-txt-lo">Sample data only.</p>
     </AuthLayout>
   )
 }
