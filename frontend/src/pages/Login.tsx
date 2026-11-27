@@ -87,7 +87,6 @@ export default function Login() {
       subtitle="Access your endpoints, uptime history, and SLA reports."
       aside={
         <div>
-          <div className="hidden lg:block">
             <span className="block w-fit" style={{ filter: 'drop-shadow(0 6px 20px rgba(250,92,41,0.35))' }}>
               <Logo size={40} className="block" />
             </span>
@@ -102,17 +101,6 @@ export default function Login() {
                 </div>
               ))}
             </dl>
-          </div>
-          {/* A full load, not a router link: the demo runs under its own base path. */}
-          <div className="lg:mt-9 lg:max-w-[320px]">
-            <a
-              href="/demo"
-              className="btn-outline"
-            >
-              <Compass className="h-4 w-4" strokeWidth={2} /> Explore the demo
-            </a>
-            <p className="mt-2 text-center text-[11.5px] text-txt-lo lg:text-left">Sample data, no account needed.</p>
-          </div>
         </div>
       }
       footer={
@@ -201,6 +189,12 @@ export default function Login() {
       </form>
 
       <GoogleSignIn onError={setError} />
+
+      {/* A full load, not a router link: the demo runs under its own base path. */}
+      <a href="/demo" className="btn-outline mt-4">
+        <Compass className="h-4 w-4" strokeWidth={2} /> Explore the demo
+      </a>
+      <p className="mt-2 text-center text-[11.5px] leading-relaxed text-txt-lo">Sample data, no account needed.</p>
     </AuthLayout>
   )
 }
