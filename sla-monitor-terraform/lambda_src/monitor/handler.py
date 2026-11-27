@@ -106,8 +106,8 @@ class AddressRefused(Exception):
 
 
 def is_public(address: str) -> bool:
-    """A public IPv4 address. A Lambda outside a VPC has no outbound IPv6, so only IPv4 is
-    resolved, and is_global alone lets multicast through."""
+    """A public IPv4 address. Only IPv4 is resolved, since a Lambda outside a VPC has no
+    outbound IPv6. Multicast is excluded by hand because is_global lets it through."""
     ip = ipaddress.ip_address(address)
     return ip.version == 4 and ip.is_global and not ip.is_multicast
 

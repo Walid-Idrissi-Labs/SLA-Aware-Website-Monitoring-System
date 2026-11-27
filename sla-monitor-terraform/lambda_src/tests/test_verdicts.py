@@ -563,12 +563,12 @@ class PublicAddressTest(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
-    def check(self, host, path="/"):
-        return monitor.perform_http_check(f"http://{host}:{self.port}{path}")
+    def check(self, host, path="/", scheme="http"):
+        return monitor.perform_http_check(f"{scheme}://{host}:{self.port}{path}")
 
     def test_loopback_is_never_reached_by_any_spelling(self):
-        for host in ("127.0.0.1", "localhost", "2130706433"):
-            result = self.check(host)
+        for scheme, host in (("http", "127.0.0.1"), ("http", "localhost"), ("http", "2130706433"), ("https", "127.0.0.1")):
+            result = self.check(host, scheme=scheme)
             self.assertEqual((result["status"], result["error_type"], result["http_status_code"]), ("inconclusive", "private", 0), host)
             self.assertLess(result["latency_ms"], 1000, host)  # the real time spent, not the 10 s placeholder
         self.assertEqual(self.connections, [])
@@ -591,6 +591,15 @@ class PublicAddressTest(unittest.TestCase):
         self.answers["rebind.test"] = lambda: next(answers)
         self.assertEqual(self.check("rebind.test")["status"], "success")
         self.assertEqual(self.lookups.count("rebind.test"), 1)  # one lookup, used for both
+
+    def test_a_refused_connection_is_still_a_connection_failure(self):
+        # Through the real adapter: the guard's exception mapping keeps today's causes.
+        closed = socket.socket()
+        closed.bind(("127.0.0.1", 0))
+        port = closed.getsockname()[1]
+        closed.close()
+        result = monitor.perform_http_check(f"http://public.test:{port}/")
+        self.assertEqual((result["status"], result["error_type"]), ("failure", "conn"))
 
     def test_a_failed_lookup_is_still_a_dns_failure(self):
         result = self.check("nowhere.test")
