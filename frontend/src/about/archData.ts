@@ -568,7 +568,7 @@ export const EDGES: ArchEdge[] = [
     from: 'monitor',
     to: 'dynamo',
     label: 'checks',
-    detail: 'Scans the active projects; writes each check (kept 90 days) and the day’s tally; reads the recent streak; caches the TLS certificate.',
+    detail: 'Scans the active projects; claims each run on the project row with the day’s tally, so a duplicate invocation stores nothing; writes each check (kept 90 days); reads the recent streak; caches the TLS certificate.',
     layers: ['pipeline'],
     points: [[1172, 356], [1172, 440]],
     tables: ['Projects', 'Checks'],
@@ -633,7 +633,7 @@ export const STEPS: Step[] = [
   },
   {
     title: 'Store the evidence',
-    body: 'Each check is written with the accepted statuses of that moment, so changing them later never rewrites history. It also records when its run and its probe started. The day’s tally is updated too.',
+    body: 'Each check is written with the accepted statuses of that moment, so changing them later never rewrites history. It also records when its run and its probe started. The day’s tally goes first and claims the run, so a duplicate invocation stores nothing.',
     edges: ['monitor-dynamo'],
     nodes: ['monitor', 'dynamo'],
   },

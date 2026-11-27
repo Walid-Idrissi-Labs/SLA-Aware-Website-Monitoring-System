@@ -54,6 +54,10 @@ WRITE_RESERVE_SECONDS = 12
 # day verdicts never have to read a month of checks. Older days are pruned.
 DAILY_KEEP_DAYS = 45
 DAY_KEY = re.compile(r"^d(\d{8})_(up|down|inconclusive)$")
+# A project's check is stored at most once per this gap. EventBridge delivers a
+# tick at least once and a failed run is retried, so the same minute can run
+# twice; this catches a duplicate landing within 30 s of another run.
+MIN_RUN_GAP_MS = 30_000
 DAY_STATUS = {"success": "up", "failure": "down"}
 
 logger = logging.getLogger()
@@ -354,15 +358,22 @@ def write_check(project: dict, check_result: dict) -> None:
     )
 
 
-def count_check(project: dict, check_result: dict) -> None:
-    """Add the check to its UTC day's tally on the project row; ADD creates the counter."""
+def claim_and_count(project: dict, check_result: dict) -> None:
+    """Claim this run for the project and add the check to its UTC day's tally, in
+    one conditional update of the project row (ADD creates the counter).
+
+    Raises ConditionalCheckFailedException when another invocation checked the
+    project less than MIN_RUN_GAP_MS before this run started, or the row is gone.
+    """
     day = datetime.fromtimestamp(check_result["timestamp"] / 1000, timezone.utc)
+    run = check_result["run_started_at"]
     names = {
         "#pid": "project_id",
         "#count": f"d{day:%Y%m%d}_{DAY_STATUS.get(check_result['status'], 'inconclusive')}",
         "#since": "daily_since",
+        "#run": "last_run_at",
     }
-    expression = "ADD #count :one SET #since = if_not_exists(#since, :day)"
+    expression = "ADD #count :one SET #since = if_not_exists(#since, :day), #run = :run"
     # Prune the old days this row actually holds; deleting one fixed day would
     # leave behind any day the monitor happened to skip.
     cutoff = f"{day - timedelta(days=DAILY_KEEP_DAYS):%Y%m%d}"
@@ -373,10 +384,12 @@ def count_check(project: dict, check_result: dict) -> None:
     projects_table.update_item(
         Key={"project_id": project["project_id"]},
         UpdateExpression=expression,
-        # Never create a row for a project that no longer exists.
-        ConditionExpression="attribute_exists(#pid)",
+        # Never create a row for a project that no longer exists, and never store
+        # a second check for a run another invocation already made.
+        # `#run = :run` lets the SDK's own retry of this call through, when the first try landed.
+        ConditionExpression="attribute_exists(#pid) AND (attribute_not_exists(#run) OR #run < :floor OR #run = :run)",
         ExpressionAttributeNames=names,
-        ExpressionAttributeValues={":one": 1, ":day": f"{day:%Y-%m-%d}"},
+        ExpressionAttributeValues={":one": 1, ":day": f"{day:%Y-%m-%d}", ":run": run, ":floor": run - MIN_RUN_GAP_MS},
     )
 
 
@@ -461,8 +474,8 @@ def lambda_handler(event: dict, context) -> dict:
         return future is not None and future.done() and not future.cancelled()
 
     def time_left() -> bool:
-        # Stop before the runtime kills us mid-write: a truncated run would be
-        # retried by the async invoke and write duplicate check rows.
+        # Stop before the runtime kills us mid-write: a killed run is retried by the
+        # async invoke, which probes every site again.
         return context.get_remaining_time_in_millis() > 2_000
 
     # Evidence first: every finished check is stored before any alert is
@@ -475,18 +488,31 @@ def lambda_handler(event: dict, context) -> dict:
         try:
             result = check.result()
             result["run_started_at"] = run_started_at
-            write_check(project, result)
-            written.append((project, result))
         except Exception as e:
-            # One broken project (bad URL, throttle, malformed record) must not
-            # take down monitoring for every other tenant.
+            # One broken project (bad URL, malformed record) must not take down
+            # monitoring for every other tenant.
             logger.error(f"Check failed for project {project.get('project_id')}: {e}")
             continue
         try:
-            count_check(project, result)
+            claim_and_count(project, result)
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                # A duplicate delivery or a retry (another run stored this project's
+                # check moments ago), or the row is gone: store nothing, alert on nothing.
+                logger.info(f"Claimed by another run, or no project row — skipping {project['project_id']}")
+                continue
+            logger.warning(f"Daily rollup failed for {project['project_id']}: {e}")
         except Exception as exc:
-            # The check is already stored; a failed rollup only lets the day's count drift.
+            # Bookkeeping only: a failed claim or tally must never cost a check.
             logger.warning(f"Daily rollup failed for {project['project_id']}: {exc}")
+        try:
+            write_check(project, result)
+            written.append((project, result))
+        except Exception as e:
+            # shortcut: the claim and tally are already in, so a failed write leaves the day's
+            # tally one high and the run claimed; a TransactWriteItems would make them atomic.
+            logger.error(f"Check failed for project {project.get('project_id')}: {e}")
+            continue
         # Slow-moving cert state on its own cadence; a failure here never touches the check.
         if finished(cert) and cert.result():
             try:
