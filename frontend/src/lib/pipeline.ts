@@ -147,8 +147,9 @@ const GAP_MS = 90_000
 /**
  * What happened to each endpoint in the last hour, read off its check rows by
  * the monitor's alert rules, newest first. The down rule needs N failures in a
- * row with no check without a verdict among them; the recovery rule counts the
- * failures before a passing check, looking past checks without a verdict.
+ * row with no check without a verdict among them, and is met once per outage: a
+ * check without a verdict breaks a run but doesn't end the outage. The recovery
+ * rule is met by the first passing check after an outage that met the down rule.
  * A healthy endpoint says nothing, and a long failure folds into one line.
  * Alerts say the rule was met, because whether an email went out is recorded
  * nowhere the page can read.
@@ -175,7 +176,8 @@ export function deriveEvents(projects: Project[], now: number): PipelineEvent[] 
     let streakKnown = fresh || checks[0].status !== 'failure'
     let failsKnown = fresh || checks[0].status === 'success'
     let streak = 0 // failures in a row; a check without a verdict breaks it (the down rule)
-    let fails = 0 // failures since the last passing check, looking past checks without a verdict (the recovery rule)
+    let fails = 0 // failures since the last passing check, looking past checks without a verdict
+    let alerted = false // the down rule was met since the last passing check (the recovery rule)
     let blank: Check[] = []
     const flushBlank = () => {
       if (!blank.length) return
@@ -205,18 +207,22 @@ export function deriveEvents(projects: Project[], now: number): PipelineEvent[] 
       if (check.status === 'failure') {
         streak += 1
         fails += 1
-        if (streakKnown && streak === n) emit(check.timestamp, 'down', `Failure ${n} of ${n} in a row: the down alert rule is met.`, check)
+        if (streakKnown && streak === n && !alerted) emit(check.timestamp, 'down', `Failure ${n} of ${n} in a row: the down alert rule is met.`, check)
         // Steps toward an alert, but not again for failures that only follow a check without a verdict.
         else if (failsKnown && streak < n && fails === streak) emit(check.timestamp, 'failing', `Failure ${streak} of ${n} in a row.`, check)
+        if (streak >= n) alerted = true
         return
       }
       const failures = `${failsKnown ? '' : 'at least '}${fails} failure${fails === 1 ? '' : 's'}`
-      if (fails >= n) emit(check.timestamp, 'up', `Back up after ${failures}: the recovery alert rule is met.`, check)
+      // With the outage's start out of view, its failures are counted instead, as the monitor does.
+      if (alerted || (!failsKnown && fails >= n)) emit(check.timestamp, 'up', `Back up after ${failures}: the recovery alert rule is met.`, check)
       // Failures out of view may count too, so the threshold can't be judged.
       else if (fails > 0 && !failsKnown) emit(check.timestamp, 'recovered', `Back up after ${failures}.`, check)
+      else if (fails >= n) emit(check.timestamp, 'recovered', `Back up after ${failures}, never ${n} in a row.`, check)
       else if (fails > 0) emit(check.timestamp, 'recovered', `Back up after ${failures}, short of the alert threshold.`, check)
       streak = 0
       fails = 0
+      alerted = false
       streakKnown = true
       failsKnown = true
     })

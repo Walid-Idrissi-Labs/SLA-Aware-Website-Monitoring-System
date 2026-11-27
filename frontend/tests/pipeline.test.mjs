@@ -145,8 +145,13 @@ test('an outage meets the down rule once, folds, and meets the recovery rule', (
 })
 
 test('a check without a verdict breaks the down rule but not the recovery rule', () => {
-  // The monitor's own behaviour (board #30): the down rule is met a second time mid-outage.
-  assert.deepEqual(events('SFFFIFFF'), ['failing', 'failing', 'down', 'noevidence', 'down'])
+  // Board #30: the down rule is met once per outage; a check without a verdict doesn't re-arm it.
+  assert.deepEqual(events('SFFFIFFF'), ['failing', 'failing', 'down', 'noevidence', 'still'])
+  // The first run of three after a broken one still meets it.
+  assert.deepEqual(events('SFFIFFF'), ['failing', 'failing', 'noevidence', 'down'])
+  // Three failures, never three in a row: no down alert, so no recovery alert either.
+  assert.deepEqual(events('SFFIFS'), ['failing', 'failing', 'noevidence', 'recovered'])
+  assert.match(deriveEvents([project('a', seq('SFFIFS'))], NOW)[0].text, /never 3 in a row/)
   // Two failures, a blocked probe, a pass: still short of the threshold.
   assert.deepEqual(events('SFFIS'), ['failing', 'failing', 'noevidence', 'recovered'])
   // Three failures before the blocked probe: the recovery rule counts past it.
