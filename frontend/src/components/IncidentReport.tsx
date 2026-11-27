@@ -65,7 +65,7 @@ function Row({
   return (
     <div className="flex items-center gap-2.5 py-2 text-[13px]">
       <span className="grid h-4 w-4 flex-none place-items-center text-txt-dim">{icon}</span>
-      <span className="min-w-0 flex-1 truncate text-txt-mid">{label}</span>
+      <span className="min-w-0 flex-1 text-txt-mid">{label}</span>
       <span className="flex-none font-medium tabular-nums text-txt-hi">{value}</span>
       {delta && <span className="w-14 flex-none text-right">{delta}</span>}
     </div>

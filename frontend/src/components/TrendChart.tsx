@@ -86,10 +86,11 @@ export default function TrendChart({
 
   const xLabels = useMemo(() => {
     if (count === 0) return []
-    const slots = Math.min(6, count)
+    // Six dates fit a wide chart; on a phone neighbouring ones collide, so four.
+    const slots = Math.min(width != null && width < 480 ? 4 : 6, count)
     const step = count <= slots ? 1 : (count - 1) / (slots - 1)
     return Array.from({ length: count <= slots ? count : slots }, (_, i) => Math.round(i * step))
-  }, [count])
+  }, [count, width])
 
   const empty = !model || series.every((line) => line.values.every((value) => value === 0))
 
