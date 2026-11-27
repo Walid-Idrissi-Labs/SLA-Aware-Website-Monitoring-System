@@ -65,8 +65,9 @@ CHECK_WORKERS = 8
 # written and alerted on: a run killed mid-way is retried by the async invoke and
 # would write its checks twice. An alert alone costs an SSM and an SES call.
 WRITE_RESERVE_SECONDS = 12
-# No alert starts with less than this left, so a hung SSM or SES call still ends before
+# No alert starts with less than this left, so one hung SSM or SES call still ends before
 # the timeout: a run killed mid-alert loses the rest of that minute's alerts for good.
+# (Both hanging in one alert could still overrun; the retried run is then harmless.)
 ALERT_RESERVE_SECONDS = 8
 # Each check is also tallied per UTC day on its project row (d20261125_up, …), so
 # day verdicts never have to read a month of checks. Older days are pruned.
