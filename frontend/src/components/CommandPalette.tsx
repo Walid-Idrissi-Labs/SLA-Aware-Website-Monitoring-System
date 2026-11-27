@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Grid3x3, Info, LayoutGrid, Plus, Radar, Route, Scale, Search, Settings as SettingsIcon, Workflow } from 'lucide-react'
+import { Grid3x3, Info, LayoutGrid, Plus, Radar, Route, Scale, Search, Settings as SettingsIcon, Waypoints, Workflow } from 'lucide-react'
 import type { Project } from '../types'
 import { getProjects } from '../lib/api'
 import { bareUrl } from '../lib/format'
@@ -74,6 +74,7 @@ export default function CommandPalette({ mode, onClose }: { mode: 'palette' | 's
     }
     const all: Item[] = [
       { id: 'page:overview', group: 'Pages', label: 'Overview', icon: LayoutGrid, run: go('/dashboard') },
+      { id: 'page:pipeline', group: 'Pages', label: 'Pipeline', hint: 'the last hour of monitor runs', icon: Waypoints, run: go('/pipeline') },
       { id: 'page:settings', group: 'Pages', label: 'Settings', icon: SettingsIcon, run: go('/settings') },
       { id: 'page:about', group: 'Pages', label: 'About', icon: Info, run: go('/about') },
       ...ABOUT_VIEWS.map((v) => ({ id: `about:${v.value}`, group: 'About' as const, label: v.label, icon: VIEW_ICON[v.value], run: go(v.path) })),

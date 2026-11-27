@@ -16,6 +16,7 @@ const ConfirmSignup = lazy(() => import('./pages/ConfirmSignup'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
 const About = lazy(() => import('./pages/About'))
+const Pipeline = lazy(() => import('./pages/Pipeline'))
 
 const routeFallback = <div className="grid min-h-screen place-items-center text-txt-lo">Loading…</div>
 
@@ -68,6 +69,16 @@ export default function App() {
             <ProtectedRoute>
               <Suspense fallback={routeFallback}>
                 <ProjectDetail />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/pipeline"
+          element={
+            <ProtectedRoute>
+              <Suspense fallback={routeFallback}>
+                <Pipeline />
               </Suspense>
             </ProtectedRoute>
           }

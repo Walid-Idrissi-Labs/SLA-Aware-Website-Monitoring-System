@@ -52,6 +52,12 @@ export interface Check {
   error_type?: ErrorType | null;
   /** Snapshot of the accepted-status rule that judged this check. */
   accepted_status?: string;
+  /** Stage times, epoch ms like `timestamp` (the probe's end): when the monitor
+   *  run started, when this probe started, and just before the row was written.
+   *  Absent on rows written before the monitor stamped them. */
+  run_started_at?: number;
+  probe_started_at?: number;
+  write_started_at?: number;
 }
 
 export interface Incident {

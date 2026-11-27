@@ -191,9 +191,16 @@ const hourStartMin = (now: number) => Math.floor(now / HOUR) * 60
 const dayStartMin = (now: number) => toMinute(now) - (toMinute(now) % DAY_MIN)
 const isoDay = (minute: number) => new Date(minute * MIN).toISOString().slice(0, 10)
 
-/** Each endpoint's check lands 20-27 s after the minute, varying a little like the real monitor's. */
-const checkTime = (r: { index: number }, minute: number) =>
-  minute * MIN + 20_000 + r.index * 700 + Math.floor(unit(minute * 7 + r.index) * 3_000)
+/**
+ * A minute's monitor run, as the real one goes: EventBridge starts it at the
+ * same second every minute (15 s in here; about 49 s on the live stack), it
+ * scans the endpoints, probes them all at once, and writes nothing until the
+ * slowest probe is back.
+ */
+const runStart = (minute: number) => minute * MIN + 15_000 + Math.floor(unit(minute * 3 + 1) * 40)
+/** Every row of a run is stored by then, even one held by a 10 s timeout, so whether a
+ *  row is visible yet never depends on the other endpoints' probes. */
+const STORED_AFTER = 11_000
 
 // ─── One endpoint, resolved against now ─────────────────────────────────────
 
@@ -237,13 +244,13 @@ function resolve(s: Story, now: number, anchor: number): Resolved {
   const r = { story: s, index: allIds().indexOf(s.id), first: 0, last: 0, spans: [] as Span[] }
   const created = Date.parse(createdAt(s, anchor))
   r.first = toMinute(created)
-  if (checkTime(r, r.first) < created) r.first += 1 // the first check comes after the endpoint exists
+  if (runStart(r.first) < created) r.first += 1 // a run only probes the endpoints that existed when it started
   r.last = toMinute(now)
-  if (checkTime(r, r.last) > now) r.last -= 1 // this minute's check has not landed yet
+  if (runStart(r.last) + STORED_AFTER > now) r.last -= 1 // this minute's run has not stored its rows yet
   if (s.stoppedBeforeHour != null) r.last = Math.min(r.last, hourStartMin(anchor) - s.stoppedBeforeHour)
   if (s.pausedAtMs != null) {
     let paused = toMinute(s.pausedAtMs)
-    if (checkTime(r, paused) > s.pausedAtMs) paused -= 1
+    if (runStart(paused) > s.pausedAtMs) paused -= 1
     r.last = Math.min(r.last, paused)
   }
   r.spans = s.stretches.map((stretch) => {
@@ -256,8 +263,8 @@ function resolve(s: Story, now: number, anchor: number): Resolved {
   return r
 }
 
-/** The check at a minute, or null when none ran (before creation, after it stopped, in a gap). */
-function checkAt(r: Resolved, minute: number): Check | null {
+/** One endpoint's probe in a minute's run, or null when none ran (before creation, after it stopped, in a gap). */
+function probeAt(r: Resolved, minute: number) {
   if (minute < r.first || minute > r.last) return null
   const span = r.spans.find((x) => minute >= x.start && minute < x.end)
   if (span?.stretch.status === 'gap') return null
@@ -272,14 +279,47 @@ function checkAt(r: Resolved, minute: number): Check | null {
   const rhythm = 0.25 * spread * Math.sin(2 * Math.PI * ((minute % DAY_MIN) / DAY_MIN - 0.375))
   const drift = 0.92 + 0.16 * unit(Math.floor(minute / DAY_MIN) * 13 + index)
   const answered = !stretch || stretch.error === 'http' || stretch.error === 'blocked'
+  const latency = Math.round((base + spread * noise) * drift + rhythm + spike)
+  // The scan takes the run's first 18-30 ms; then every probe starts at once (fewer endpoints than the 8 workers).
+  const start = runStart(minute) + 18 + Math.floor(unit(minute * 13 + 7) * 12) + Math.floor(unit(minute * 5 + index) * 2)
+  // An unanswered probe stores the 10 s placeholder, but only a timeout really takes that long.
+  const took = answered ? latency : stretch?.error === 'timeout' ? 10_000 + Math.floor(unit(minute * 23 + index) * 25) : 20 + Math.floor(unit(minute * 29 + index) * 40)
+  return { stretch, answered, latency: answered ? latency : 10_000, start, end: start + took }
+}
+
+/** When a minute's check landed: its probe's end. */
+const checkTime = (r: Resolved, minute: number) => probeAt(r, minute)?.end ?? runStart(minute)
+
+/** The check at a minute, or null when none ran. Its write time needs the whole run: see `withWrite`. */
+function checkAt(r: Resolved, minute: number): Check | null {
+  const probe = probeAt(r, minute)
+  if (!probe) return null
+  const { stretch } = probe
   return {
-    timestamp: checkTime(r, minute),
+    timestamp: probe.end,
     status: stretch ? (stretch.status as Check['status']) : 'success',
-    latency_ms: answered ? Math.round((base + spread * noise) * drift + rhythm + spike) : 10_000,
+    latency_ms: probe.latency,
     http_status_code: stretch ? stretch.http ?? 0 : 200,
     error_type: stretch?.error ?? null,
     accepted_status: r.story.accepted ?? '200-399',
+    run_started_at: runStart(minute),
+    probe_started_at: probe.start,
   }
+}
+
+/**
+ * The moment a check's row went to the table. The monitor writes nothing until
+ * the run's slowest probe is back, then one row about every 40 ms (the check
+ * and its day tally), in shuffled order, so one timeout holds every row of its run.
+ */
+function writeAt(fleet: Resolved[], r: Resolved, minute: number): number {
+  const probes = fleet.flatMap((x) => {
+    const probe = probeAt(x, minute)
+    return probe ? [{ x, end: probe.end }] : []
+  })
+  const done = Math.max(...probes.map((p) => p.end))
+  const order = probes.map((p) => p.x).sort((a, b) => unit(minute * 11 + a.index) - unit(minute * 11 + b.index))
+  return done + 1 + order.indexOf(r) * 40 + Math.floor(unit(minute * 19 + r.index) * 8)
 }
 
 /** mulberry32: a deterministic number in [0, 1) from a seed. */
@@ -348,11 +388,13 @@ function downtimeIn(list: Incident[], fromSec: number, toSec: number): number {
 
 /** Checks in [fromMs, toMs], oldest first. */
 export function demoChecks(id: string, fromMs: number, toMs: number, now: number, anchor = now): Check[] {
-  const r = resolve(story(id), now, anchor)
+  // Every endpoint, because a row's write waits for the slowest probe of its run.
+  const fleet = allIds().map((x) => resolve(story(x), now, anchor))
+  const r = fleet.find((x) => x.story.id === id) as Resolved
   const out: Check[] = []
   for (let m = Math.max(toMinute(fromMs), r.first); m <= Math.min(toMinute(toMs), r.last); m++) {
     const check = checkAt(r, m)
-    if (check && check.timestamp >= fromMs && check.timestamp <= toMs) out.push(check)
+    if (check && check.timestamp >= fromMs && check.timestamp <= toMs) out.push({ ...check, write_started_at: writeAt(fleet, r, m) })
   }
   return out
 }

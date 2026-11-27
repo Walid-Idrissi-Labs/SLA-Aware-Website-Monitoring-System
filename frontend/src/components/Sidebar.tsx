@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Boxes, Settings as SettingsIcon, LogOut } from 'lucide-react'
+import { LayoutDashboard, Boxes, Settings as SettingsIcon, LogOut, Waypoints } from 'lucide-react'
 import { logout, getStoredUser } from '../lib/auth'
 import { DEMO } from '../lib/demo'
 import Logo from './Logo'
@@ -88,6 +88,9 @@ export default function Sidebar() {
           <nav className="flex flex-1 flex-col gap-0.5 px-2 pt-1">
             <Item to="/dashboard" label="Overview" active={dashActive}>
               <LayoutDashboard className="h-[18px] w-[18px]" strokeWidth={1.75} />
+            </Item>
+            <Item to="/pipeline" label="Pipeline" active={pathname === '/pipeline'}>
+              <Waypoints className="h-[18px] w-[18px]" strokeWidth={1.75} />
             </Item>
             <div className="my-2 h-px w-full bg-white/[0.07]" />
             <Item to="/about" label="About" active={pathname.startsWith('/about')}>

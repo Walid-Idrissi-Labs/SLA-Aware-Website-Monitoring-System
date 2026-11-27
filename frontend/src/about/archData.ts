@@ -633,7 +633,7 @@ export const STEPS: Step[] = [
   },
   {
     title: 'Store the evidence',
-    body: 'Each check is written with the accepted statuses of that moment, so changing them later never rewrites history. The day’s tally is updated too.',
+    body: 'Each check is written with the accepted statuses of that moment, so changing them later never rewrites history. It also records when its run and its probe started. The day’s tally is updated too.',
     edges: ['monitor-dynamo'],
     nodes: ['monitor', 'dynamo'],
   },
