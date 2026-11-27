@@ -4,10 +4,11 @@ import logging
 import os
 import re
 import socket
+import unicodedata
 import uuid
 from decimal import Decimal
 from datetime import datetime, timezone
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import boto3
 from boto3.dynamodb.conditions import Attr, Key
@@ -165,9 +166,11 @@ def url_problem(url: str) -> str | None:
         parts.port  # raises ValueError for a port that isn't a number in range
     except ValueError:
         return "url must be a valid http:// or https:// address"
-    if parts.username is not None or parts.password is not None:
+    if parts.username or parts.password:
         return "url must not contain a username or password"
-    host = (parts.hostname or "").rstrip(".")
+    # Read the host the way a browser's URL parser would: percent-decoded, with look-alike
+    # digits and dots (１２７, ①, 。) folded to ASCII, so a disguised address is still caught.
+    host = unicodedata.normalize("NFKC", unquote(parts.hostname or "")).replace("。", ".").lower().rstrip(".")
     if not host:
         return "url must be a valid http:// or https:// address"
     if ":" in host:  # an IPv6 literal: the monitor connects over IPv4 only

@@ -19,6 +19,23 @@
     ["http://[2606:4700:4700::1111]/", "url must use a hostname or an IPv4 address"],
     ["http://user:pw@example.com/", "url must not contain a username or password"],
     ["https://example.com:99999/", "url must be a valid http:// or https:// address"],
-    ["http://[::1/", "url must be a valid http:// or https:// address"]
+    ["http://[::1/", "url must be a valid http:// or https:// address"],
+    ["http://example.com:0/", null],
+    ["http://example.com:/", null],
+    ["http://example.com./", null],
+    ["http://bücher.de/", null],
+    ["http://127.0.0.1.nip.io/", null],
+    ["http://192.0.0.9/", null],
+    ["http://100.128.0.1/", null],
+    ["http://@example.com/", null],
+    ["http://0/", "url must point to a public address"],
+    ["http://017700000001/", "url must point to a public address"],
+    ["http://192.0.0.8/", "url must point to a public address"],
+    ["http://255.255.255.255/", "url must point to a public address"],
+    ["http://127.0.0.1../", "url must point to a public address"],
+    ["http://１２７.0.0.1/", "url must point to a public address"],
+    ["http://ⓛocalhost/", "url must point to a public address"],
+    ["http://%31%32%37.0.0.1/", "url must point to a public address"],
+    ["http://[::ffff:127.0.0.1]/", "url must use a hostname or an IPv4 address"]
   ]
 }

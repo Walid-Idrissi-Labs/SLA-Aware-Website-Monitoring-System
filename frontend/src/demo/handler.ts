@@ -58,7 +58,7 @@ function acceptedStatus(spec: unknown): string | null {
   return compact
 }
 
-/** IPv4 ranges Python's ipaddress counts as not global (3.12), plus multicast: the monitor's is_public. */
+/** IPv4 ranges Python's ipaddress counts as not global (3.12.4+), plus multicast: the monitor's is_public. */
 const NOT_PUBLIC: [number, number][] = [
   ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
   ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24],
@@ -85,7 +85,7 @@ function urlProblem(url: string): string | null {
     return 'url must be a valid http:// or https:// address'
   }
   if (parts.username || parts.password) return 'url must not contain a username or password'
-  const host = parts.hostname.replace(/\.$/, '')
+  const host = parts.hostname.replace(/\.+$/, '')
   if (!host) return 'url must be a valid http:// or https:// address'
   if (host.startsWith('[')) return 'url must use a hostname or an IPv4 address'
   if (host === 'localhost' || host.endsWith('.localhost')) return 'url must point to a public address'
