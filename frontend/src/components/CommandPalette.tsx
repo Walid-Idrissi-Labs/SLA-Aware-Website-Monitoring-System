@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Info, LayoutGrid, Plus, Radar, Search, Settings as SettingsIcon } from 'lucide-react'
+import { Grid3x3, Info, LayoutGrid, Plus, Radar, Route, Scale, Search, Settings as SettingsIcon, Workflow } from 'lucide-react'
 import type { Project } from '../types'
 import { getProjects } from '../lib/api'
 import { bareUrl } from '../lib/format'
+import { ABOUT_VIEWS } from '../about/views'
 
 export const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent)
 export const PALETTE_KEY = IS_MAC ? '⌘K' : 'Ctrl K'
@@ -16,7 +17,8 @@ const SHORTCUTS = [
   ['Esc', 'Close a dialog'],
 ] as const
 
-const GROUPS = ['Pages', 'Actions', 'Endpoints'] as const
+const GROUPS = ['Pages', 'About', 'Actions', 'Endpoints'] as const
+const VIEW_ICON = { architecture: Workflow, check: Route, verdicts: Scale, coverage: Grid3x3 }
 
 interface Item {
   id: string
@@ -74,6 +76,7 @@ export default function CommandPalette({ mode, onClose }: { mode: 'palette' | 's
       { id: 'page:overview', group: 'Pages', label: 'Overview', icon: LayoutGrid, run: go('/dashboard') },
       { id: 'page:settings', group: 'Pages', label: 'Settings', icon: SettingsIcon, run: go('/settings') },
       { id: 'page:about', group: 'Pages', label: 'About', icon: Info, run: go('/about') },
+      ...ABOUT_VIEWS.map((v) => ({ id: `about:${v.value}`, group: 'About' as const, label: v.label, icon: VIEW_ICON[v.value], run: go(v.path) })),
       { id: 'action:add', group: 'Actions', label: 'Add endpoint', icon: Plus, run: go('/dashboard', { addEndpoint: true }) },
       ...(endpoints ?? []).map((p) => ({
         id: `endpoint:${p.project_id}`,

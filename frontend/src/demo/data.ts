@@ -12,8 +12,9 @@
  * an open incident stays open, and a recovered one closes at the next hourly
  * pass. A reload starts the stories again from the new hour.
  *
- * Type-only imports keep this file loadable by `node --test` (type stripping).
+ * Imports stay type-only or `.ts` paths, so `node --test` can load this file (type stripping).
  */
+import { sloResult } from '../lib/format.ts'
 import type {
   Check,
   Daily,
@@ -531,13 +532,6 @@ export function demoIncidents(id: string, days: number, now: number, anchor = no
 }
 
 /** The report generator's verdict (`evaluate_sla`). */
-function evaluate(s: Story, uptime: number, avg: number, coverage: number) {
-  const sla_pass = uptime >= s.target.min_uptime_pct && avg <= s.target.max_avg_latency_ms
-  const severity = sla_pass ? 'healthy' : uptime >= 99 ? 'degraded' : uptime >= 95 ? 'major' : 'critical'
-  const slo_status = coverage < 95 ? 'unproven' : sla_pass ? 'met' : 'missed'
-  return { sla_pass, severity, slo_status } as const
-}
-
 /** A report over [fromMs, toMs), computed the way the report generator computes one. */
 export function demoReport(
   id: string,
@@ -579,7 +573,7 @@ export function demoReport(
     p95_latency_ms: rank(0.95),
     incident_count: overlapping.length,
     total_downtime_sec: downtimeIn(overlapping, fromSec, toSec),
-    ...evaluate(s, uptime, avg, coverage),
+    ...sloResult(s.target, uptime, avg, coverage),
     generated_at: new Date(generatedAt).toISOString(),
   }
 }
