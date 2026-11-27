@@ -27,6 +27,7 @@ export default function ResetPassword() {
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [unverified, setUnverified] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
   async function requestCode(again = false) {
@@ -36,13 +37,17 @@ export default function ResetPassword() {
     }
     setLoading(true)
     setError(null)
+    setUnverified(false)
     setNotice(null)
     try {
       await forgotPassword(email.trim())
     } catch (err) {
       const { code: kind, message } = friendlyAuthMessage(err)
+      // The live pool answers an unknown address with UserNotFoundException: carry on as if a code went out.
       if (kind !== 'UserNotFoundException') {
-        setError(kind === 'InvalidParameterException' || kind === 'NotAuthorizedException' ? GOOGLE_HINT : message)
+        // Cognito refuses a reset for an address it never verified; that account has to verify first.
+        if (kind === 'InvalidParameterException') setUnverified(true)
+        else setError(kind === 'NotAuthorizedException' ? GOOGLE_HINT : message)
         setLoading(false)
         return
       }
@@ -66,8 +71,10 @@ export default function ResetPassword() {
       window.setTimeout(() => navigate('/login', { state: { email: email.trim(), passwordReset: true } }), 900)
     } catch (err) {
       const { code: kind, message } = friendlyAuthMessage(err)
-      setError(message)
-      if (kind === 'CodeMismatchException' || kind === 'ExpiredCodeException') setStatus('error')
+      // An unknown address must read exactly like a wrong code, or step two would reveal it.
+      const wrongCode = kind === 'CodeMismatchException' || kind === 'UserNotFoundException'
+      setError(wrongCode ? 'That code is incorrect. Check it and try again.' : message)
+      if (wrongCode || kind === 'ExpiredCodeException') setStatus('error')
       setLoading(false)
     }
   }
@@ -82,12 +89,31 @@ export default function ResetPassword() {
           : `Enter the code we sent to ${email.trim()}, then your new password.`
       }
       footer={
-        <>
-          Remembered it?{' '}
-          <Link to="/login" state={{ email: email.trim() }} className="font-medium text-accent hover:underline">
-            Back to sign in
-          </Link>
-        </>
+        step === 'confirm' ? (
+          <>
+            Wrong address?{' '}
+            <button
+              type="button"
+              onClick={() => {
+                setStep('request')
+                setCode('')
+                setStatus('idle')
+                setError(null)
+                setNotice(null)
+              }}
+              className="font-medium text-accent hover:underline"
+            >
+              Change it
+            </button>
+          </>
+        ) : (
+          <>
+            Remembered it?{' '}
+            <Link to="/login" state={{ email: email.trim() }} className="font-medium text-accent hover:underline">
+              Back to sign in
+            </Link>
+          </>
+        )
       }
     >
       {notice && (
@@ -98,6 +124,15 @@ export default function ResetPassword() {
       {error && (
         <Alert tone="error" className="mb-4 animate-fade-in">
           {error}
+        </Alert>
+      )}
+      {unverified && (
+        <Alert tone="error" className="mb-4 animate-fade-in">
+          This account’s email isn’t verified yet.{' '}
+          <Link to="/confirm" state={{ email: email.trim() }} className="font-medium underline">
+            Verify it first
+          </Link>
+          .
         </Alert>
       )}
 
@@ -144,6 +179,8 @@ export default function ResetPassword() {
         </form>
       ) : (
         <form onSubmit={setNewPassword} className="space-y-4">
+          {/* For password managers: saves the new password against this address. */}
+          <input type="text" name="username" autoComplete="username" value={email.trim()} readOnly tabIndex={-1} aria-hidden className="sr-only" />
           <div>
             <span className="field-label">Code</span>
             <div className="flex justify-center pt-1">
@@ -229,7 +266,7 @@ export default function ResetPassword() {
           </ActionButton>
 
           <p className="text-center text-[12px] leading-relaxed text-txt-lo">
-            No email after a minute? Check spam or junk (it comes from <span className="text-txt-mid">{CODE_SENDER}</span>), or{' '}
+            No email? Check spam or junk (from <span className="text-txt-mid">{CODE_SENDER}</span>), or{' '}
             <button type="button" onClick={() => requestCode(true)} disabled={loading} className="font-medium text-accent hover:underline disabled:opacity-60">
               resend the code
             </button>

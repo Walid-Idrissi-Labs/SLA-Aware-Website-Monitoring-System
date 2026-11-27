@@ -159,7 +159,7 @@ export default function ConfirmSignup() {
       </form>
 
       <p className="mt-4 text-center text-[12px] leading-relaxed text-txt-lo">
-        No email after a minute? Check spam or junk (it comes from <span className="text-txt-mid">{CODE_SENDER}</span>), or{' '}
+        No email? Check spam or junk (from <span className="text-txt-mid">{CODE_SENDER}</span>), or{' '}
         <button
           type="button"
           onClick={handleResend}
