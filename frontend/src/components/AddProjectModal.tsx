@@ -43,7 +43,7 @@ export default function AddProjectModal({ onClose, onSuccess, atLimit = false }:
       return
     }
     let normalizedUrl = url.trim()
-    if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+    if (!/^https?:\/\//i.test(normalizedUrl)) {
       normalizedUrl = 'https://' + normalizedUrl
     }
     setSaving(true)
