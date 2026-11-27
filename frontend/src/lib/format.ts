@@ -21,6 +21,9 @@ const CHECK_TIMEOUT_MS = 10_000
  *  missed cycle is tolerated, two are not. */
 export const STALE_AFTER_MS = Math.max(2 * CHECK_INTERVAL_MS, CHECK_INTERVAL_MS + CHECK_TIMEOUT_MS + 60_000)
 
+/** Endpoints one account can monitor at once (project_manager MAX_ACTIVE_PROJECTS); deleted ones don't count. */
+export const MAX_ACTIVE_PROJECTS = 10
+
 /** Defaults applied by the backend when a project omits them. */
 export const PROJECT_DEFAULTS = {
   failure_threshold: 3,
