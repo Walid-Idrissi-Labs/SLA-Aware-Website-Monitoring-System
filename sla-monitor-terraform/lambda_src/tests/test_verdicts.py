@@ -411,7 +411,7 @@ class ProjectListStatusTest(unittest.TestCase):
 class MonitorScanTest(unittest.TestCase):
     """Slow targets cannot starve the projects scanned after them (board #27)."""
 
-    PATCHED = ("load_active_projects", "run_check", "write_check", "claim_and_count", "alert_on_transition", "certificate_due", "WRITE_RESERVE_SECONDS")
+    PATCHED = ("load_active_projects", "run_check", "write_check", "claim_and_count", "alert_on_transition", "certificate_due", "WRITE_RESERVE_SECONDS", "ALERT_RESERVE_SECONDS")
 
     def setUp(self):
         self.saved = {name: getattr(monitor, name) for name in self.PATCHED}
@@ -421,6 +421,7 @@ class MonitorScanTest(unittest.TestCase):
         monitor.alert_on_transition = lambda project, result: self.calls.append(("alert", project["project_id"]))
         monitor.certificate_due = lambda project: False
         monitor.WRITE_RESERVE_SECONDS = 5
+        monitor.ALERT_RESERVE_SECONDS = 2  # inside the 5 s reserve these scans run with
 
     def tearDown(self):
         for name, value in self.saved.items():
@@ -484,6 +485,35 @@ class MonitorScanTest(unittest.TestCase):
         self.scan({"a": 0.01, "b": 0.01})
         self.assertEqual(self.written(), ["b"])
         self.assertEqual([pid for kind, pid in self.calls if kind == "alert"], ["b"])
+
+    def test_no_alert_starts_inside_the_alert_reserve(self):
+        # Board #29: after a hung alert call ends with 2.5 s left, no second alert starts.
+        monitor.ALERT_RESERVE_SECONDS = 8
+        remaining = [9_000]  # ms, on a fake clock
+        context = type("Context", (), {"get_remaining_time_in_millis": lambda self: remaining[0]})()
+        monitor.load_active_projects = lambda: [{"project_id": pid} for pid in "abc"]
+        monitor.run_check = lambda project: {}
+
+        def hung_alert(project, result):
+            self.calls.append(("alert", project["project_id"]))
+            remaining[0] -= 6_500
+
+        monitor.alert_on_transition = hung_alert
+        monitor.lambda_handler({}, context)
+        self.assertEqual(len(self.written()), 3)
+        self.assertEqual(len([kind for kind, _ in self.calls if kind == "alert"]), 1)
+
+
+class AlertBudgetTest(unittest.TestCase):
+    """An alert's AWS calls end inside the alert reserve (board #29)."""
+
+    def test_alert_clients_are_bounded_under_the_reserve(self):
+        for client in (monitor.ssm, monitor.ses):
+            config = client.meta.config
+            attempts = config.retries["total_max_attempts"]
+            worst = attempts * (config.connect_timeout + config.read_timeout) + 1  # + retry backoff
+            self.assertLess(worst, monitor.ALERT_RESERVE_SECONDS)
+        self.assertLess(monitor.ALERT_RESERVE_SECONDS, monitor.WRITE_RESERVE_SECONDS)
 
 
 def fake_session(outcome, entered=None):

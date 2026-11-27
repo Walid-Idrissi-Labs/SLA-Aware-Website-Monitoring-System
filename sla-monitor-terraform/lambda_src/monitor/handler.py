@@ -16,6 +16,7 @@ import boto3
 import requests
 import urllib3
 from boto3.dynamodb.conditions import Key, Attr
+from botocore.config import Config
 from botocore.exceptions import ClientError
 from requests.adapters import HTTPAdapter
 from urllib3.connection import HTTPConnection, HTTPSConnection
@@ -28,8 +29,11 @@ from templates import build_down_email, build_up_email
 
 
 dynamodb = boto3.resource("dynamodb")
-ssm = boto3.client("ssm")
-ses = boto3.client("ses")
+# An alert's SSM and SES calls get one retry and short timeouts, so a hung one ends in
+# 2 × (1 + 2) s plus at most 1 s of backoff: 7 s, inside ALERT_RESERVE_SECONDS.
+ALERT_CONFIG = Config(connect_timeout=1, read_timeout=2, retries={"total_max_attempts": 2})
+ssm = boto3.client("ssm", config=ALERT_CONFIG)
+ses = boto3.client("ses", config=ALERT_CONFIG)
 
 projects_table = dynamodb.Table(os.environ["PROJECTS_TABLE_NAME"])
 checks_table = dynamodb.Table(os.environ["CHECKS_TABLE_NAME"])
@@ -61,6 +65,9 @@ CHECK_WORKERS = 8
 # written and alerted on: a run killed mid-way is retried by the async invoke and
 # would write its checks twice. An alert alone costs an SSM and an SES call.
 WRITE_RESERVE_SECONDS = 12
+# No alert starts with less than this left, so a hung SSM or SES call still ends before
+# the timeout: a run killed mid-alert loses the rest of that minute's alerts for good.
+ALERT_RESERVE_SECONDS = 8
 # Each check is also tallied per UTC day on its project row (d20261125_up, …), so
 # day verdicts never have to read a month of checks. Older days are pruned.
 DAILY_KEEP_DAYS = 45
@@ -677,7 +684,7 @@ def lambda_handler(event: dict, context) -> dict:
         logger.warning(f"Out of time — skipped {len(skipped)} project(s) this cycle: {skipped}")
 
     for project, result in written:
-        if not time_left():
+        if context.get_remaining_time_in_millis() < ALERT_RESERVE_SECONDS * 1000:
             logger.warning(f"Out of time — transitions not evaluated for project {project['project_id']} onwards")
             break
         try:
