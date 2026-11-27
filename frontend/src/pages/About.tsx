@@ -198,8 +198,8 @@ export default function About() {
             <p className="mb-1.5 text-[12px] font-medium text-accent">Architecture</p>
             <h1 className="font-display text-[24px] font-semibold tracking-[-0.02em] text-txt-hi">About this project</h1>
             <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-txt-lo">
-              A serverless uptime and SLA monitor, built on AWS end to end. Here is what it does and how the pieces fit
-              together.
+              A serverless uptime and SLA monitor: AWS behind the API, a static React app in front. Here is what it does
+              and how the pieces fit together.
             </p>
           </div>
           <a href={REPO} target="_blank" rel="noreferrer" className="btn-ghost h-8 shrink-0 px-3 text-[12.5px]">
@@ -240,6 +240,7 @@ export default function About() {
           />
         </div>
 
+        <div className="max-w-5xl">
         {/* What it does */}
         <div className="panel mt-5 animate-fade-up p-5" style={{ animationDelay: '100ms' }}>
           <PanelTitle>What it does</PanelTitle>
@@ -330,6 +331,7 @@ export default function About() {
               </div>
             ))}
           </div>
+        </div>
         </div>
       </div>
     </Shell>

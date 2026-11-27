@@ -70,6 +70,9 @@ function labelPoint(e: ArchEdge): [number, number] {
 
 const touches = (e: ArchEdge, id: string) => e.from === id || e.to === id
 
+/** Reading order, top row first, so Tab walks the canvas the way the eye does. */
+const READING = [...NODES].sort((a, b) => a.y - b.y || a.x - b.x)
+
 function useSmallScreen() {
   const query = '(max-width: 639px)'
   const [small, setSmall] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches)
@@ -93,7 +96,7 @@ export default function ArchDiagram(props: Props) {
     <div className="panel-flush">
       <div className="panel-head">
         {list && mode === 'architecture' ? (
-          <p className="min-w-0 truncate text-[12.5px] text-txt-mid">Every box, by where it runs</p>
+          <p className="min-w-0 truncate text-[12.5px] text-txt-mid">By where it runs</p>
         ) : mode === 'architecture' ? (
           <div role="radiogroup" aria-label="Layer" className="-mx-1 flex min-w-0 gap-1 overflow-x-auto px-1">
             {LAYERS.map((l) => {
@@ -146,10 +149,8 @@ export default function ArchDiagram(props: Props) {
         )}
       </div>
 
-      {list ? <ArchList {...props} /> : <Canvas {...props} small={small} />}
-
       {mode === 'check' && (
-        <div className="border-t border-white/[0.06] px-4 py-3">
+        <div className="border-b border-white/[0.06] px-4 py-3">
           <div className="flex items-center gap-3">
             <button type="button" className="btn-ghost h-8 px-2.5" onClick={() => onStep(Math.max(0, step - 1))} disabled={step === 0} aria-label="Previous step">
               <ChevronLeft className="h-4 w-4" />
@@ -186,11 +187,13 @@ export default function ArchDiagram(props: Props) {
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
-          <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-txt-mid" aria-live="polite">
+          <p className="mt-2.5 max-w-3xl text-[13px] leading-relaxed text-txt-mid" aria-live="polite">
             {current.body}
           </p>
         </div>
       )}
+
+      {list ? <ArchList {...props} /> : <Canvas {...props} small={small} />}
 
       {!list && (
         <div className="flex min-h-9 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-white/[0.06] px-4 py-2 font-mono text-[10.5px] text-txt-lo">
@@ -286,7 +289,8 @@ function Canvas(props: Props & { small: boolean }) {
       e.preventDefault()
       const r = el.getBoundingClientRect()
       setSmooth(false)
-      zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top)
+      // Firefox reports lines, not pixels.
+      zoomAt(Math.exp(-e.deltaY * (e.deltaMode === 1 ? 16 : 1) * 0.01), e.clientX - r.left, e.clientY - r.top)
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
@@ -294,24 +298,34 @@ function Canvas(props: Props & { small: boolean }) {
 
   // A box chosen under the open detail panel slides into the visible part, once
   // per selection; closing the panel fits the view back if that slide moved it.
-  const slid = useRef<{ id: string; moved: boolean } | null>(null)
+  const slid = useRef<{ id: string; dx: number } | null>(null)
+  const panel = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const el = ref.current
     if (!detail) {
-      if (slid.current?.moved) glide(fit)
+      const back = slid.current?.dx ?? 0
+      if (back) glide(() => panBy(-back, 0))
       slid.current = null
       return
     }
-    if (!view || !el || window.innerWidth < 1024 || slid.current?.id === detail.id) return
+    if (!view || !el || slid.current?.id === detail.id) return
+    if (window.innerWidth < 1024) {
+      // Below lg the panel opens under the canvas: bring it into sight.
+      slid.current = { id: detail.id, dx: 0 }
+      panel.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      return
+    }
     const visible = el.clientWidth - 344
     const cx = view.x + (detail.x + detail.w / 2) * view.s
-    const moved = cx > visible - 24
-    slid.current = { id: detail.id, moved: moved || !!slid.current?.moved }
-    if (moved) glide(() => panBy(visible / 2 - cx, 0))
+    const dx = cx > visible - 24 ? visible / 2 - cx : 0
+    slid.current = { id: detail.id, dx: dx + (slid.current?.dx ?? 0) }
+    if (dx) glide(() => panBy(dx, 0))
     // Reacts to the selection and to the first measure only, not to every pan.
   }, [detail, view != null])
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    // A press released outside before it became a drag leaves its entry behind.
+    if (e.isPrimary) pointers.current.clear()
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     drag.current = { moved: false, dist: 0 }
     setSmooth(false)
@@ -356,7 +370,6 @@ function Canvas(props: Props & { small: boolean }) {
       '=': () => zoomAt(1.2),
       '-': () => zoomAt(1 / 1.2),
       '0': fit,
-      Escape: () => onSelect(null),
     }
     const run = keys[e.key]
     if (!run) return
@@ -365,7 +378,7 @@ function Canvas(props: Props & { small: boolean }) {
   }
 
   return (
-    <div className="relative">
+    <div className="relative" onKeyDown={(e) => e.key === 'Escape' && onSelect(null)}>
       <div
         ref={ref}
         tabIndex={0}
@@ -376,7 +389,28 @@ function Canvas(props: Props & { small: boolean }) {
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onKeyDown={onKeyDown}
-        className="relative w-full cursor-grab touch-none overflow-hidden bg-ink-850 outline-none active:cursor-grabbing focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent/50"
+        // A box reached by keyboard pans into view. The browser can only scroll
+        // right or down to reveal it, so do it here, in either direction.
+        onFocus={(e) => {
+          const n = nodeById.get((e.target as HTMLElement).dataset.node ?? '')
+          const el = ref.current
+          if (!n || !view || !el || !(e.target as HTMLElement).matches(':focus-visible')) return
+          const m = 24
+          const [x0, y0] = [view.x + n.x * view.s, view.y + n.y * view.s]
+          const [x1, y1] = [x0 + n.w * view.s, y0 + n.h * view.s]
+          const dx = x0 < m ? m - x0 : x1 > el.clientWidth - m ? el.clientWidth - m - x1 : 0
+          const dy = y0 < m ? m - y0 : y1 > el.clientHeight - m ? el.clientHeight - m - y1 : 0
+          if (dx || dy) glide(() => panBy(dx, dy))
+        }}
+        // Whatever scrolling the browser still does to this box becomes a pan.
+        onScroll={(e) => {
+          const el = e.currentTarget
+          if (!el.scrollLeft && !el.scrollTop) return
+          panBy(-el.scrollLeft, -el.scrollTop)
+          el.scrollLeft = 0
+          el.scrollTop = 0
+        }}
+        className="relative w-full cursor-grab touch-none select-none overflow-hidden bg-ink-850 outline-none active:cursor-grabbing focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent/50"
         style={{
           aspectRatio: small ? undefined : `${W} / ${H}`,
           height: small ? '70vh' : undefined,
@@ -385,6 +419,7 @@ function Canvas(props: Props & { small: boolean }) {
           backgroundImage: 'radial-gradient(rgba(255,255,255,0.045) 1px, transparent 1px)',
           backgroundSize: view ? `${20 * view.s}px ${20 * view.s}px` : '20px 20px',
           backgroundPosition: view ? `${view.x}px ${view.y}px` : undefined,
+          transition: smooth ? 'background-position 200ms cubic-bezier(0.23, 1, 0.32, 1), background-size 200ms cubic-bezier(0.23, 1, 0.32, 1)' : undefined,
         }}
       >
         {view && (
@@ -399,12 +434,14 @@ function Canvas(props: Props & { small: boolean }) {
           >
             <svg width={W} height={H} className="absolute inset-0 overflow-visible" aria-hidden>
               <rect x={FRAME.x} y={FRAME.y} width={FRAME.w} height={FRAME.h} rx={14} fill="rgba(255,255,255,0.012)" stroke="rgba(255,255,255,0.09)" />
-              {EDGES.map((e) => {
+              {/* Solid lines first; a dashed line then crosses over them on a halo of canvas colour. */}
+              {[...EDGES.filter((e) => !e.dashed), ...EDGES.filter((e) => e.dashed)].map((e) => {
                 const state = edge.get(e.id)!
                 const d = roundPath(e.points)
                 const color = state === 'lit' ? STROKE.idle : STROKE[state]
                 return (
                   <g key={e.id}>
+                    {e.dashed && <path d={d} fill="none" stroke="#0b0d10" strokeWidth={5} />}
                     <path d={d} fill="none" stroke={color} strokeWidth={1.25} strokeDasharray={e.dashed ? '5 5' : undefined} />
                     <path d="M-7,-4 L0,0 L-7,4" transform={arrowHead(e.points)} fill="none" stroke={color} strokeWidth={1.25} strokeLinecap="round" strokeLinejoin="round" />
                   </g>
@@ -441,6 +478,7 @@ function Canvas(props: Props & { small: boolean }) {
             </svg>
 
             <span
+              aria-hidden
               className="absolute flex items-baseline gap-1.5 bg-ink-850 px-2 leading-none"
               style={{ left: FRAME.x + 18, top: FRAME.y - 7 }}
             >
@@ -455,6 +493,7 @@ function Canvas(props: Props & { small: boolean }) {
               return (
                 <span
                   key={e.id}
+                  aria-hidden
                   className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded border bg-ink-850 px-1.5 py-[3px] font-mono text-[10px] leading-none transition-colors ${
                     state === 'lit' ? 'border-accent/40 text-txt-hi' : state === 'earlier' ? 'border-accent/20 text-txt-mid' : 'border-white/[0.08] text-txt-mid'
                   }`}
@@ -465,7 +504,7 @@ function Canvas(props: Props & { small: boolean }) {
               )
             })}
 
-            {NODES.map((n) => (
+            {READING.map((n) => (
               <NodeBox
                 key={n.id}
                 n={n}
@@ -480,7 +519,7 @@ function Canvas(props: Props & { small: boolean }) {
         )}
       </div>
 
-      <div className="absolute right-3 top-3 flex items-center rounded-md border border-white/[0.08] bg-ink-800/95">
+      <div className={`absolute right-3 flex items-center rounded-md border border-white/[0.08] bg-ink-800/95 ${small ? 'bottom-3' : 'top-3'}`}>
         <button type="button" aria-label="Zoom out" onClick={() => glide(() => zoomAt(1 / 1.2))} className="grid h-7 w-7 place-items-center text-txt-mid hover:text-txt-hi">
           <Minus className="h-3.5 w-3.5" />
         </button>
@@ -498,7 +537,7 @@ function Canvas(props: Props & { small: boolean }) {
       </div>
 
       {detail && (
-        <div className="panel border-t border-white/[0.06] lg:absolute lg:bottom-3 lg:right-3 lg:top-14 lg:w-[320px] lg:animate-scale-in lg:shadow-panel-hover">
+        <div ref={panel} className="panel border-t border-white/[0.06] lg:absolute lg:bottom-3 lg:right-3 lg:top-14 lg:w-[320px] lg:animate-scale-in lg:shadow-panel-hover">
           <NodeDetail node={detail} onClose={() => onSelect(null)} onSelect={onSelect} />
         </div>
       )}
@@ -544,6 +583,7 @@ function NodeBox({
             'aria-label': `${n.title}, ${n.sub}.${out.length ? ` Sends to: ${out.join(', ')}.` : ''}`,
           }
         : {})}
+      data-node={n.id}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
       className={`absolute flex rounded-lg border text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-[border-color,background-color,opacity,box-shadow] duration-150 ${tone} ${

@@ -130,7 +130,6 @@ export const NODES: ArchNode[] = [
     group: 'outside',
     external: true,
     what: 'The dashboard you are using: a React single-page app. It signs you in, then sends your ID token with every API call.',
-    trigger: 'You',
   }),
   node({
     id: 'google',
@@ -150,7 +149,7 @@ export const NODES: ArchNode[] = [
     ...box(476, Y0, W1),
     group: 'outside',
     external: true,
-    what: 'Serves the built app, its HTML, JavaScript and CSS, from its edge network. It holds no data and runs none of our code.',
+    what: 'Serves the built app, its HTML, JavaScript and CSS, from its edge network. It holds no data and runs no server code of ours.',
   }),
   node({
     id: 'sites',
@@ -171,7 +170,7 @@ export const NODES: ArchNode[] = [
     icon: KeyRound,
     ...box(60, Y1, W1),
     group: 'edge',
-    what: 'Owns accounts and issues the signed ID tokens. Password sign-in uses SRP, so the password never crosses the wire; Google sign-in uses the code flow with PKCE.',
+    what: 'Owns accounts and issues the signed ID tokens. Password sign-in uses SRP, so signing in never sends the password itself; Google sign-in uses the code flow with PKCE.',
     trigger: 'Sign-in and sign-up from the app',
   }),
   node({
@@ -182,7 +181,7 @@ export const NODES: ArchNode[] = [
     ...box(268, Y1, W1),
     group: 'edge',
     layers: ['logs'],
-    what: 'The front door. A JWT authorizer checks every token against Cognito before any function runs; only GET /health is public. It also writes an access log.',
+    what: 'The front door. A JWT authorizer checks every token against Cognito’s public keys before any function runs; only GET /health is public. It also writes an access log.',
     trigger: 'Every API call from the app',
   }),
   node({
@@ -231,7 +230,7 @@ export const NODES: ArchNode[] = [
     ...box(60, Y2, W2),
     group: 'functions',
     layers: LAMBDA_LOGS,
-    what: 'Handles every write: creating, editing and pausing endpoints, your profile, and on-demand reports. It checks each field against the same rules the forms show.',
+    what: 'Handles every write: creating, editing and pausing endpoints, your profile, and on-demand reports. It validates every field before anything is written.',
     trigger: '6 write routes, through API Gateway',
     grants: [
       'Users: GetItem, PutItem, UpdateItem',
@@ -375,7 +374,7 @@ export const EDGES: ArchEdge[] = [
     from: 'apigw',
     to: 'cognito',
     label: 'JWT',
-    detail: 'The authorizer checks each token’s signature, issuer, audience and expiry against Cognito before any function runs.',
+    detail: 'The authorizer checks each token’s signature against Cognito’s public keys, and its issuer, audience and expiry, before any function runs.',
     layers: ['signin', 'api'],
     points: [[268, 200], [224, 200]],
   },
@@ -540,7 +539,7 @@ export const EDGES: ArchEdge[] = [
     from: 'eventbridge',
     to: 'monitor',
     label: 'every minute',
-    detail: 'rate(1 minute)',
+    detail: 'rate(1 minute): every minute, around the clock.',
     layers: ['pipeline'],
     points: [[766, 160], [766, 134], [1290, 134], [1290, 320], [1264, 320]],
     labelAt: [1030, 134],
@@ -640,7 +639,7 @@ export const STEPS: Step[] = [
   },
   {
     title: 'Alert on a change',
-    body: 'The Monitor reads the recent streak. N failures in a row send a DOWN email; the first passing check after sends UP. A no-evidence check breaks the run.',
+    body: 'The Monitor reads the recent streak. Three failures in a row (the default threshold) send a DOWN email; the first passing check after sends UP. A no-evidence check breaks the run.',
     edges: ['monitor-dynamo', 'monitor-ssm', 'monitor-ses'],
     nodes: ['monitor', 'ssm', 'ses'],
   },
@@ -652,7 +651,7 @@ export const STEPS: Step[] = [
   },
   {
     title: 'Show it',
-    body: 'The dashboard reads it all through API Gateway, which checks your token first. That is what you are looking at now.',
+    body: 'The dashboard reads it all through API Gateway, which checks your token first.',
     edges: ['browser-apigw', 'apigw-cognito', 'apigw-api', 'api-dynamo'],
     nodes: ['browser', 'apigw', 'api', 'dynamo'],
   },
