@@ -200,7 +200,6 @@ export default function Login() {
       <a href="/demo" className="btn-outline">
         <Compass className="h-4 w-4" strokeWidth={2} /> Explore the demo
       </a>
-      <p className="mt-2 text-center text-[11.5px] leading-relaxed text-txt-lo">Sample data only.</p>
     </AuthLayout>
   )
 }
