@@ -36,6 +36,8 @@
     ["http://１２７.0.0.1/", "url must point to a public address"],
     ["http://ⓛocalhost/", "url must point to a public address"],
     ["http://%31%32%37.0.0.1/", "url must point to a public address"],
-    ["http://[::ffff:127.0.0.1]/", "url must use a hostname or an IPv4 address"]
+    ["http://[::ffff:127.0.0.1]/", "url must use a hostname or an IPv4 address"],
+    ["https://ex%00ample.com/", "url must be a valid http:// or https:// address"],
+    ["https://ex%0aample.com/", "url must be a valid http:// or https:// address"]
   ]
 }
