@@ -493,6 +493,9 @@ def fake_session(outcome, entered=None):
     class Session:
         max_redirects = None
 
+        def __init__(self):
+            self.headers = {}
+
         def mount(self, prefix, adapter):
             pass
 
@@ -528,7 +531,7 @@ class LocalServerCase(unittest.TestCase):
         import threading
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-        cls.seen, cls.connections, cls.sent = [], [], {}
+        cls.seen, cls.connections, cls.sent, cls.agents = [], [], {}, []
         bomb = gzip.compress(bytes(cls.BIG))  # 64 MiB of zeros in about 64 KiB
 
         class Handler(BaseHTTPRequestHandler):
@@ -551,6 +554,7 @@ class LocalServerCase(unittest.TestCase):
 
             def do_GET(self):
                 cls.seen.append(self.path)
+                cls.agents.append(self.headers.get("User-Agent"))
                 redirect = {"/redir": f"http://127.0.0.1:{cls.port}/", "/bigredir": "/", "/loop": "/loop", "/emptyloc": ""}.get(self.path)
                 self.send_response(302 if redirect is not None else 200)
                 if redirect is not None:
@@ -594,6 +598,7 @@ class LocalServerCase(unittest.TestCase):
         self.seen.clear()
         self.connections.clear()
         self.sent.clear()
+        self.agents.clear()
         self.lookups = []
         real_lookup, real_connect = socket.getaddrinfo, socket.create_connection
         answers = {"public.test": [self.PUBLIC], "mixed.test": [self.PUBLIC, "127.0.0.1"]}
@@ -673,6 +678,20 @@ class PublicAddressTest(LocalServerCase):
             self.assertFalse(monitor.is_public(address), address)
         for address in ("93.184.216.34", "8.8.8.8", "1.1.1.1"):
             self.assertTrue(monitor.is_public(address), address)
+
+
+class UserAgentTest(LocalServerCase):
+    """Every hop says SLA-Monitor/1.0: requests' default UA draws a 403 from some sites (board #93)."""
+
+    def test_a_direct_hit_sends_it(self):
+        monitor.perform_http_check(f"http://public.test:{self.port}/")
+        self.assertEqual(self.agents, ["SLA-Monitor/1.0"])
+
+    def test_the_hop_after_a_redirect_sends_it_too(self):
+        with mock.patch.object(monitor, "is_public", return_value=True):  # let /redir's loopback hop through
+            self.assertEqual(monitor.perform_http_check(f"http://public.test:{self.port}/redir")["status"], "success")
+        self.assertEqual(self.seen, ["/redir", "/"])
+        self.assertEqual(self.agents, ["SLA-Monitor/1.0"] * 2)
 
 
 class BoundedBodyTest(LocalServerCase):

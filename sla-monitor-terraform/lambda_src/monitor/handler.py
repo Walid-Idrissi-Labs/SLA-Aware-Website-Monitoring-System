@@ -37,6 +37,8 @@ checks_table = dynamodb.Table(os.environ["CHECKS_TABLE_NAME"])
 FAILURE_THRESHOLD_DEFAULT = int(os.environ.get("FAILURE_THRESHOLD_DEFAULT", "3"))
 HTTP_TIMEOUT_SECONDS = int(os.environ.get("HTTP_TIMEOUT_SECONDS", "10"))
 MAX_REDIRECTS = 3
+# requests' default UA draws a 403 from some sites (Wikipedia); kept plain, as every site sees it.
+USER_AGENT = "SLA-Monitor/1.0"
 # A check reads at most this much of a body, on the wire: enough to time a normal
 # page, never enough to exhaust a 256 MB Lambda.
 MAX_BODY_BYTES = 1 << 20  # 1 MiB
@@ -334,6 +336,7 @@ def perform_http_check(url: str, accepted_statuses: str | None = None) -> dict:
     session = CheckSession()
     # No proxy or .netrc from the environment: the address check must see the target itself.
     session.trust_env = False
+    session.headers["User-Agent"] = USER_AGENT
     adapter = PublicOnlyAdapter()
     session.mount("http://", adapter)
     session.mount("https://", adapter)
