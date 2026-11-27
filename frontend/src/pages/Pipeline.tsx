@@ -257,7 +257,7 @@ function EventRow({ event }: { event: PipelineEvent }) {
   const cause = check?.error_type ? ERROR_TYPE[check.error_type] : null
   return (
     <li className="grid animate-fade-in grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 px-4 py-2.5 sm:grid-cols-[64px_84px_minmax(120px,0.6fr)_minmax(0,2fr)] sm:items-baseline">
-      <span className="font-mono text-[11px] tabular-nums text-txt-lo">{hms(event.at)}</span>
+      <span className="font-mono text-[11px] tabular-nums text-txt-lo">{event.undated ? '—' : hms(event.at)}</span>
       <span className="font-mono text-[10.5px] font-semibold uppercase tracking-wide" style={{ color: tone.color }}>
         {tone.label}
       </span>
@@ -305,13 +305,13 @@ export default function Pipeline() {
       const data = await getProjects(1)
       if (seq !== requestSeq.current) return
       setProjects(data)
+      // The clock only moves with the data: a failed poll must not read as a monitor gone quiet.
+      setNow(Date.now())
       setError(null)
       setLoaded(true)
     } catch (e) {
       if (seq !== requestSeq.current) return
       setError(e instanceof Error ? e.message : 'Failed to load the pipeline')
-    } finally {
-      if (seq === requestSeq.current) setNow(Date.now())
     }
   }, [])
 

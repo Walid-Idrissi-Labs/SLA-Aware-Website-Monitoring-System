@@ -176,6 +176,8 @@ test('missing minutes and runs of no verdict fold into one line each', () => {
   )
   assert.equal(list[0].text, 'No check for 3 minutes.')
   assert.equal(list[1].text, 'No verdict for 3 checks in a row.')
+  // The window cut that run of no verdicts, so it may be longer.
+  assert.equal(deriveEvents([project('a', seq('IIIS'))], NOW)[0].text, 'No verdict for at least 3 checks in a row.')
 })
 
 test('events come newest first', () => {
@@ -187,7 +189,8 @@ test('events come newest first', () => {
 test('an endpoint that went quiet says so', () => {
   const quiet = seq('SSS', { end: NOW - 10 * MIN })
   assert.deepEqual(deriveEvents([project('a', quiet)], NOW).map((e) => e.text), ['No check since 13:15 UTC.'])
-  assert.deepEqual(deriveEvents([project('a', [])], NOW).map((e) => e.text), ['No check in the last hour.'])
+  const [silent] = deriveEvents([project('a', [])], NOW)
+  assert.deepEqual([silent.text, silent.undated], ['No check in the last hour.', true]) // its time is only the window's edge
   // Not one created a moment ago, whose first check is still due.
   assert.deepEqual(deriveEvents([project('a', [], { created_at: new Date(NOW - 30_000).toISOString() })], NOW), [])
 })

@@ -137,6 +137,8 @@ export interface PipelineEvent {
   /** One plain sentence. */
   text: string
   check?: Check
+  /** `at` only places it in the list: the event has no moment of its own. */
+  undated?: boolean
 }
 
 /** No row for longer than this between two checks means at least one run left none. */
@@ -159,7 +161,7 @@ export function deriveEvents(projects: Project[], now: number): PipelineEvent[] 
     const emit = (at: number, kind: EventKind, text: string, check?: Check) => events.push({ at, kind, project, text, check })
     if (!checks.length) {
       // Past its first minutes, an endpoint with no row all hour is one the monitor is not reaching.
-      if (Date.parse(project.created_at) < now - 2 * MIN) emit(now - HOUR, 'gap', 'No check in the last hour.')
+      if (Date.parse(project.created_at) < now - 2 * MIN) events.push({ at: now - HOUR, kind: 'gap', project, text: 'No check in the last hour.', undated: true })
       continue
     }
     // The endpoint's first ever check: nothing came before it.
@@ -178,7 +180,10 @@ export function deriveEvents(projects: Project[], now: number): PipelineEvent[] 
     const flushBlank = () => {
       if (!blank.length) return
       const cause = blank[0].error_type === 'blocked' ? ': the probe was blocked' : ''
-      emit(blank[0].timestamp, 'noevidence', blank.length === 1 ? `No verdict${cause}.` : `No verdict for ${blank.length} checks in a row${cause}.`, blank[0])
+      // A run of them the window cut may have begun earlier.
+      const cut = blank[0] === checks[0] && !fresh
+      const n = blank.length
+      emit(blank[0].timestamp, 'noevidence', n === 1 && !cut ? `No verdict${cause}.` : `No verdict for ${cut ? 'at least ' : ''}${n} check${n === 1 ? '' : 's'} in a row${cause}.`, blank[0])
       blank = []
     }
 
