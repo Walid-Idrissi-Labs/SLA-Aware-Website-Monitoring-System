@@ -66,8 +66,9 @@ export default function About() {
             <h1 className="font-display text-[24px] font-semibold tracking-[-0.02em] text-txt-hi">How SLA Monitor works</h1>
             <p className="mt-1.5 text-[13px] leading-relaxed text-txt-lo">
               A serverless uptime and SLA monitor: AWS behind the API, a static React app in front. Every minute it checks each endpoint you
-              add and calls the answer up, down or no evidence. A few failures in a row open an incident and email you, and the first passing
-              check closes it. Every Monday, and whenever you ask, it rolls the week into an SLA report against your own targets.
+              add and calls the answer up, down or no evidence. A few failures in a row email you and become an incident, and the first
+              passing check closes it. Every Monday it rolls the week into an SLA report against your own targets, and you can ask for one
+              over the last day, week or month at any time.
             </p>
           </div>
           <a href={REPO} target="_blank" rel="noreferrer" className="btn-ghost h-8 shrink-0 px-3 text-[12.5px]">

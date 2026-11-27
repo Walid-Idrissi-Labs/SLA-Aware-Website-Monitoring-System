@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { STATUS, SLO_MIN_COVERAGE, availability, sloResult } from '../lib/format'
 
 const RESULT = {
@@ -34,7 +34,7 @@ function Grid({ up, down, label }: { up: number; down: number; label: string }) 
 function Chip({ status }: { status: keyof typeof RESULT }) {
   const r = RESULT[status]
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-[3px] text-[12px] font-medium" style={{ color: r.color, borderColor: `${r.color}59`, backgroundColor: `${r.color}12` }}>
+    <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-[3px] text-[12px] font-medium" style={{ color: r.color, borderColor: `${r.color}59`, backgroundColor: `${r.color}12` }}>
       <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: r.color }} />
       {r.label}
     </span>
@@ -86,8 +86,8 @@ const FIELDS: { key: Field; label: string }[] = [
 ]
 
 function Calculator() {
-  // A week of one check a minute, with a short outage and a few challenge pages.
-  const [n, setN] = useState({ expected: 10_080, up: 10_061, down: 9, none: 10 })
+  // A week of one check a minute where an eleventh of them never ran: 99.14% up, and still unproven.
+  const [n, setN] = useState({ expected: 10_080, up: 9_200, down: 80, none: 300 })
   const [target, setTarget] = useState('99.9')
   const [trimmed, setTrimmed] = useState('')
 
@@ -95,16 +95,19 @@ function Calculator() {
     const v = Math.max(0, Math.floor(Number(raw.replace(/[^\d]/g, '')) || 0))
     const next = { ...n, [key]: v }
     const over = next.up + next.down + next.none - next.expected
-    if (over > 0) {
-      // Trim the field just edited, or the largest count when the expected checks shrank.
-      const cut: Exclude<Field, 'expected'> = key === 'expected' ? (['up', 'down', 'none'] as const).reduce((a, b) => (next[b] > next[a] ? b : a)) : key
-      next[cut] = Math.max(0, next[cut] - over)
-      setTrimmed(`Trimmed ${cut === 'none' ? 'no evidence' : cut} to fit ${fmt(next.expected)} expected checks.`)
-    } else setTrimmed('')
+    // Editing the expected count passes through small numbers on the way to a big one: never trim the others for it.
+    if (over > 0 && key !== 'expected') {
+      next[key] = Math.max(0, v - over)
+      setTrimmed(`Trimmed ${key === 'none' ? 'no evidence' : key} to fit ${fmt(next.expected)} expected checks.`)
+    } else setTrimmed(over > 0 ? 'More results than expected checks: coverage is capped at 100%, as the report caps it.' : '')
     setN(next)
   }
 
-  const goal = Math.min(100, Math.max(0, Number(target) || 0))
+  // A half-typed target ("99.9.") keeps the last one that parsed.
+  const lastGoal = useRef(99.9)
+  const parsed = Number(target)
+  if (target !== '' && Number.isFinite(parsed)) lastGoal.current = Math.min(100, Math.max(0, parsed))
+  const goal = lastGoal.current
   const { uptime, coverage } = availability(n.up, n.down, n.expected)
   const { slo_status } = sloResult({ min_uptime_pct: goal, max_avg_latency_ms: Infinity }, uptime ?? 0, 0, coverage)
   const missing = Math.max(0, n.expected - n.up - n.down - n.none)

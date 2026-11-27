@@ -9,8 +9,11 @@ import { hourlyPass } from './sandbox'
 type Status = Check['status']
 
 const MIN = 60_000
-/** The panel reads the last hour of checks, so the sequence stays inside it. */
-const KEEP = 45
+const HOUR = 60 * MIN
+/** Bars on screen. */
+const BARS = 45
+/** History kept: the two hours the pass reads (the panel reads the last one). */
+const KEEP = 120
 const passes = (k: number): Status[] => Array(k).fill('success')
 const fails = (k: number): Status[] => Array(k).fill('failure')
 
@@ -38,7 +41,8 @@ const DOT = { success: 'bg-ok', failure: 'bg-crit', inconclusive: 'bg-white/35' 
  * react. The record only moves when the hourly pass runs, by the processor's rules.
  */
 export default function StreakSandbox() {
-  const [t0] = useState(() => Math.floor(Date.now() / MIN) * MIN - 30 * MIN)
+  // Inside the current hour, so a fresh sequence never straddles :00 and its times read the way the panel says.
+  const [t0] = useState(() => Math.floor(Date.now() / HOUR) * HOUR + 2 * MIN)
   const [timeline, setTimeline] = useState({ from: t0, seq: passes(12) })
   const [threshold, setThreshold] = useState(3)
   const [record, setRecord] = useState<Incident[]>([])
@@ -48,23 +52,27 @@ export default function StreakSandbox() {
   const latest = checks[checks.length - 1]
   const now = latest.timestamp + 20_000
 
-  const add = (status: Status) =>
-    setTimeline(({ from, seq }) => {
-      const next = [...seq, status]
-      const drop = Math.max(0, next.length - KEEP)
-      return { from: from + drop * MIN, seq: next.slice(drop) }
-    })
+  const add = (status: Status) => {
+    const next = [...timeline.seq, status]
+    const drop = Math.max(0, next.length - KEEP)
+    const at = timeline.from + timeline.seq.length * MIN
+    // Crossing the top of the hour runs the pass by itself, over the checks before it, as the schedule does.
+    const hour = Math.floor(at / HOUR) * HOUR
+    if (hour > latest.timestamp) runPass(checks, hour, `${new Date(hour).toISOString().slice(11, 16)} UTC, the hourly pass ran:`)
+    setTimeline({ from: timeline.from + drop * MIN, seq: next.slice(drop) })
+  }
 
-  const runPass = () => {
-    const next = hourlyPass(checks, record, threshold, now)
+  const runPass = (upTo: Check[] = checks, at = now, lead = '') => {
+    const next = hourlyPass(upTo, record, threshold, at)
     const opened = next.filter((i) => !record.some((r) => r.start_time === i.start_time))
     const closed = next.filter((i) => i.resolved && record.some((r) => r.start_time === i.start_time && !r.resolved))
     const done = [...opened, ...closed]
     setRecord(next)
-    if (!done.length) setNote('The pass found nothing new to record.')
+    if (!done.length) setNote(`${lead ? `${lead} n` : 'The pass found n'}othing new to record.`)
     else
       setNote(
-        done
+        (lead ? `${lead} ` : '') +
+          done
           .map((i) =>
             i.resolved
               ? `${opened.includes(i) ? 'Recorded and closed' : 'Closed'} an incident: ${formatDowntime(i.duration_seconds ?? 0)} down, ${hhmm(i.start_time)} to ${hhmm(i.end_time!)}.`
@@ -123,13 +131,13 @@ export default function StreakSandbox() {
               <Plus className="h-3 w-3" />
             </button>
           </div>
-          <button type="button" onClick={runPass} className="btn-ghost ml-auto h-9 border-accent/30 text-accent hover:border-accent/50 hover:text-accent">
-            Run the hourly pass
+          <button type="button" onClick={() => runPass()} className="btn-ghost ml-auto h-9 border-accent/30 text-accent hover:border-accent/50 hover:text-accent">
+            Run the pass now
           </button>
         </div>
 
         <div>
-          <StatusStrip checks={checks} bars={KEEP} />
+          <StatusStrip checks={checks} bars={BARS} />
           <div className="mt-1.5 flex justify-between font-mono text-[10.5px] text-txt-lo">
             <span>one check a minute</span>
             <span>now</span>
@@ -152,7 +160,7 @@ export default function StreakSandbox() {
         </div>
         <p className="border-t border-white/[0.06] pt-3 text-[11.5px] leading-relaxed text-txt-lo">
           Illustrative checks, not one of your endpoints. The panel is the one every endpoint page shows. The real pass runs at the top
-          of each hour; here it runs when you press the button, by the same rules.
+          of each hour, as it does here when your checks cross :00; the button runs it early, by the same rules.
         </p>
       </div>
     </div>

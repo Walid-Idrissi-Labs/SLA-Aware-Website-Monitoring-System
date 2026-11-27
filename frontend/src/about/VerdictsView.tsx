@@ -37,7 +37,7 @@ const LADDER: { name: string; when: string; color?: string }[] = [
   { name: 'Not monitored', when: 'Paused or deleted, unless it left an incident open.' },
   { name: 'Pending', when: 'Added, and no check has run yet.' },
   { name: 'Stale', when: 'No check for over two minutes, so the last answer is too old to trust.', color: STATUS.warn },
-  { name: 'The latest check', when: 'Otherwise the newest check speaks: up, down or no evidence.', color: STATUS.ok },
+  { name: 'The latest check', when: 'Otherwise the newest check speaks: up, down or no evidence.' },
 ]
 
 export default function VerdictsView() {
@@ -67,6 +67,8 @@ export default function VerdictsView() {
         </ul>
       </div>
 
+      <StreakSandbox />
+
       <div className="panel p-4">
         <p className="text-[13px] font-semibold text-txt-hi">What an endpoint shows</p>
         <p className="mt-1 text-[12.5px] text-txt-lo">The first of these that applies wins, so missing evidence never reads as up.</p>
@@ -84,8 +86,6 @@ export default function VerdictsView() {
           ))}
         </ol>
       </div>
-
-      <StreakSandbox />
     </div>
   )
 }
