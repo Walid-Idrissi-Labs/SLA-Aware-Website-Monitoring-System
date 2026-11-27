@@ -12,9 +12,9 @@ import { hydrateProfile } from '../lib/api'
 
 /** What it does, in the system's real numbers: no sample figures on the first screen. */
 const FACTS = [
-  { when: 'Every minute', what: 'Each endpoint you add gets an HTTP check, called up, down or no evidence.' },
-  { when: '3 failures in a row', what: 'An incident opens and you get an email; the first passing check closes it. Three is the default; set it per endpoint.' },
-  { when: 'Mondays, 08:00 UTC', what: 'An SLA report against your own targets: uptime, latency, incidents and a verdict.' },
+  { label: 'Uptime checks', what: 'Each endpoint you add gets an HTTP check every minute, marked up, down or no evidence.' },
+  { label: 'Incident detection', what: 'Three failed checks in a row, by default, open an incident and email you; the first passing check closes it.' },
+  { label: 'SLA reports', what: 'Weekly and on-demand reports against your own targets: uptime, latency, incidents and a verdict.' },
 ]
 
 interface LoginState {
@@ -96,8 +96,8 @@ export default function Login() {
             </h1>
             <dl className="mt-7 space-y-4">
               {FACTS.map((f) => (
-                <div key={f.when} className="flex gap-4">
-                  <dt className="w-36 shrink-0 pt-px font-mono text-[11px] uppercase tracking-wide text-accent">{f.when}</dt>
+                <div key={f.label} className="flex gap-4">
+                  <dt className="w-36 shrink-0 pt-px font-mono text-[11px] uppercase tracking-wide text-accent">{f.label}</dt>
                   <dd className="text-[13px] leading-relaxed text-txt-mid">{f.what}</dd>
                 </div>
               ))}
