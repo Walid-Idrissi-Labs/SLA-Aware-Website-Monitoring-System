@@ -2,7 +2,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { STORIES, addDemoEndpoint, demoChecks, demoDaily, demoIncidents, demoProject, demoProjects, demoReports, demoStatus, editDemoEndpoint, resetDemoVisit } from '../src/demo/data.ts'
-import { dayVerdict, incidentState, verdictFor } from '../src/lib/format.ts'
+import { readFileSync } from 'node:fs'
+import { MAX_ACTIVE_PROJECTS, dayVerdict, incidentState, verdictFor } from '../src/lib/format.ts'
 import { handle } from '../src/demo/handler.ts'
 import { DEMO_USER } from '../src/lib/demo.ts'
 
@@ -184,6 +185,11 @@ test('a visit\'s changes: add, delete while down, and a new threshold', () => {
   assert.deepEqual(judge('docs', t0 + MIN), { verdict: 'down', stage: 'open', record: 'missing' })
   resetDemoVisit()
   assert.equal(demoProjects(t0).length, STORIES.length)
+})
+
+test('the frontend\'s endpoint limit is the project manager\'s', () => {
+  const handler = readFileSync(new URL('../../sla-monitor-terraform/lambda_src/project_manager/handler.py', import.meta.url), 'utf8')
+  assert.equal(Number(handler.match(/^MAX_ACTIVE_PROJECTS = (\d+)$/m)?.[1]), MAX_ACTIVE_PROJECTS)
 })
 
 test('the demo holds an account to 10 active endpoints, with the API\'s message', async () => {

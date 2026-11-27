@@ -70,9 +70,9 @@ export default function AddProjectModal({ onClose, onSuccess, atLimit = false }:
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 animate-fade-in"
       onClick={(e) => e.target === e.currentTarget && !saving && onClose()}
     >
-      <div role="dialog" aria-modal="true" aria-label="New endpoint" className="w-full max-w-[480px] animate-scale-in">
+      <div role="dialog" aria-modal="true" aria-label={atLimit ? 'Endpoint limit' : 'New endpoint'} className="w-full max-w-[480px] animate-scale-in">
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-[12.5px] text-txt-lo">New endpoint</span>
+          <span className="text-[12.5px] text-txt-lo">{atLimit ? 'Endpoint limit' : 'New endpoint'}</span>
           <button
             onClick={onClose}
             aria-label="Close"
@@ -93,8 +93,8 @@ export default function AddProjectModal({ onClose, onSuccess, atLimit = false }:
             <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-white/[0.04] text-txt-lo">
               <Radar className="h-5 w-5" strokeWidth={1.75} />
             </span>
-            <p className="mt-4 font-display text-[16px] font-semibold text-txt-hi">You're monitoring {MAX_ACTIVE_PROJECTS} endpoints</p>
-            <p className="mx-auto mt-1.5 max-w-[340px] text-[13px] leading-relaxed text-txt-mid">
+            <p className="mt-4 font-display text-[16px] font-semibold text-txt-hi">You've reached the {MAX_ACTIVE_PROJECTS}-endpoint limit</p>
+            <p className="mx-auto mt-1.5 max-w-[340px] text-balance text-[13px] leading-relaxed text-txt-mid">
               That's the most one account can have at once. Delete an endpoint you no longer need, and you can add another.
             </p>
             <button type="button" onClick={onClose} autoFocus className="btn-outline mx-auto mt-6 max-w-[200px]">

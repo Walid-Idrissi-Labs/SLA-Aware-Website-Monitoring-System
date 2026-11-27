@@ -492,7 +492,8 @@ export default function Dashboard() {
           onClose={() => setShowAddModal(false)}
           onSuccess={(project) => {
             setShowAddModal(false)
-            setProjects((prev) => [...prev, project])
+            // A poll that landed mid-create may already list it.
+            setProjects((prev) => (prev.some((p) => p.project_id === project.project_id) ? prev : [...prev, project]))
             getProjectStatus(project.project_id, 1)
               .then((status) => setStatuses((prev) => ({ ...prev, [project.project_id]: status })))
               .catch(() => {})
