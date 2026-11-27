@@ -1,1 +1,3 @@
-requests==2.32.3
+# The versions in sla-monitor-requests-layer:1, which the monitor runs on; its address guard was tested against them.
+requests==2.34.2
+urllib3==2.7.0
