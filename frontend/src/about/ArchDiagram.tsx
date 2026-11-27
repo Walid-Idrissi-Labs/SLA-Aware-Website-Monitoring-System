@@ -120,10 +120,13 @@ export default function ArchDiagram(props: Props) {
   const advance = useRef(onStep)
   advance.current = onStep
   useEffect(() => {
-    if (mode !== 'check' || !playing || !seen) return
-    if (step >= LAST) return setPlaying(false)
+    if (mode !== 'check' || !playing || !seen || step >= LAST) return
     // Step 1 holds longer, so the reader finds the diagram before it moves.
-    const t = setTimeout(() => advance.current(step + 1), step === 0 ? 3500 : 3000)
+    const t = setTimeout(() => {
+      advance.current(step + 1)
+      // Landing on the last step ends the run here, not in a later render that could race a replay.
+      if (step + 1 === LAST) setPlaying(false)
+    }, step === 0 ? 3500 : 3000)
     return () => clearTimeout(t)
   }, [mode, playing, seen, step])
   const stop = () => setPlaying(false)
@@ -217,14 +220,15 @@ export default function ArchDiagram(props: Props) {
               <ChevronLeft className="h-4 w-4" />
             </button>
             {/* The fill and the disc move by transform alone, so a step change costs the compositor half a second and nothing at rest. */}
-            <div className="relative min-w-0 flex-1">
+            {/* On a phone the dots don't fit beside the buttons: the line alone shows progress, and the header carries the count. */}
+            <div className="relative h-[22px] min-w-0 flex-1">
               <span aria-hidden className="absolute left-[11px] right-[11px] top-[11px] h-px bg-white/[0.08]" />
               <span
                 aria-hidden
                 className={`absolute left-[11px] right-[11px] top-[11px] h-px origin-left bg-accent/50 transition-transform duration-500 ${EASE}`}
                 style={{ transform: `scaleX(${step / LAST})` }}
               />
-              <ol className="relative flex justify-between" aria-label="Steps">
+              <ol className="relative hidden justify-between sm:flex" aria-label="Steps">
                 {STEPS.map((s, i) => (
                   <li key={s.title}>
                     <button
@@ -244,7 +248,7 @@ export default function ArchDiagram(props: Props) {
               </ol>
               <span
                 aria-hidden
-                className={`pointer-events-none absolute inset-x-0 top-0 transition-transform duration-500 ${EASE}`}
+                className={`pointer-events-none absolute inset-x-0 top-0 hidden transition-transform duration-500 sm:block ${EASE}`}
                 style={{ transform: `translateX(calc(${step / LAST} * (100% - 22px)))` }}
               >
                 <span className="grid h-[22px] w-[22px] place-items-center rounded-full bg-accent font-mono text-[10.5px] text-white shadow-[0_0_12px_-2px_rgba(250,92,41,0.7)]">
