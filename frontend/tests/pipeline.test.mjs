@@ -180,6 +180,11 @@ test('missing minutes and runs of no verdict fold into one line each', () => {
   assert.equal(deriveEvents([project('a', seq('IIIS'))], NOW)[0].text, 'No verdict for at least 3 checks in a row.')
 })
 
+test('a check the monitor refused to make says why', () => {
+  const checks = seq('SI').map((c) => (c.status === 'inconclusive' ? { ...c, error_type: 'private', http_status_code: 0 } : c))
+  assert.equal(deriveEvents([project('a', checks)], NOW)[0].text, "No verdict: the address isn't public.")
+})
+
 test('events come newest first', () => {
   const list = deriveEvents([project('a', seq('SFFSFFS')), project('b', seq('SFS'))], NOW)
   assert.equal(list.length, 8)

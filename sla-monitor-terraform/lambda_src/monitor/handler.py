@@ -1,3 +1,4 @@
+import ipaddress
 import json
 import os
 import random
@@ -15,6 +16,10 @@ import boto3
 import requests
 from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
+from requests.adapters import HTTPAdapter
+from urllib3.connection import HTTPConnection, HTTPSConnection
+from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
+from urllib3.exceptions import ConnectTimeoutError, NameResolutionError, NewConnectionError
 
 from templates import build_down_email, build_up_email
 
@@ -90,6 +95,83 @@ def send_email(to_address: str, subject: str, html_body: str) -> None:
             "Body": {"Html": {"Data": html_body, "Charset": "UTF-8"}},
         },
     )
+
+
+class AddressRefused(Exception):
+    """The target resolved to an address that isn't public, so the monitor didn't connect.
+
+    Not an OSError on purpose: urllib3 and requests would wrap one as a connection
+    error, which reads as down, and refusing says nothing about the target.
+    """
+
+
+def is_public(address: str) -> bool:
+    """A public IPv4 address. A Lambda outside a VPC has no outbound IPv6, so only IPv4 is
+    resolved, and is_global alone lets multicast through."""
+    ip = ipaddress.ip_address(address)
+    return ip.version == 4 and ip.is_global and not ip.is_multicast
+
+
+def connect_public(host: str, port: int, timeout) -> socket.socket:
+    """Resolve once, refuse unless every address is public, and connect to exactly those.
+
+    The check and the connect use the same lookup, so DNS can't change in between
+    (rebinding). A mix of public and private answers is refused outright: no real
+    site has one, and it is what a rebinding setup looks like.
+    """
+    infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+    addresses = list(dict.fromkeys(info[4][0] for info in infos))
+    if not all(is_public(address) for address in addresses):
+        raise AddressRefused(host)
+    error = None
+    for address in addresses:
+        try:
+            return socket.create_connection((address, port), timeout)  # a literal: no second lookup
+        except OSError as exc:
+            error = exc
+    raise error or OSError(f"No address for {host}")
+
+
+class _PublicOnly:
+    """urllib3's own _new_conn, with connect_public resolving and connecting. TLS still
+    verifies the hostname, since only the socket underneath changes."""
+
+    def _new_conn(self):
+        try:
+            sock = connect_public(self._dns_host, self.port, self.timeout)
+        except socket.gaierror as e:
+            raise NameResolutionError(self.host, self, e) from e
+        except TimeoutError as e:
+            raise ConnectTimeoutError(self, f"Connection to {self.host} timed out. (connect timeout={self.timeout})") from e
+        except OSError as e:
+            raise NewConnectionError(self, f"Failed to establish a new connection: {e}") from e
+        for option in self.socket_options or ():
+            sock.setsockopt(*option)
+        return sock
+
+
+class PublicHTTPConnection(_PublicOnly, HTTPConnection):
+    pass
+
+
+class PublicHTTPSConnection(_PublicOnly, HTTPSConnection):
+    pass
+
+
+class PublicHTTPPool(HTTPConnectionPool):
+    ConnectionCls = PublicHTTPConnection
+
+
+class PublicHTTPSPool(HTTPSConnectionPool):
+    ConnectionCls = PublicHTTPSConnection
+
+
+class PublicOnlyAdapter(HTTPAdapter):
+    """Every connection a session opens, each redirect hop included, goes through connect_public."""
+
+    def init_poolmanager(self, *args, **kwargs):
+        super().init_poolmanager(*args, **kwargs)
+        self.poolmanager.pool_classes_by_scheme = {"http": PublicHTTPPool, "https": PublicHTTPSPool}
 
 
 def classify_error(exc: Exception) -> str:
@@ -177,7 +259,7 @@ def probe_certificate(url: str, timeout: int = 5) -> dict | None:
         host = parsed.hostname
         port = parsed.port or 443
         ctx = ssl.create_default_context()
-        with socket.create_connection((host, port), timeout=timeout) as sock:
+        with connect_public(host, port, timeout) as sock:
             with ctx.wrap_socket(sock, server_hostname=host) as tls:
                 cert = tls.getpeercert()
         not_after = ssl.cert_time_to_seconds(cert["notAfter"])
@@ -196,12 +278,24 @@ def perform_http_check(url: str, accepted_statuses: str | None = None) -> dict:
     ranges = parse_accepted_statuses(accepted_statuses)
     session = requests.Session()
     session.max_redirects = MAX_REDIRECTS
+    # No proxy or .netrc from the environment: the address check must see the target itself.
+    session.trust_env = False
+    adapter = PublicOnlyAdapter()
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
     start_time = time.time()
     try:
         response   = session.get(url, timeout=HTTP_TIMEOUT_SECONDS, allow_redirects=True)
         latency_ms = int((time.time() - start_time) * 1000)
         http_status = response.status_code
         status, error_type = classify_response(http_status, response.headers, ranges)
+    except AddressRefused:
+        # The site or one of its redirects resolved to a private or reserved address.
+        # The monitor refused to connect, which says nothing about the target.
+        latency_ms = int((time.time() - start_time) * 1000)
+        http_status = 0
+        status = "inconclusive"
+        error_type = "private"
     except requests.exceptions.RequestException as exc:
         latency_ms  = HTTP_TIMEOUT_SECONDS * 1000
         http_status = 0
