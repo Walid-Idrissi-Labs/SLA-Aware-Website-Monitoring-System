@@ -559,7 +559,7 @@ export const EDGES: ArchEdge[] = [
     from: 'monitor',
     to: 'sites',
     label: 'GET + TLS',
-    detail: 'One GET per endpoint per minute, to public addresses only, with a 10-second timeout and up to three redirects, plus a TLS certificate check every six hours.',
+    detail: 'One GET per endpoint per minute, to public addresses only, with a 10-second timeout, up to three redirects and at most 1 MiB read, plus a TLS certificate check every six hours.',
     layers: ['pipeline'],
     points: [[1264, 340], [1336, 340]],
   },
@@ -621,7 +621,7 @@ export const STEPS: Step[] = [
   },
   {
     title: 'Probe every site',
-    body: 'One GET per endpoint, eight at a time, with a 10-second timeout and up to three redirects. It connects only to public addresses, checked at every hop. Every six hours it also reads the TLS certificate.',
+    body: 'One GET per endpoint, eight at a time, with a 10-second timeout and up to three redirects, reading at most the first 1 MiB of each answer. It connects only to public addresses, checked at every hop. Every six hours it also reads the TLS certificate.',
     edges: ['monitor-sites'],
     nodes: ['monitor', 'sites'],
   },
