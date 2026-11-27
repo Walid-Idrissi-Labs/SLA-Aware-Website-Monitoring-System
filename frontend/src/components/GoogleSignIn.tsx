@@ -35,7 +35,7 @@ export default function GoogleSignIn({ onError }: Props) {
         type="button"
         onClick={handleClick}
         disabled={loading}
-        className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-md border border-white/[0.1] bg-white/[0.02] text-[13px] font-medium text-txt-mid transition-all duration-150 hover:border-white/20 hover:bg-white/[0.04] hover:text-txt-hi active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60"
+        className="btn-outline"
       >
         {loading ? (
           <Spinner size={16} />

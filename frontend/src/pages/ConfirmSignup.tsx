@@ -158,20 +158,18 @@ export default function ConfirmSignup() {
         </ActionButton>
       </form>
 
-      <p className="mt-4 text-center text-[11.5px] leading-relaxed text-txt-lo">
-        No email after a minute? Check spam or junk. It comes from <span className="text-txt-mid">{CODE_SENDER}</span>.
-      </p>
-      <div className="mt-2 text-center text-[12px] text-txt-lo">
-        Didn’t get it?{' '}
+      <p className="mt-4 text-center text-[12px] leading-relaxed text-txt-lo">
+        No email after a minute? Check spam or junk (it comes from <span className="text-txt-mid">{CODE_SENDER}</span>), or{' '}
         <button
           type="button"
           onClick={handleResend}
           disabled={resending}
           className="font-medium text-accent hover:underline disabled:opacity-60"
         >
-          {resending ? 'Sending…' : 'Resend code'}
+          {resending ? 'sending…' : 'resend the code'}
         </button>
-      </div>
+        .
+      </p>
     </AuthLayout>
   )
 }

@@ -22,11 +22,18 @@ export default function Callback() {
     async function handleCallback() {
       const params = new URLSearchParams(window.location.search)
       const code = params.get('code')
-      // Read and clear both before anything else, whatever the outcome.
-      const codeVerifier = sessionStorage.getItem('pkce_verifier')
-      const expectedState = sessionStorage.getItem('oauth_state')
-      sessionStorage.removeItem('pkce_verifier')
-      sessionStorage.removeItem('oauth_state')
+      // Read and clear both before anything else, whatever the outcome. Blocked
+      // storage reads as nothing stored, so it ends on a message, not the splash.
+      let codeVerifier: string | null = null
+      let expectedState: string | null = null
+      try {
+        codeVerifier = sessionStorage.getItem('pkce_verifier')
+        expectedState = sessionStorage.getItem('oauth_state')
+        sessionStorage.removeItem('pkce_verifier')
+        sessionStorage.removeItem('oauth_state')
+      } catch {
+        /* storage blocked: handled as a missing verifier below */
+      }
 
       if (!code) {
         const error = params.get('error')
@@ -113,7 +120,7 @@ function CallbackError({ failure }: { failure: CallbackFailure }) {
                   setStartFailed(true)
                 })
             }}
-            className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-md border border-white/[0.14] bg-white/[0.04] text-[13px] font-medium text-txt-hi transition-all duration-150 hover:border-white/25 hover:bg-white/[0.07] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60"
+            className="btn-outline text-txt-hi"
           >
             {starting ? <Spinner size={16} /> : <GoogleIcon className="h-4 w-4" />}
             {startFailed ? 'Couldn’t start. Try again' : 'Try Google again'}

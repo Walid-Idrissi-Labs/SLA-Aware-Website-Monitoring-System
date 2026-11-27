@@ -13,7 +13,7 @@ import { hydrateProfile } from '../lib/api'
 /** What it does, in the system's real numbers: no sample figures on the first screen. */
 const FACTS = [
   { when: 'Every minute', what: 'Each endpoint you add gets an HTTP check, called up, down or no evidence.' },
-  { when: '3 failures in a row', what: 'An incident opens and you get an email; the first passing check closes it.' },
+  { when: '3 failures in a row', what: 'An incident opens and you get an email; the first passing check closes it. Three is the default; set it per endpoint.' },
   { when: 'Mondays, 08:00 UTC', what: 'An SLA report against your own targets: uptime, latency, incidents and a verdict.' },
 ]
 
@@ -104,7 +104,7 @@ export default function Login() {
           <div className="lg:mt-9 lg:max-w-[320px]">
             <a
               href="/demo"
-              className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-md border border-white/[0.1] bg-white/[0.02] text-[13px] font-medium text-txt-mid transition-all duration-150 hover:border-white/20 hover:bg-white/[0.04] hover:text-txt-hi active:scale-[0.98]"
+              className="btn-outline"
             >
               <Compass className="h-4 w-4" strokeWidth={2} /> Explore the demo
             </a>
