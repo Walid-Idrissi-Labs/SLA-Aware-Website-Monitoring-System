@@ -43,7 +43,8 @@ export default function AddProjectModal({ onClose, onSuccess, atLimit = false }:
       return
     }
     let normalizedUrl = url.trim()
-    if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+    // Prefix only a bare host: a typed scheme, even ftp://, goes to the API to judge.
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(normalizedUrl)) {
       normalizedUrl = 'https://' + normalizedUrl
     }
     setSaving(true)

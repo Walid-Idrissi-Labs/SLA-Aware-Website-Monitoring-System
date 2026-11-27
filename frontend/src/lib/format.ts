@@ -250,7 +250,7 @@ export type Severity = keyof typeof SEVERITY
 
 /** Strip protocol for compact display. */
 export function bareUrl(url: string): string {
-  return url.replace(/^https?:\/\//, '').replace(/\/$/, '')
+  return url.replace(/^https?:\/\//i, '').replace(/\/$/, '')
 }
 
 /** Clamp helper. */
