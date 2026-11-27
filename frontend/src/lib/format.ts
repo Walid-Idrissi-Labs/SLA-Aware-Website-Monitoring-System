@@ -279,6 +279,8 @@ export const ERROR_TYPE = {
   tls: { label: 'TLS', color: SEVERITY.major.color },
   http: { label: 'HTTP', color: STATUS.warn },
   blocked: { label: 'BLOCKED', color: STATUS.neutral },
+  // The monitor refused to connect: the address isn't public (it says nothing about the site).
+  private: { label: 'PRIVATE', color: STATUS.neutral },
 } as const
 
 /** An open incident has no end_time yet; it runs up to now. */

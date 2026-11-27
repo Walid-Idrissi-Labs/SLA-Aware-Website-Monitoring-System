@@ -8,8 +8,10 @@ export interface User {
 
 /** Coarse failure cause recorded per check / incident by the backend.
  *  `blocked` means the probe was challenged (WAF/CAPTCHA), not that the site
- *  failed. Absent on legacy rows written before it was captured. */
-export type ErrorType = 'timeout' | 'dns' | 'conn' | 'tls' | 'http' | 'blocked';
+ *  failed; `private` means the monitor refused to connect because the address
+ *  isn't public. Both come with no verdict. Absent on legacy rows written
+ *  before it was captured. */
+export type ErrorType = 'timeout' | 'dns' | 'conn' | 'tls' | 'http' | 'blocked' | 'private';
 
 export interface Project {
   project_id: string;

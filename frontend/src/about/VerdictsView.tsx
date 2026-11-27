@@ -7,6 +7,12 @@ const TONE = { up: STATUS.ok, down: STATUS.crit, none: STATUS.neutral }
 /** The monitor's classify_response and classify_error, in the order it applies them. */
 const RULES: { came: string; verdict: string; tone: keyof typeof TONE; why: string }[] = [
   {
+    came: 'An address that isn’t public (the hostname, or a redirect, resolved to a private or reserved address)',
+    verdict: 'No evidence',
+    tone: 'none',
+    why: 'The monitor refuses to connect, so nothing about the site was learned. It neither adds uptime nor takes it away.',
+  },
+  {
     came: 'A status in the endpoint’s accepted list (200–399 unless you change it)',
     verdict: 'Up',
     tone: 'up',

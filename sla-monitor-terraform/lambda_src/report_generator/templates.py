@@ -51,6 +51,7 @@ _CAUSE = {
     "tls": "TLS handshake failed",
     "http": "Status not accepted",
     "blocked": "Bot challenge (no evidence)",
+    "private": "Address not public (no evidence)",
     "unknown": "Not recorded",
 }
 

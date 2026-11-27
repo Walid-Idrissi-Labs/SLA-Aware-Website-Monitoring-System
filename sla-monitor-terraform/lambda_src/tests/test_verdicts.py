@@ -9,6 +9,7 @@ import importlib.util
 import json
 import os
 import re
+import socket
 import sys
 import time
 import unittest
@@ -475,6 +476,9 @@ def fake_session(outcome, entered=None):
     class Session:
         max_redirects = None
 
+        def mount(self, prefix, adapter):
+            pass
+
         def get(self, url, **kwargs):
             if entered is not None:
                 entered.append(int(time.time() * 1000))
@@ -487,6 +491,129 @@ def fake_session(outcome, entered=None):
             pass
 
     return Session
+
+
+class PublicAddressTest(unittest.TestCase):
+    """The monitor connects only to public addresses, checked at connect time (board #16).
+
+    A real HTTP server on 127.0.0.1 stands in for an internal service: the monitor
+    must never reach it. "public.test" resolves to a public address that the patched
+    connect routes to the same server, so a permitted fetch can run offline too.
+    """
+
+    PUBLIC = "93.184.216.34"
+
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        cls.seen, cls.connections = [], []
+
+        class Handler(BaseHTTPRequestHandler):
+            def setup(self):
+                cls.connections.append(self.client_address)  # any TCP connection, HTTP or not
+                super().setup()
+
+            def do_GET(self):
+                cls.seen.append(self.path)
+                if self.path == "/redir":
+                    self.send_response(302)
+                    self.send_header("Location", f"http://127.0.0.1:{cls.port}/")
+                else:
+                    self.send_response(200)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        cls.port = cls.server.server_address[1]
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+
+    def setUp(self):
+        self.seen.clear()
+        self.connections.clear()
+        self.lookups = []
+        real_lookup, real_connect = socket.getaddrinfo, socket.create_connection
+        answers = {"public.test": [self.PUBLIC], "mixed.test": [self.PUBLIC, "127.0.0.1"]}
+
+        def lookup(host, port, *args, **kwargs):
+            self.lookups.append(host)
+            if host in answers:
+                addresses = answers[host]() if callable(answers[host]) else answers[host]
+                return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (a, port)) for a in addresses]
+            if host == "nowhere.test":
+                raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+            return real_lookup(host, port, *args, **kwargs)
+
+        def connect(address, *args, **kwargs):
+            host, port = address
+            return real_connect(("127.0.0.1", port) if host == self.PUBLIC else address, *args, **kwargs)
+
+        self.answers = answers
+        patches = [mock.patch.object(socket, "getaddrinfo", lookup), mock.patch.object(socket, "create_connection", connect)]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def check(self, host, path="/", scheme="http"):
+        return monitor.perform_http_check(f"{scheme}://{host}:{self.port}{path}")
+
+    def test_loopback_is_never_reached_by_any_spelling(self):
+        for scheme, host in (("http", "127.0.0.1"), ("http", "localhost"), ("http", "2130706433"), ("https", "127.0.0.1")):
+            result = self.check(host, scheme=scheme)
+            self.assertEqual((result["status"], result["error_type"], result["http_status_code"]), ("inconclusive", "private", 0), host)
+            self.assertLess(result["latency_ms"], 1000, host)  # the real time spent, not the 10 s placeholder
+        self.assertEqual(self.connections, [])
+
+    def test_a_public_address_is_fetched(self):
+        self.assertEqual(self.check("public.test")["status"], "success")
+        self.assertEqual(self.seen, ["/"])
+
+    def test_one_private_answer_refuses_the_host(self):
+        self.assertEqual(self.check("mixed.test")["error_type"], "private")
+        self.assertEqual(self.seen, [])
+
+    def test_a_redirect_to_loopback_is_refused_at_its_hop(self):
+        result = self.check("public.test", "/redir")
+        self.assertEqual((result["status"], result["error_type"]), ("inconclusive", "private"))
+        self.assertEqual(self.seen, ["/redir"])  # the public hop was fetched, the loopback one never
+
+    def test_dns_cannot_change_between_the_check_and_the_connect(self):
+        answers = iter([[self.PUBLIC], ["127.0.0.1"]])
+        self.answers["rebind.test"] = lambda: next(answers)
+        self.assertEqual(self.check("rebind.test")["status"], "success")
+        self.assertEqual(self.lookups.count("rebind.test"), 1)  # one lookup, used for both
+
+    def test_a_refused_connection_is_still_a_connection_failure(self):
+        # Through the real adapter: the guard's exception mapping keeps today's causes.
+        closed = socket.socket()
+        closed.bind(("127.0.0.1", 0))
+        port = closed.getsockname()[1]
+        closed.close()
+        result = monitor.perform_http_check(f"http://public.test:{port}/")
+        self.assertEqual((result["status"], result["error_type"]), ("failure", "conn"))
+
+    def test_a_failed_lookup_is_still_a_dns_failure(self):
+        result = self.check("nowhere.test")
+        self.assertEqual((result["status"], result["error_type"]), ("failure", "dns"))
+
+    def test_the_certificate_probe_is_refused_too(self):
+        self.assertIsNone(monitor.probe_certificate(f"https://127.0.0.1:{self.port}"))
+        self.assertEqual(self.connections, [])  # not even a TCP connection
+
+    def test_only_public_ipv4_passes(self):
+        for address in ("127.0.0.1", "10.0.0.1", "172.16.0.1", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255", "2606:4700:4700::1111"):
+            self.assertFalse(monitor.is_public(address), address)
+        for address in ("93.184.216.34", "8.8.8.8", "1.1.1.1"):
+            self.assertTrue(monitor.is_public(address), address)
 
 
 class CheckTraceTest(unittest.TestCase):

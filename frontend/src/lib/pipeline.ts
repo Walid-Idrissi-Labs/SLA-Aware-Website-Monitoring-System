@@ -179,7 +179,8 @@ export function deriveEvents(projects: Project[], now: number): PipelineEvent[] 
     let blank: Check[] = []
     const flushBlank = () => {
       if (!blank.length) return
-      const cause = blank[0].error_type === 'blocked' ? ': the probe was blocked' : ''
+      const kind = blank[0].error_type
+      const cause = kind === 'blocked' ? ': the probe was blocked' : kind === 'private' ? ": the address isn't public" : ''
       // A run of them the window cut may have begun earlier.
       const cut = blank[0] === checks[0] && !fresh
       const n = blank.length
