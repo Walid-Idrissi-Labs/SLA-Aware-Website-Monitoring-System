@@ -495,7 +495,11 @@ export default function Dashboard() {
             // A poll that landed mid-create may already list it.
             setProjects((prev) => (prev.some((p) => p.project_id === project.project_id) ? prev : [...prev, project]))
             getProjectStatus(project.project_id, 1)
-              .then((status) => setStatuses((prev) => ({ ...prev, [project.project_id]: status })))
+              .then((status) => {
+                // /status carries 30 days of tallies; the list, and so every other card, 14 (the API's DAILY_LIST_DAYS).
+                const daily = status.daily && { ...status.daily, days: status.daily.days.slice(-14) }
+                setStatuses((prev) => ({ ...prev, [project.project_id]: { ...status, daily } }))
+              })
               .catch(() => {})
           }}
         />
