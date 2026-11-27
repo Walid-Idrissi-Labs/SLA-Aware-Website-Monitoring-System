@@ -48,7 +48,7 @@ import {
 import { Alert, Spinner } from '../components/ui'
 import type { Check, ProjectStatus, ProjectReport, Project, UpdateProjectInput, Incident, ReliabilityMetrics } from '../types'
 import { DEMO } from '../lib/demo'
-import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, evidenceFromChecks, verdictFor, VERDICT, bareUrl, fmtUtcTime, fmtUtcDay, formatDowntime, timeAgo, STALE_AFTER_MS, type Verdict } from '../lib/format'
+import { SEVERITY, STATUS, PROJECT_DEFAULTS, POLL_INTERVAL_MS, uptimeFromChecks, evidenceFromChecks, verdictFor, VERDICT, bareUrl, fmtUtcTime, fmtUtcDay, formatDowntime, reportFigures, timeAgo, STALE_AFTER_MS, type Verdict } from '../lib/format'
 
 /** Incident/reliability window is fixed (independent of the latency chart toggle). */
 const INCIDENT_WINDOW_DAYS = 30
@@ -437,7 +437,12 @@ export default function ProjectDetail() {
       const s = String(v ?? '')
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
     }
-    const csv = [cols.join(','), ...sortedReports.map((r) => cols.map((c) => esc(r[c])).join(','))].join('\n')
+    const rows = sortedReports.map((r) => {
+      const fig = reportFigures(r)
+      const shown = { ...r, uptime_pct: fig.uptime, avg_latency_ms: fig.avg, p95_latency_ms: fig.p95 }
+      return cols.map((c) => esc(shown[c])).join(',')
+    })
+    const csv = [cols.join(','), ...rows].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -1147,12 +1152,14 @@ export default function ProjectDetail() {
                   const sev = SEVERITY[r.severity] ?? SEVERITY.healthy
                   // The report's own three-way verdict; rows from before slo_status fall back to sla_pass.
                   const verdict = r.slo_status ?? (r.sla_pass ? 'met' : 'missed')
+                  const fig = reportFigures(r)
+                  const none = <span className="text-txt-dim">—</span>
                   return (
                     <tr key={r.report_id} className="border-b border-white/[0.04] transition-colors last:border-0 hover:bg-white/[0.02]">
                       <td className="px-4 py-3 text-left font-mono text-[12px] font-semibold text-txt-hi">{r.report_id}</td>
-                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{r.uptime_pct.toFixed(2)}%</td>
-                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{r.avg_latency_ms}ms</td>
-                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{r.p95_latency_ms}ms</td>
+                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{fig.uptime != null ? `${fig.uptime.toFixed(2)}%` : none}</td>
+                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{fig.avg != null ? `${fig.avg}ms` : none}</td>
+                      <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{fig.p95 != null ? `${fig.p95}ms` : none}</td>
                       <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{r.incident_count}</td>
                       <td className="px-4 py-3 text-right data text-[12px] text-txt-mid">{formatDowntime(r.total_downtime_sec)}</td>
                       <td className="px-4 py-3 text-left">
