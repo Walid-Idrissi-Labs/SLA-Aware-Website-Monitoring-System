@@ -214,6 +214,8 @@ def perform_http_check(url: str, accepted_statuses: str | None = None) -> dict:
         "latency_ms": latency_ms,
         "http_status_code": http_status,
         "error_type": error_type,
+        # latency_ms is a placeholder when no response came, so the probe's real start is kept too.
+        "probe_started_at": int(start_time * 1000),
     }
 
 
@@ -339,6 +341,10 @@ def write_check(project: dict, check_result: dict) -> None:
     # Only stored on failures — success has no cause and a null attribute is noise.
     if check_result.get("error_type"):
         check_record["error_type"] = check_result["error_type"]
+    # Stage times, epoch ms like `timestamp` (the probe's end): when the run began,
+    # when this probe began, and just before this row's PutItem.
+    check_record.update({k: check_result[k] for k in ("run_started_at", "probe_started_at") if k in check_result})
+    check_record["write_started_at"] = int(time.time() * 1000)
     checks_table.put_item(Item=check_record)
 
     logger.info(
@@ -424,6 +430,7 @@ def load_active_projects() -> list[dict]:
 
 #invoked by EventBridge rule every 1minute
 def lambda_handler(event: dict, context) -> dict:
+    run_started_at = int(time.time() * 1000)
     logger.info("Monitor Lambda invoked")
 
     projects = load_active_projects()
@@ -467,6 +474,7 @@ def lambda_handler(event: dict, context) -> dict:
             continue
         try:
             result = check.result()
+            result["run_started_at"] = run_started_at
             write_check(project, result)
             written.append((project, result))
         except Exception as e:

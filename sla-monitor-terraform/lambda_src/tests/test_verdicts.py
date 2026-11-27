@@ -378,6 +378,81 @@ class MonitorScanTest(unittest.TestCase):
         self.assertEqual(sorted(self.written()), ["a", "b"])
 
 
+def fake_session(outcome, entered=None):
+    """A requests.Session stand-in whose GET takes 10 ms, then answers `outcome` (a status code) or raises it.
+    Each GET appends the epoch ms it began at to `entered`, when given."""
+
+    class Session:
+        max_redirects = None
+
+        def get(self, url, **kwargs):
+            if entered is not None:
+                entered.append(int(time.time() * 1000))
+            time.sleep(0.01)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return type("Response", (), {"status_code": outcome, "headers": {}})()
+
+        def close(self):
+            pass
+
+    return Session
+
+
+class CheckTraceTest(unittest.TestCase):
+    """Every check row carries its stage times (board #13)."""
+
+    STAGES = ("run_started_at", "probe_started_at", "timestamp", "write_started_at")
+
+    def probe(self, outcome):
+        entered = []
+        with mock.patch.object(monitor.requests, "Session", fake_session(outcome, entered)):
+            before = int(time.time() * 1000)
+            result = monitor.perform_http_check("https://example.com")
+            return before, result, entered[0]
+
+    def test_an_answered_probe_records_its_start(self):
+        before, result, get_began = self.probe(200)
+        self.assertTrue(before <= result["probe_started_at"] <= get_began)
+
+    def test_a_failed_probe_records_its_start_too(self):
+        import requests
+
+        # latency_ms is the timeout placeholder here, so it cannot say when the probe ran.
+        before, result, get_began = self.probe(requests.exceptions.ConnectionError("refused"))
+        self.assertEqual(result["latency_ms"], monitor.HTTP_TIMEOUT_SECONDS * 1000)
+        self.assertTrue(before <= result["probe_started_at"] <= get_began)
+
+    def test_a_run_stamps_every_row_in_stage_order(self):
+        rows = []
+        patched = {
+            "load_active_projects": lambda: [{"project_id": p, "name": p, "url": f"https://{p}.example"} for p in ("a", "b")],
+            "count_check": lambda project, result: None,
+            "alert_on_transition": lambda project, result: None,
+            "certificate_due": lambda project: False,
+            "checks_table": type("Checks", (), {"put_item": lambda self, Item: rows.append(Item)})(),
+        }
+        saved = {name: getattr(monitor, name) for name in patched}
+        context = type("Context", (), {"get_remaining_time_in_millis": lambda self: 30_000})()
+        try:
+            for name, value in patched.items():
+                setattr(monitor, name, value)
+            with mock.patch.object(monitor.requests, "Session", fake_session(200)):
+                monitor.lambda_handler({}, context)
+        finally:
+            for name, value in saved.items():
+                setattr(monitor, name, value)
+
+        self.assertEqual(sorted(row["project_id"] for row in rows), ["a", "b"])
+        self.assertEqual(len({row["run_started_at"] for row in rows}), 1)  # one run, one start
+        for row in rows:
+            moments = [row[stage] for stage in self.STAGES]
+            # DynamoDB's resource API rejects floats, so every moment must be an int.
+            self.assertTrue(all(isinstance(m, int) for m in moments), moments)
+            self.assertEqual(moments, sorted(moments), row["project_id"])
+            self.assertGreaterEqual(row["timestamp"] - row["probe_started_at"], 10)  # the fake GET's 10 ms
+
+
 class FakeIncidentsTable:
     """Open-incident lookups, the latest-before queries, conditional puts, and the closing update_item."""
 
