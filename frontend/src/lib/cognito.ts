@@ -46,6 +46,9 @@ function cognitoUser(email: string): CognitoUser {
  * Maps raw Cognito exceptions to a short, human message plus a stable `code`
  * the UI can branch on (e.g. route an unconfirmed user to the verification step).
  */
+/** Who Cognito's codes come from today; it changes if Cognito's email moves to SES (board #22 e, after #23). */
+export const CODE_SENDER = 'no-reply@verificationemail.com'
+
 export function friendlyAuthMessage(err: unknown): { code: string; message: string } {
   const e = err as { code?: string; name?: string; message?: string } | null
   const code = e?.code || e?.name || 'UnknownError'
